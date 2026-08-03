@@ -1,0 +1,21 @@
+{
+  "name": "card2leads",
+  "version": "1.0.0",
+  "description": "Card2Leads — scan business cards into clean, exportable contacts",
+  "main": "server.js",
+  "scripts": {
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "dev": "node server.js",
+    "start": "node server.js",
+    "test": "node --test tests/*.test.js",
+    "check": "node --check server.js && node --check public/app.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "pg": "^8.22.0"
+  }
+}

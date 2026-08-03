@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: easysave-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: easysave
+      POSTGRES_USER: easysave
+      POSTGRES_PASSWORD: easysave_dev_password
+    ports:
+      - "55432:5432"
+    volumes:
+      - easysave_postgres_data:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/001_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U easysave -d easysave"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  easysave_postgres_data:

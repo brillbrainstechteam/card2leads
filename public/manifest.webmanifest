@@ -1,0 +1,19 @@
+{
+  "name": "Card2Leads by BrillBrains",
+  "short_name": "Card2Leads",
+  "description": "Scan business cards, review extracted contacts, and export collections.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f7f9",
+  "theme_color": "#0f766e",
+  "orientation": "portrait-primary",
+  "categories": ["business", "productivity"],
+  "shortcuts": [
+    {
+      "name": "Upload cards",
+      "short_name": "Upload",
+      "url": "/"
+    }
+  ]
+}

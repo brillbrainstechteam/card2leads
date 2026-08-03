@@ -1,0 +1,65 @@
+# env / secrets
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# build outputs
+dist/
+build/
+.vite/
+coverage/
+
+# logs
+logs/
+*.log
+
+# runtime state / uploads (NEVER commit user data)
+data/db.json
+data/*.json
+private_storage/
+uploads/
+storage/
+tmp/
+temp/
+*.tmp
+*.pid
+
+# QA / test artifacts and stray tooling files
+artifacts/
+.codex_gitignore_preview.txt
+
+# mobile app assets (mobile lives in a separate project)
+assets/
+
+# database / dumps (but keep the required schema)
+*.db
+*.sqlite
+*.sqlite3
+*.sql
+*.dump
+!db/schema.sql
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+
+# android / capacitor
+android/
+*.keystore
+*.jks
+*.p12
+
+# docker local data
+postgres-data/
+docker-data/

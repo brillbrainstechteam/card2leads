@@ -1,0 +1,1541 @@
+P0001: Business Card Scanner and Contact Management System
+P0002: Detailed but Simplified Product Requirement Specification
+P0003: 
+P0004: 1. Product Overview
+P0005: The system will allow users to upload or scan one or multiple business cards.
+P0006: The application will:
+P0007: Accept business-card images from desktop or mobile.
+P0008: Extract contact information using an AI vision model.
+P0009: Validate the extracted information.
+P0010: Show the extracted information to the user for review.
+P0011: Allow the user to correct any field.
+P0012: Save the final contact data permanently.
+P0013: Allow users to download contacts as an Excel file.
+P0014: Allow users to connect their Google account and save contacts to Google Sheets.
+P0015: Maintain the original business-card image, extraction status, confidence score and change history.
+P0016: Support secure logged-in and logged-out user states.
+P0017: The system should prioritise accuracy and should not invent information that is not clearly visible on the business card.
+P0018: 
+P0019: 2. Product Goals
+P0020: The main goals are:
+P0021: Reduce manual entry of business-card information.
+P0022: Process multiple business cards together.
+P0023: Maintain high extraction accuracy.
+P0024: Allow users to correct uncertain information.
+P0025: Prevent duplicate contacts.
+P0026: Save contacts securely.
+P0027: Make contact data available across devices.
+P0028: Allow easy Excel download.
+P0029: Allow direct Google Sheets synchronisation.
+P0030: Maintain a clear record of what was uploaded, extracted, edited and exported.
+P0031: 
+P0032: 3. Recommended Product Approach
+P0033: The recommended production design is:
+P0034: User uploads business cards
+        ↓
+Images are stored securely
+        ↓
+A processing job is created
+        ↓
+AI extracts card information
+        ↓
+Validation and duplicate checks are performed
+        ↓
+User reviews and edits the details
+        ↓
+Final contact is saved in the database
+        ↓
+User can:
+- Download Excel
+- Save to Google Sheets
+- View the contact later
+- Reprocess the card
+P0035: The database should remain the primary source of truth.
+P0036: Google Sheets and Excel should be treated as output or integration options, not as the only place where data is stored.
+P0037: 
+P0038: 4. User Types
+P0039: 4.1 Guest or Logged-Out User
+P0040: A logged-out user should be able to:
+P0041: Open the public landing page.
+P0042: Understand what the product does.
+P0043: View sample screens.
+P0044: Access login and registration.
+P0045: View privacy policy and terms.
+P0046: Start Google login or email registration.
+P0047: Recommended production rule
+P0048: A logged-out user should not be allowed to upload real business cards.
+P0049: This avoids:
+P0050: Anonymous personal-data storage.
+P0051: Untraceable uploads.
+P0052: Abuse of AI credits.
+P0053: Difficulty enforcing data deletion.
+P0054: Difficulty associating extracted contacts with an owner.
+P0055: Optional guest-demo mode
+P0056: A limited guest mode may be added later.
+P0057: Example restrictions:
+P0058: Maximum one sample card.
+P0059: No permanent storage.
+P0060: No Google Sheets connection.
+P0061: No Excel download.
+P0062: Image and extracted data deleted after the session.
+P0063: Clearly displayed privacy notice.
+P0064: 
+P0065: 4.2 Logged-In Individual User
+P0066: A logged-in user should be able to:
+P0067: Upload cards.
+P0068: View processing progress.
+P0069: Edit extracted information.
+P0070: Save contacts.
+P0071: View previous uploads.
+P0072: Search contacts.
+P0073: Download Excel.
+P0074: Connect Google Sheets.
+P0075: Delete contacts and card images.
+P0076: Manage profile and account settings.
+P0077: 
+P0078: 4.3 Organisation User
+P0079: An organisation user belongs to a company workspace.
+P0080: Possible roles:
+P0081: Owner
+P0082: Can:
+P0083: Manage the organisation.
+P0084: Invite or remove members.
+P0085: View all contacts.
+P0086: Manage billing.
+P0087: Configure retention settings.
+P0088: Configure Google Sheets connections.
+P0089: Delete the workspace.
+P0090: Admin
+P0091: Can:
+P0092: View and edit all contacts.
+P0093: Invite members if permitted.
+P0094: Manage sheet connections.
+P0095: View processing and export history.
+P0096: Member
+P0097: Can:
+P0098: Upload business cards.
+P0099: View contacts they are permitted to access.
+P0100: Edit permitted records.
+P0101: Export contacts if allowed.
+P0102: Viewer
+P0103: Can:
+P0104: View contacts.
+P0105: Search and filter.
+P0106: Cannot upload, edit, delete or export unless permission is granted.
+P0107: 
+P0108: 5. Authentication Requirements
+P0109: The application should support:
+P0110: Google login.
+P0111: Email and password login.
+P0112: Password reset.
+P0113: Email verification.
+P0114: Secure logout.
+P0115: Optional two-factor authentication in a later phase.
+P0116: 
+P0117: 5.1 Registration Flow
+P0118: The user should be able to register using:
+P0119: Option A: Google Login
+P0120: Click Continue with Google
+        ↓
+Select Google account
+        ↓
+Approve basic profile access
+        ↓
+Account is created
+        ↓
+User enters application
+P0121: Option B: Email Registration
+P0122: Required fields:
+P0123: Full name
+P0124: Email address
+P0125: Password
+P0126: Acceptance of terms and privacy policy
+P0127: After registration:
+P0128: Send a verification email.
+P0129: User clicks verification link.
+P0130: Account becomes active.
+P0131: User can begin uploading cards.
+P0132: 
+P0133: 5.2 Login Session
+P0134: After successful login:
+P0135: The server should create a secure session.
+P0136: The browser should receive a secure session cookie.
+P0137: The session cookie should be:
+P0138: HttpOnly
+P0139: Secure
+P0140: SameSite protected
+P0141: The application should identify the user on every protected request.
+P0142: Recommended session duration:
+P0143: Normal session: 7 days
+P0144: “Remember me” session: 30 days
+P0145: Sensitive account actions may require recent login
+P0146: 
+P0147: 5.3 Logged-Out State
+P0148: When the user is logged out:
+P0149: Protected pages should not be accessible.
+P0150: Opening a protected URL should redirect to login.
+P0151: The original destination should be remembered.
+P0152: Example:
+P0153: User opens /contacts
+        ↓
+User is not logged in
+        ↓
+Redirect to /login
+        ↓
+User logs in
+        ↓
+Redirect back to /contacts
+P0154: 
+P0155: 5.4 Session Expiry
+P0156: If the session expires while the user is using the application:
+P0157: The user should not silently lose unsaved changes.
+P0158: The application should show:
+P0159: Your session has expired. Please log in again to continue.
+P0160: Unsaved edited form data should temporarily remain in browser memory.
+P0161: After login, the user should return to the same review screen where possible.
+P0162: Uploading or saving should not proceed using an expired session.
+P0163: 
+P0164: 5.5 Logout Behaviour
+P0165: When the user logs out:
+P0166: The server session should be invalidated.
+P0167: Secure cookies should be cleared.
+P0168: Sensitive browser state should be removed.
+P0169: Temporary card previews should be removed.
+P0170: Permanent saved contacts should remain in the database.
+P0171: The user should be redirected to the login or home page.
+P0172: 
+P0173: 5.6 Account Security Edge Cases
+P0174: The system should handle:
+P0175: Incorrect password.
+P0176: Unverified email.
+P0177: Expired email-verification link.
+P0178: Expired password-reset link.
+P0179: Google login permission denied.
+P0180: Google account email already registered using password.
+P0181: Multiple login attempts.
+P0182: Suspicious login activity.
+P0183: Disabled account.
+P0184: Deleted organisation.
+P0185: User removed from organisation.
+P0186: Session used from multiple devices.
+P0187: Password changed while another session is active.
+P0188: Recommended behaviour:
+P0189: Invalidate old sessions after password change.
+P0190: Rate-limit repeated login attempts.
+P0191: Never reveal whether a particular email is registered during password-reset requests.
+P0192: 
+P0193: 6. Upload Requirements
+P0194: 6.1 Upload Methods
+P0195: The user should be able to upload cards using:
+P0196: Drag and drop.
+P0197: File-selection button.
+P0198: Mobile camera.
+P0199: Mobile photo gallery.
+P0200: Multiple-file selection.
+P0201: Front and back images of the same card.
+P0202: Supported file types:
+P0203: JPG
+P0204: JPEG
+P0205: PNG
+P0206: WEBP
+P0207: HEIC, if image conversion is supported
+P0208: PDF may be supported in a later phase.
+P0209: 
+P0210: 6.2 Upload Limits
+P0211: Recommended initial limits:
+P0212: Maximum files per batch: 20
+P0213: Maximum size per image: 10 MB
+P0214: Maximum total batch size: 100 MB
+P0215: Minimum recommended resolution: 800 pixels on the shortest side
+P0216: The limits should be configurable by the administrator.
+P0217: 
+P0218: 6.3 Upload Screen
+P0219: The upload screen should show:
+P0220: Upload area.
+P0221: Supported formats.
+P0222: Maximum file size.
+P0223: Number of selected files.
+P0224: Thumbnail preview.
+P0225: Remove-file option.
+P0226: Rotate-image option.
+P0227: Front/back pairing option.
+P0228: Upload button.
+P0229: Cancel button.
+P0230: 
+P0231: 6.4 File-Level Status
+P0232: Each card should independently show:
+P0233: Waiting
+P0234: Uploading
+P0235: Uploaded
+P0236: Processing
+P0237: Requires review
+P0238: Completed
+P0239: Failed
+P0240: Cancelled
+P0241: Example:
+P0242: card-1.jpg — Completed
+card-2.jpg — Requires Review
+card-3.jpg — Failed
+P0243: One failed card should not cause the entire batch to fail.
+P0244: 
+P0245: 7. Upload Edge Cases
+P0246: The system should handle the following cases.
+P0247: 7.1 Unsupported File Type
+P0248: Examples:
+P0249: Executable file
+P0250: Word document
+P0251: Video
+P0252: SVG with unsafe embedded content
+P0253: Expected behaviour:
+P0254: Reject the file.
+P0255: Explain which formats are supported.
+P0256: Continue accepting valid files in the batch.
+P0257: 
+P0258: 7.2 File Too Large
+P0259: Expected behaviour:
+P0260: Reject only the oversized file.
+P0261: Show its current size and maximum allowed size.
+P0262: Allow the user to continue with remaining files.
+P0263: 
+P0264: 7.3 Duplicate Image Upload
+P0265: The same image may be uploaded:
+P0266: Twice in the same batch.
+P0267: In different batches.
+P0268: By different users.
+P0269: Recommended behaviour:
+P0270: Calculate an image fingerprint or checksum.
+P0271: Warn the user if the same image already exists in their workspace.
+P0272: Allow the user to:
+P0273: Skip it
+P0274: Upload again
+P0275: Open the existing record
+P0276: 
+P0277: 7.4 Network Failure During Upload
+P0278: Expected behaviour:
+P0279: Keep successfully uploaded files.
+P0280: Retry only failed files.
+P0281: Show retry button.
+P0282: Do not create duplicate uploads during retry.
+P0283: Use a unique upload identifier for every file.
+P0284: 
+P0285: 7.5 Browser Closed During Upload
+P0286: If upload has not completed:
+P0287: The incomplete browser upload may be lost.
+P0288: The user should see unfinished files when returning only if resumable upload is implemented.
+P0289: If upload has completed but AI processing is still running:
+P0290: Processing should continue on the server.
+P0291: The user should see updated results after logging in again.
+P0292: 
+P0293: 7.6 Multiple Cards in One Image
+P0294: The user may upload a photograph containing several business cards.
+P0295: The system should:
+P0296: Detect whether more than one card is present.
+P0297: Either:
+P0298: Automatically crop each card into a separate record, or
+P0299: Ask the user to upload one card per image
+P0300: For the first version, one card per image is recommended.
+P0301: 
+P0302: 7.7 Front and Back of One Card
+P0303: Some cards contain contact information on both sides.
+P0304: The user should be able to:
+P0305: Mark two images as the same card.
+P0306: Combine extraction results.
+P0307: Avoid creating two separate contacts.
+P0308: Potential merge rules:
+P0309: Prefer clear values.
+P0310: Keep multiple phone numbers and emails.
+P0311: Do not overwrite a visible value with a blank value.
+P0312: Flag conflicting values for review.
+P0313: 
+P0314: 7.8 Non-Business-Card Image
+P0315: The user may upload:
+P0316: A personal photo.
+P0317: Invoice.
+P0318: Product image.
+P0319: Screenshot.
+P0320: Blank image.
+P0321: The system should detect that the image is not a business card and show:
+P0322: This image does not appear to contain a business card.
+P0323: The user may remove it or attempt extraction manually.
+P0324: 
+P0325: 8. Image Preprocessing Requirements
+P0326: Before sending an image for AI extraction, the application should:
+P0327: Correct image orientation.
+P0328: Resize very large images.
+P0329: Improve contrast where appropriate.
+P0330: Reduce noise.
+P0331: Sharpen text carefully.
+P0332: Preserve the original image.
+P0333: Create a processed copy for extraction.
+P0334: Avoid over-processing that changes visible characters.
+P0335: The system should store:
+P0336: Original image.
+P0337: Processed image, if required.
+P0338: Image width and height.
+P0339: File size.
+P0340: Upload timestamp.
+P0341: Image checksum.
+P0342: User and organisation ownership.
+P0343: 
+P0344: 9. AI Extraction Requirements
+P0345: The AI should extract information only when it is visible or strongly supported by the card.
+P0346: It should not invent:
+P0347: Missing email addresses.
+P0348: Missing surnames.
+P0349: Phone-country codes without sufficient context.
+P0350: Company names not visible on the card.
+P0351: Social-media handles not present.
+P0352: Postal codes based only on a city name.
+P0353: 
+P0354: 9.1 Fields to Extract
+P0355: Personal Details
+P0356: Full name
+P0357: First name
+P0358: Middle name
+P0359: Last name
+P0360: Prefix
+P0361: Suffix
+P0362: Work Details
+P0363: Job title
+P0364: Department
+P0365: Company name
+P0366: Brand name
+P0367: Business category
+P0368: Contact Details
+P0369: Primary phone
+P0370: Secondary phones
+P0371: Mobile number
+P0372: Office number
+P0373: Landline
+P0374: Fax
+P0375: Extension
+P0376: Primary email
+P0377: Secondary emails
+P0378: Website
+P0379: LinkedIn URL
+P0380: Other social links
+P0381: Address
+P0382: Address line 1
+P0383: Address line 2
+P0384: Landmark
+P0385: City
+P0386: District
+P0387: State
+P0388: Postal code
+P0389: Country
+P0390: Additional Information
+P0391: GST number, if visible
+P0392: QR-code value
+P0393: Notes
+P0394: Languages detected
+P0395: Raw visible text
+P0396: Overall confidence
+P0397: Field-level confidence
+P0398: Warnings
+P0399: 
+P0400: 9.2 Multiple Values
+P0401: The system should support:
+P0402: Multiple phone numbers.
+P0403: Multiple email addresses.
+P0404: Multiple websites.
+P0405: Multiple office locations.
+P0406: Multiple social-media links.
+P0407: The user should be able to select:
+P0408: Primary phone.
+P0409: Primary email.
+P0410: Primary address.
+P0411: 
+P0412: 9.3 Field Confidence
+P0413: Every extracted field should have a confidence score or confidence category.
+P0414: Example:
+P0415: Full name: 98%
+Company: 96%
+Email: 88%
+Phone: 99%
+City: 64%
+P0416: Recommended confidence behaviour:
+P0417: 90% and above: High confidence
+P0418: 70% to 89%: Medium confidence
+P0419: Below 70%: Low confidence
+P0420: Low-confidence fields should be highlighted.
+P0421: The user should be required to review records containing low-confidence critical fields.
+P0422: Critical fields include:
+P0423: Name
+P0424: Phone
+P0425: Email
+P0426: Company
+P0427: 
+P0428: 9.4 Second Verification Pass
+P0429: For higher accuracy, the system may perform a second AI pass.
+P0430: The second pass should:
+P0431: Compare extracted details with the original image.
+P0432: Check spelling.
+P0433: Check email structure.
+P0434: Check phone digits.
+P0435: Detect missing visible information.
+P0436: Identify conflicting fields.
+P0437: Reduce confidence where text is unclear.
+P0438: The second pass may be configurable because it increases AI cost.
+P0439: Suggested options:
+P0440: Standard extraction
+P0441: High-accuracy extraction
+P0442: Manual review only
+P0443: 
+P0444: 10. Validation Requirements
+P0445: After extraction, the server should validate the data.
+P0446: 10.1 Email Validation
+P0447: Check:
+P0448: Correct email structure.
+P0449: No spaces.
+P0450: Valid domain format.
+P0451: Common OCR errors such as:
+P0452: 0 instead of o
+P0453: 1 instead of l
+P0454: Missing @
+P0455: Incorrect punctuation
+P0456: The system should not automatically change an uncertain email without warning.
+P0457: 
+P0458: 10.2 Phone Validation
+P0459: Check:
+P0460: Number length.
+P0461: Country code.
+P0462: Invalid characters.
+P0463: Extension.
+P0464: Duplicate phone values.
+P0465: Country-specific formatting where possible.
+P0466: The raw visible number should also be retained.
+P0467: Example:
+P0468: Raw: 09876543210
+Normalised: +91 98765 43210
+P0469: Normalisation should not replace the raw source value permanently.
+P0470: 
+P0471: 10.3 Website Validation
+P0472: Check:
+P0473: Domain structure.
+P0474: Spaces.
+P0475: Common OCR mistakes.
+P0476: Whether www is missing.
+P0477: Whether the card contains an email rather than a website.
+P0478: The system does not need to visit every website during extraction.
+P0479: 
+P0480: 10.4 Name Validation
+P0481: The system should avoid:
+P0482: Treating the company name as the person’s name.
+P0483: Treating the designation as the name.
+P0484: Splitting a one-word name incorrectly.
+P0485: Forcing Western first-name and surname patterns on regional names.
+P0486: The full name should always be stored separately from split name fields.
+P0487: 
+P0488: 11. Business-Card Review Screen
+P0489: After extraction, the user should see:
+P0490: Original card image.
+P0491: Zoom option.
+P0492: Rotate option.
+P0493: Extracted fields.
+P0494: Confidence indicators.
+P0495: Validation warnings.
+P0496: Duplicate warnings.
+P0497: Save button.
+P0498: Skip button.
+P0499: Reprocess button.
+P0500: Delete button.
+P0501: For multiple cards, the screen should support:
+P0502: One-card-at-a-time review.
+P0503: Table review.
+P0504: Bulk save.
+P0505: Bulk delete.
+P0506: Filter by:
+P0507: Completed
+P0508: Needs review
+P0509: Failed
+P0510: Duplicate
+P0511: 
+P0512: 12. Editing Requirements
+P0513: The user should be able to:
+P0514: Edit every extracted field.
+P0515: Add missing information.
+P0516: Delete incorrect information.
+P0517: Add additional phone numbers.
+P0518: Add additional emails.
+P0519: Select primary contact fields.
+P0520: Merge duplicate contacts.
+P0521: Add notes.
+P0522: Add tags.
+P0523: Mark a record as reviewed.
+P0524: The application should distinguish between:
+P0525: AI-extracted value.
+P0526: User-corrected value.
+P0527: Example:
+P0528: AI extracted: Rajul Sharma
+User corrected: Rahul Sharma
+P0529: The final saved value should be Rahul Sharma.
+P0530: The original extracted value may be retained in extraction history.
+P0531: 
+P0532: 13. Saving Requirements
+P0533: When the user clicks Save:
+P0534: Validate required fields.
+P0535: Check for duplicate contacts.
+P0536: Save the contact in the database.
+P0537: Link the contact to the uploaded image.
+P0538: Record the user who saved it.
+P0539: Record whether the contact was edited.
+P0540: Mark the extraction as completed.
+P0541: Trigger Google Sheets sync if enabled.
+P0542: Show confirmation.
+P0543: A contact should not be considered permanently saved until the database confirms the transaction.
+P0544: 
+P0545: 14. Required and Optional Fields
+P0546: A contact should be saveable when at least one meaningful identifier exists.
+P0547: Minimum requirement:
+P0548: Person name, or
+P0549: Company name, or
+P0550: Phone number, or
+P0551: Email address
+P0552: The system should warn but may still allow saving when only limited information is available.
+P0553: Example:
+P0554: This card contains only a company name and website. Save anyway?
+P0555: 
+P0556: 15. Duplicate Detection
+P0557: Duplicate detection should occur:
+P0558: After AI extraction.
+P0559: Before saving.
+P0560: Before Google Sheets sync.
+P0561: During bulk import.
+P0562: During Excel import, if added later.
+P0563: 
+P0564: 15.1 Strong Duplicate Match
+P0565: Treat as a strong match when:
+P0566: Same normalised email address.
+P0567: Same normalised mobile number.
+P0568: Same uploaded image checksum.
+P0569: 
+P0570: 15.2 Possible Duplicate Match
+P0571: Treat as a possible match when:
+P0572: Same full name and company.
+P0573: Same name and similar phone number.
+P0574: Same company, title and email domain.
+P0575: Same name with minor spelling differences.
+P0576: 
+P0577: 15.3 Duplicate Actions
+P0578: The user should be able to:
+P0579: Skip the new record.
+P0580: Keep both records.
+P0581: Merge with existing contact.
+P0582: Replace selected fields.
+P0583: Add the new card as another source for the existing contact.
+P0584: The system should never automatically merge uncertain records without informing the user.
+P0585: 
+P0586: 16. Contact Storage Requirements
+P0587: The permanent contact record should be stored in a database.
+P0588: Recommended database:
+P0589: PostgreSQL
+P0590: Each contact should include:
+P0591: Contact ID
+P0592: Organisation ID
+P0593: Owner user ID
+P0594: Full name
+P0595: Split name fields
+P0596: Company
+P0597: Job title
+P0598: Department
+P0599: Phone numbers
+P0600: Email addresses
+P0601: Website
+P0602: Address
+P0603: Social links
+P0604: Notes
+P0605: Tags
+P0606: Source type
+P0607: Source image ID
+P0608: Created time
+P0609: Updated time
+P0610: Created by
+P0611: Updated by
+P0612: Review status
+P0613: Duplicate status
+P0614: Google Sheets sync status
+P0615: 
+P0616: 17. Memory and Storage Requirements
+P0617: Different information should be stored in different places.
+P0618: 17.1 Temporary Browser Memory
+P0619: Use browser or React state for:
+P0620: Selected files.
+P0621: Image previews.
+P0622: Current form edits.
+P0623: Current filters.
+P0624: Upload progress.
+P0625: Open popup or modal.
+P0626: Unsaved review information.
+P0627: This information may disappear after a refresh unless specifically preserved.
+P0628: 
+P0629: 17.2 Session Storage
+P0630: Use session storage for:
+P0631: Current review step.
+P0632: Temporary batch identifier.
+P0633: Unsaved form recovery.
+P0634: Redirect destination after login.
+P0635: Session storage should not contain:
+P0636: Passwords.
+P0637: Private API keys.
+P0638: Google access tokens.
+P0639: Sensitive permanent contact data unless encrypted and strictly necessary.
+P0640: 
+P0641: 17.3 Local Storage
+P0642: Use local storage only for non-sensitive preferences such as:
+P0643: Theme.
+P0644: Preferred table view.
+P0645: Last-used download format.
+P0646: Number of rows per page.
+P0647: Do not store:
+P0648: Passwords.
+P0649: Authentication tokens.
+P0650: Google refresh tokens.
+P0651: Full customer databases.
+P0652: Business-card images.
+P0653: 
+P0654: 17.4 Server Memory
+P0655: Server RAM may be used temporarily for:
+P0656: Image processing.
+P0657: Request validation.
+P0658: Short calculations.
+P0659: Temporary AI results.
+P0660: Permanent data must not exist only in server memory because it may disappear when:
+P0661: The server restarts.
+P0662: New code is deployed.
+P0663: The application scales.
+P0664: The server crashes.
+P0665: 
+P0666: 17.5 Database
+P0667: Use the database for:
+P0668: Users.
+P0669: Organisations.
+P0670: Contacts.
+P0671: Upload batches.
+P0672: Card records.
+P0673: Extraction results.
+P0674: Google connection information.
+P0675: Sync status.
+P0676: Export history.
+P0677: Audit logs.
+P0678: User preferences requiring cross-device access.
+P0679: 
+P0680: 17.6 Object Storage
+P0681: Use object storage for:
+P0682: Original business-card images.
+P0683: Processed images.
+P0684: Generated Excel files.
+P0685: Temporary export files.
+P0686: Optional PDF reports.
+P0687: Examples:
+P0688: Amazon S3
+P0689: Google Cloud Storage
+P0690: Azure Blob Storage
+P0691: Cloudflare R2
+P0692: Business-card images should be private by default.
+P0693: 
+P0694: 17.7 Cache
+P0695: Redis or another cache may be used for:
+P0696: Processing progress.
+P0697: Job queue.
+P0698: Session lookup.
+P0699: Rate-limit counters.
+P0700: Frequently used dashboard totals.
+P0701: Temporary export status.
+P0702: Cache should not be the only source of important data.
+P0703: 
+P0704: 18. Image Retention and Deletion
+P0705: The organisation should be able to configure card-image retention.
+P0706: Possible options:
+P0707: Delete image immediately after confirmed extraction.
+P0708: Retain for 30 days.
+P0709: Retain for 90 days.
+P0710: Retain permanently until manually deleted.
+P0711: Recommended default:
+P0712: Retain images for 90 days.
+P0713: Allow user or organisation to change the setting.
+P0714: Keep extracted contact data unless the user deletes it.
+P0715: When an image is deleted:
+P0716: Remove the object-storage file.
+P0717: Mark the file as deleted in the database.
+P0718: Retain minimal audit information if legally allowed.
+P0719: Do not leave publicly accessible image URLs.
+P0720: 
+P0721: 19. Google Account and Google Sheets Connection
+P0722: For a multi-user application, each user or organisation should connect their own Google account using Google OAuth.
+P0723: A shared service account is suitable only for an internal prototype using one centrally managed spreadsheet.
+P0724: 
+P0725: 19.1 Connect Google Account Flow
+P0726: User opens Integrations
+        ↓
+Clicks Connect Google Sheets
+        ↓
+Redirected to Google
+        ↓
+User selects Google account
+        ↓
+User approves required permission
+        ↓
+Google returns authorisation code
+        ↓
+Server securely stores encrypted connection
+        ↓
+Connection shown as active
+P0727: The system should request only the minimum required Google permissions.
+P0728: 
+P0729: 19.2 Google Connection Storage
+P0730: The application may store:
+P0731: Google account email.
+P0732: Encrypted access token.
+P0733: Encrypted refresh token.
+P0734: Token expiry time.
+P0735: Granted scopes.
+P0736: Connected user.
+P0737: Connected organisation.
+P0738: Connection date.
+P0739: Last successful sync time.
+P0740: Connection status.
+P0741: Tokens must:
+P0742: Be encrypted at rest.
+P0743: Never be exposed to frontend JavaScript.
+P0744: Never be stored in local storage.
+P0745: Be removed when the user disconnects Google.
+P0746: 
+P0747: 19.3 Google Sheets Setup Options
+P0748: The user should be able to:
+P0749: Option A: Create a New Google Sheet
+P0750: The system creates a spreadsheet with a name such as:
+P0751: Business Card Contacts – July 2026
+P0752: Option B: Select an Existing Google Sheet
+P0753: The user selects:
+P0754: Spreadsheet.
+P0755: Worksheet or tab.
+P0756: Header row.
+P0757: Field mapping.
+P0758: Option C: Paste Google Sheet Link
+P0759: The user pastes the sheet URL.
+P0760: The server verifies:
+P0761: The file exists.
+P0762: The connected user has access.
+P0763: The file is a Google Sheet.
+P0764: The required worksheet exists.
+P0765: 
+P0766: 19.4 Default Google Sheet Columns
+P0767: Recommended columns:
+P0768: Contact ID
+P0769: Full Name
+P0770: First Name
+P0771: Last Name
+P0772: Job Title
+P0773: Department
+P0774: Company
+P0775: Primary Phone
+P0776: Other Phones
+P0777: Primary Email
+P0778: Other Emails
+P0779: Website
+P0780: LinkedIn
+P0781: Address
+P0782: City
+P0783: State
+P0784: Postal Code
+P0785: Country
+P0786: Notes
+P0787: Tags
+P0788: Card Image Reference
+P0789: Confidence
+P0790: Review Status
+P0791: Uploaded By
+P0792: Created At
+P0793: Updated At
+P0794: 
+P0795: 19.5 Google Sheet Field Mapping
+P0796: When using an existing sheet, the user should be able to map:
+P0797: Application Full Name → Sheet column “Customer Name”
+Application Company → Sheet column “Organisation”
+Application Phone → Sheet column “Mobile”
+P0798: The system should save the mapping for future syncs.
+P0799: 
+P0800: 19.6 Sheet Sync Modes
+P0801: The user should be able to choose:
+P0802: Manual Sync
+P0803: The user clicks:
+P0804: Save to Google Sheets
+P0805: Automatic Sync
+P0806: Every saved contact is automatically sent to the configured sheet.
+P0807: Scheduled Sync
+P0808: Contacts are synced:
+P0809: Hourly
+P0810: Daily
+P0811: At a configured time
+P0812: For the first version, manual and automatic sync are sufficient.
+P0813: 
+P0814: 19.7 Google Sheets Sync Status
+P0815: Each contact should display:
+P0816: Not configured
+P0817: Pending
+P0818: Syncing
+P0819: Synced
+P0820: Failed
+P0821: Requires reconnection
+P0822: Skipped as duplicate
+P0823: The system should store:
+P0824: Spreadsheet ID.
+P0825: Worksheet ID.
+P0826: Row number, where available.
+P0827: Last sync time.
+P0828: Sync error.
+P0829: Number of retry attempts.
+P0830: 
+P0831: 20. Google Sheets Edge Cases
+P0832: 20.1 Google Permission Denied
+P0833: Expected behaviour:
+P0834: Return the user to the application.
+P0835: Show that the connection was not completed.
+P0836: Do not create a partial connection.
+P0837: 
+P0838: 20.2 Google Token Expired
+P0839: Expected behaviour:
+P0840: Attempt refresh using the refresh token.
+P0841: If refresh fails, mark connection as requiring reconnection.
+P0842: Do not delete unsynced contacts.
+P0843: 
+P0844: 20.3 User Revokes Google Access
+P0845: Expected behaviour:
+P0846: Future sync should fail safely.
+P0847: Mark connection as disconnected.
+P0848: Ask the user to reconnect.
+P0849: Preserve pending sync records.
+P0850: 
+P0851: 20.4 Sheet Deleted
+P0852: Expected behaviour:
+P0853: Mark sync as failed.
+P0854: Inform the user that the selected sheet is unavailable.
+P0855: Allow the user to select or create another sheet.
+P0856: 
+P0857: 20.5 Worksheet Renamed or Deleted
+P0858: Expected behaviour:
+P0859: Try to locate it using worksheet ID rather than name.
+P0860: If unavailable, ask the user to select another worksheet.
+P0861: 
+P0862: 20.6 Sheet Column Changed
+P0863: If a user renames or removes columns:
+P0864: Detect the mismatch.
+P0865: Stop automatic sync if mapping is unsafe.
+P0866: Ask the user to remap fields.
+P0867: Do not write data into the wrong columns.
+P0868: 
+P0869: 20.7 No Edit Permission
+P0870: Expected behaviour:
+P0871: Show that the connected Google account cannot edit the sheet.
+P0872: Ask the user to request access or select another sheet.
+P0873: 
+P0874: 20.8 Google API Rate Limit
+P0875: Expected behaviour:
+P0876: Add sync request to a retry queue.
+P0877: Use increasing retry intervals.
+P0878: Do not create duplicate rows.
+P0879: Show sync as pending or delayed.
+P0880: 
+P0881: 20.9 Duplicate Rows in Google Sheets
+P0882: The system should include the internal Contact ID in the sheet.
+P0883: Before appending a record:
+P0884: Check whether that Contact ID was already synced.
+P0885: Update the existing row where appropriate.
+P0886: Avoid appending the same contact repeatedly.
+P0887: 
+P0888: 20.10 User Edits Contact After Sync
+P0889: The user should be able to choose:
+P0890: Update the existing Google Sheet row.
+P0891: Do not change the Google Sheet.
+P0892: Ask every time.
+P0893: Recommended default:
+P0894: Update the existing row automatically if automatic sync is enabled.
+P0895: 
+P0896: 21. Excel Download Requirements
+P0897: The user should be able to download:
+P0898: All contacts.
+P0899: Selected contacts.
+P0900: Filtered contacts.
+P0901: Contacts from a particular upload batch.
+P0902: Contacts from a date range.
+P0903: Contacts uploaded by a specific user.
+P0904: Contacts requiring review.
+P0905: Contacts not yet synced to Google Sheets.
+P0906: 
+P0907: 21.1 Excel Export Format
+P0908: Default format:
+P0909: .xlsx
+P0910: Optional later formats:
+P0911: CSV
+P0912: Google Sheets
+P0913: vCard
+P0914: CRM import formats
+P0915: 
+P0916: 21.2 Export Columns
+P0917: The export screen should allow:
+P0918: Select all columns.
+P0919: Choose specific columns.
+P0920: Reorder columns.
+P0921: Save an export template.
+P0922: 
+P0923: 21.3 Excel Data Handling
+P0924: The export should:
+P0925: Preserve phone numbers as text.
+P0926: Preserve postal codes with leading zeroes.
+P0927: Support Unicode and regional-language names.
+P0928: Avoid scientific notation for long numbers.
+P0929: Use separate columns for primary and secondary values.
+P0930: Escape unsafe spreadsheet formulas.
+P0931: Values beginning with the following characters must be protected:
+P0932: =
++
+-
+@
+P0933: This prevents spreadsheet-formula injection.
+P0934: 
+P0935: 21.4 Small Export
+P0936: For small datasets:
+P0937: User clicks Download
+        ↓
+Server generates Excel
+        ↓
+File downloads immediately
+P0938: 
+P0939: 21.5 Large Export
+P0940: For large datasets:
+P0941: User requests export
+        ↓
+Export job is created
+        ↓
+File is generated in the background
+        ↓
+File is stored temporarily
+        ↓
+User receives a download link
+P0942: The generated file should expire after a configurable period, such as 24 hours.
+P0943: 
+P0944: 22. Excel Download Edge Cases
+P0945: The system should handle:
+P0946: No contacts selected.
+P0947: Export containing zero matching records.
+P0948: Very large export.
+P0949: Export job failure.
+P0950: Browser download blocked.
+P0951: User closes the page during export.
+P0952: Special characters in names.
+P0953: Multiple phone numbers.
+P0954: Long addresses.
+P0955: Leading zeroes.
+P0956: Duplicate column names.
+P0957: Expired download link.
+P0958: User attempting to download another organisation’s export.
+P0959: 
+P0960: 23. Contact List Requirements
+P0961: The contact list should support:
+P0962: Search.
+P0963: Filters.
+P0964: Sorting.
+P0965: Pagination.
+P0966: Bulk selection.
+P0967: Bulk export.
+P0968: Bulk delete.
+P0969: Bulk Google Sheets sync.
+P0970: Bulk tagging.
+P0971: Duplicate review.
+P0972: Searchable fields should include:
+P0973: Name.
+P0974: Company.
+P0975: Phone.
+P0976: Email.
+P0977: Job title.
+P0978: City.
+P0979: State.
+P0980: Tags.
+P0981: Notes.
+P0982: 
+P0983: 24. Upload History
+P0984: The system should retain upload history.
+P0985: Each batch should show:
+P0986: Batch ID.
+P0987: Upload date.
+P0988: Uploaded by.
+P0989: Number of cards.
+P0990: Completed count.
+P0991: Failed count.
+P0992: Review-required count.
+P0993: Duplicate count.
+P0994: Processing duration.
+P0995: Export status.
+P0996: Google Sheets sync status.
+P0997: The user should be able to reopen a previous batch.
+P0998: 
+P0999: 25. Processing and Background Jobs
+P1000: Large batches should not be processed entirely within one browser request.
+P1001: Recommended flow:
+P1002: User uploads cards
+        ↓
+Server creates a processing job
+        ↓
+Queue stores the job
+        ↓
+Worker processes each card
+        ↓
+Results are saved to database
+        ↓
+UI retrieves progress
+P1003: Each card should be independently retriable.
+P1004: 
+P1005: 25.1 Retry Rules
+P1006: Retry automatically for:
+P1007: Temporary AI service failure.
+P1008: Network timeout.
+P1009: Rate limit.
+P1010: Temporary storage failure.
+P1011: Temporary Google Sheets failure.
+P1012: Do not retry automatically for:
+P1013: Unsupported file.
+P1014: Corrupt image.
+P1015: Clearly non-business-card image.
+P1016: Permission denied.
+P1017: Invalid configuration.
+P1018: 
+P1019: 26. Processing Edge Cases
+P1020: The application should handle:
+P1021: Blurred card.
+P1022: Low-resolution card.
+P1023: Card partly outside the image.
+P1024: Glare.
+P1025: Shadow.
+P1026: Folded or damaged card.
+P1027: Vertical card.
+P1028: Rotated card.
+P1029: Dark card with light text.
+P1030: Stylised fonts.
+P1031: Handwritten information.
+P1032: QR-only card.
+P1033: Bilingual card.
+P1034: Hindi or regional-language text.
+P1035: More than one person listed on the card.
+P1036: Multiple office addresses.
+P1037: Shared company phone number.
+P1038: Missing person name.
+P1039: Missing company name.
+P1040: Logo interpreted as text.
+P1041: Designation interpreted as company.
+P1042: Similar-looking characters.
+P1043: AI response timeout.
+P1044: AI service unavailable.
+P1045: Partially extracted record.
+P1046: Conflicting information on front and back.
+P1047: Unclear fields should remain blank or be marked for review.
+P1048: 
+P1049: 27. QR-Code Handling
+P1050: If a card contains a QR code, the system should attempt to decode it.
+P1051: Possible QR contents:
+P1052: Website.
+P1053: vCard.
+P1054: LinkedIn profile.
+P1055: Email.
+P1056: Phone number.
+P1057: Plain text.
+P1058: The decoded QR value should be shown separately from visible-text extraction.
+P1059: If QR information conflicts with printed information:
+P1060: Show both values.
+P1061: Ask the user which one to keep.
+P1062: Do not silently overwrite.
+P1063: 
+P1064: 28. Audit Log Requirements
+P1065: The system should record important actions.
+P1066: Examples:
+P1067: User uploaded a card.
+P1068: AI extraction completed.
+P1069: User edited a phone number.
+P1070: Contact was merged.
+P1071: Contact was deleted.
+P1072: Google Sheets connection created.
+P1073: Contact synced to Google Sheets.
+P1074: Excel export downloaded.
+P1075: User changed retention settings.
+P1076: Each audit entry should contain:
+P1077: Action.
+P1078: User.
+P1079: Organisation.
+P1080: Date and time.
+P1081: Related record.
+P1082: Before and after values for important edits.
+P1083: IP address or device information where appropriate.
+P1084: Passwords, private keys and authentication tokens must never appear in audit logs.
+P1085: 
+P1086: 29. Security Requirements
+P1087: The application should:
+P1088: Use HTTPS.
+P1089: Encrypt data in transit.
+P1090: Encrypt sensitive credentials at rest.
+P1091: Store passwords using secure password hashing.
+P1092: Use secure session cookies.
+P1093: Validate every uploaded file.
+P1094: Prevent access across organisations.
+P1095: Rate-limit login and upload endpoints.
+P1096: Validate all user input.
+P1097: Protect against SQL injection.
+P1098: Protect against cross-site scripting.
+P1099: Protect against cross-site request forgery.
+P1100: Scan or validate uploaded files.
+P1101: Never expose server credentials to the browser.
+P1102: Never place OpenAI or Google private keys in frontend code.
+P1103: 
+P1104: 30. Multi-Tenant Data Separation
+P1105: Every permanent record should contain an organisation or workspace identifier.
+P1106: Example:
+P1107: organisation_id = org_102
+P1108: All server queries should filter by the authenticated user’s organisation.
+P1109: A user from Organisation A must never be able to:
+P1110: View Organisation B contacts.
+P1111: Download Organisation B exports.
+P1112: Access Organisation B images.
+P1113: Sync to Organisation B sheets.
+P1114: Guess another record ID and retrieve it.
+P1115: 
+P1116: 31. Privacy Requirements
+P1117: Business cards contain personal information.
+P1118: The system should provide:
+P1119: Privacy policy.
+P1120: Data-retention policy.
+P1121: User-controlled deletion.
+P1122: Organisation-level retention settings.
+P1123: Google disconnect option.
+P1124: Account deletion.
+P1125: Workspace deletion.
+P1126: Export-before-deletion option.
+P1127: The application should clearly explain:
+P1128: What data is collected.
+P1129: Why it is collected.
+P1130: Whether images are retained.
+P1131: Which AI provider processes images.
+P1132: Whether data is used for model training.
+P1133: How long exports remain available.
+P1134: How users can request deletion.
+P1135: 
+P1136: 32. Contact Deletion
+P1137: When a contact is deleted:
+P1138: Remove it from normal application views.
+P1139: Prevent future exports.
+P1140: Mark linked sync records.
+P1141: Optionally delete the associated card image.
+P1142: Record deletion in the audit log.
+P1143: The system may initially use soft deletion.
+P1144: Example:
+P1145: deleted_at = 2026-07-15
+P1146: Permanent deletion may occur after a retention period.
+P1147: 
+P1148: 33. Account Deletion
+P1149: When a user deletes their account:
+P1150: Individual workspace
+P1151: Delete or schedule deletion of contacts.
+P1152: Delete card images.
+P1153: Delete exports.
+P1154: Remove Google tokens.
+P1155: Invalidate sessions.
+P1156: Remove personal settings.
+P1157: Organisation workspace
+P1158: If the user is not the only owner:
+P1159: Transfer ownership before account deletion.
+P1160: If the user is the only owner:
+P1161: Require confirmation before deleting the workspace.
+P1162: Allow data export.
+P1163: Schedule permanent deletion.
+P1164: 
+P1165: 34. Error Messages
+P1166: Error messages should be understandable.
+P1167: Bad message:
+P1168: Error 500: extraction pipeline failure
+P1169: Better message:
+P1170: We could not read this card clearly. Try uploading a sharper image or enter the details manually.
+P1171: Each error should contain:
+P1172: What happened.
+P1173: Whether anything was saved.
+P1174: What the user can do next.
+P1175: Retry option where appropriate.
+P1176: 
+P1177: 35. Notifications
+P1178: The system may show:
+P1179: In-app notifications.
+P1180: Email notifications for large completed batches.
+P1181: Processing-complete notifications.
+P1182: Google connection failure.
+P1183: Export-ready notification.
+P1184: Reconnection-required notification.
+P1185: The first version may use only in-app notifications.
+P1186: 
+P1187: 36. Performance Requirements
+P1188: Recommended initial targets:
+P1189: Upload should begin within 1 second.
+P1190: Upload progress should be visible.
+P1191: Contact list should load within 2 seconds for normal datasets.
+P1192: Small Excel export should begin within 5 seconds.
+P1193: The UI should remain usable while cards are processed.
+P1194: One failed card should not block remaining cards.
+P1195: Processing should support at least 20 cards per batch.
+P1196: Actual AI-processing time will depend on image quality, model availability and batch size.
+P1197: 
+P1198: 37. Availability and Reliability
+P1199: The production system should:
+P1200: Store permanent data outside application-server memory.
+P1201: Use managed database backups.
+P1202: Retry temporary failures.
+P1203: Avoid duplicate records during retries.
+P1204: Log failed jobs.
+P1205: Support safe application deployments.
+P1206: Preserve processing jobs during server restarts where possible.
+P1207: 
+P1208: 38. Recommended Data Model
+P1209: Users
+P1210: id
+P1211: name
+P1212: email
+P1213: password hash
+P1214: email verified
+P1215: status
+P1216: created at
+P1217: updated at
+P1218: Organisations
+P1219: id
+P1220: name
+P1221: plan
+P1222: retention policy
+P1223: created at
+P1224: Organisation Members
+P1225: organisation id
+P1226: user id
+P1227: role
+P1228: status
+P1229: Upload Batches
+P1230: id
+P1231: organisation id
+P1232: uploaded by
+P1233: total files
+P1234: completed files
+P1235: failed files
+P1236: status
+P1237: created at
+P1238: Card Files
+P1239: id
+P1240: batch id
+P1241: original file name
+P1242: storage path
+P1243: processed storage path
+P1244: checksum
+P1245: file type
+P1246: file size
+P1247: status
+P1248: created at
+P1249: Extraction Results
+P1250: id
+P1251: card file id
+P1252: model used
+P1253: raw response
+P1254: structured response
+P1255: confidence
+P1256: warnings
+P1257: status
+P1258: processing time
+P1259: created at
+P1260: Contacts
+P1261: id
+P1262: organisation id
+P1263: owner id
+P1264: name fields
+P1265: company
+P1266: job title
+P1267: department
+P1268: addresses
+P1269: notes
+P1270: tags
+P1271: review status
+P1272: created at
+P1273: updated at
+P1274: deleted at
+P1275: Contact Phones
+P1276: contact id
+P1277: phone number
+P1278: raw number
+P1279: normalised number
+P1280: type
+P1281: extension
+P1282: primary status
+P1283: confidence
+P1284: Contact Emails
+P1285: contact id
+P1286: email
+P1287: type
+P1288: primary status
+P1289: confidence
+P1290: Google Connections
+P1291: id
+P1292: organisation id
+P1293: connected by
+P1294: Google email
+P1295: encrypted token
+P1296: encrypted refresh token
+P1297: expiry
+P1298: status
+P1299: Sheet Configurations
+P1300: id
+P1301: connection id
+P1302: spreadsheet id
+P1303: worksheet id
+P1304: field mapping
+P1305: sync mode
+P1306: status
+P1307: Sync Records
+P1308: contact id
+P1309: sheet configuration id
+P1310: row reference
+P1311: sync status
+P1312: error
+P1313: last synced at
+P1314: Export Jobs
+P1315: id
+P1316: requested by
+P1317: filters
+P1318: file path
+P1319: status
+P1320: expiry time
+P1321: Audit Logs
+P1322: id
+P1323: organisation id
+P1324: user id
+P1325: action
+P1326: entity type
+P1327: entity id
+P1328: metadata
+P1329: created at
+P1330: 
+P1331: 39. Recommended Production Architecture
+P1332: Web and mobile browser
+        ↓
+Next.js frontend
+        ↓
+Secure backend APIs
+        ↓
+Authentication service
+        ↓
+PostgreSQL database
+        ↓
+Private object storage
+        ↓
+Redis queue
+        ↓
+Background processing workers
+        ↓
+AI vision model
+        ↓
+Google Sheets API
+        ↓
+Excel generation service
+P1333: 
+P1334: 40. MVP Scope
+P1335: The minimum usable production version should include:
+P1336: User registration and login.
+P1337: Secure session management.
+P1338: Multiple-card upload.
+P1339: Image preview and removal.
+P1340: AI extraction.
+P1341: Basic image preprocessing.
+P1342: Field-level review.
+P1343: Manual editing.
+P1344: Confidence warnings.
+P1345: Contact saving.
+P1346: PostgreSQL storage.
+P1347: Private card-image storage.
+P1348: Contact list.
+P1349: Search.
+P1350: Duplicate detection.
+P1351: Excel download.
+P1352: Google account connection.
+P1353: Create or select Google Sheet.
+P1354: Manual Google Sheets sync.
+P1355: Basic audit logs.
+P1356: Basic error handling.
+P1357: Account logout.
+P1358: Contact and image deletion.
+P1359: 
+P1360: 41. Phase 2 Features
+P1361: Phase 2 may include:
+P1362: Organisation workspaces.
+P1363: Role-based permissions.
+P1364: Automatic Google Sheets sync.
+P1365: Scheduled sync.
+P1366: Advanced duplicate merging.
+P1367: Business-card front/back pairing.
+P1368: Automatic crop of multiple cards in one image.
+P1369: Offline mobile scanning.
+P1370: Native Android and iOS apps.
+P1371: CRM integrations.
+P1372: Salesforce integration.
+P1373: HubSpot integration.
+P1374: WhatsApp CRM integration.
+P1375: vCard export.
+P1376: Regional-language review.
+P1377: QR-based contact extraction.
+P1378: Custom extraction fields.
+P1379: Analytics dashboard.
+P1380: AI cost controls.
+P1381: Two-factor authentication.
+P1382: SSO for enterprise users.
+P1383: 
+P1384: 42. Acceptance Criteria
+P1385: The system will be considered functionally ready when:
+P1386: A user can register and log in securely.
+P1387: A logged-out user cannot access saved contacts.
+P1388: A user can upload multiple supported business-card images.
+P1389: Invalid files are rejected without stopping valid files.
+P1390: Each card receives an independent processing status.
+P1391: Extracted fields are shown with confidence and warnings.
+P1392: The user can edit every extracted field.
+P1393: The user can save contacts permanently.
+P1394: Saved contacts remain available after refresh, logout and server deployment.
+P1395: Business-card images are stored privately.
+P1396: Duplicate contacts are identified before saving.
+P1397: The user can download selected contacts as Excel.
+P1398: Phone numbers and postal codes are preserved correctly in Excel.
+P1399: The user can connect a Google account.
+P1400: The user can create or select a Google Sheet.
+P1401: Contacts can be sent to the configured Google Sheet.
+P1402: Duplicate sync retries do not create repeated sheet rows.
+P1403: Expired Google access is handled through reconnection.
+P1404: Users cannot access another organisation’s contacts or files.
+P1405: Failed AI, storage or Google requests can be retried safely.
+P1406: The user can delete contacts and business-card images.
+P1407: Important actions appear in audit logs.
+P1408: 
+P1409: 43. Final Product Principle
+P1410: The application should use each type of memory for the correct purpose:
+P1411: Temporary screen information
+→ Browser state
+
+Login identification
+→ Secure session cookie
+
+Permanent contacts
+→ PostgreSQL database
+
+Business-card images
+→ Private object storage
+
+Processing and retry status
+→ Database and job queue
+
+Short-term performance data
+→ Cache
+
+Google Sheets
+→ External sync destination
+
+Excel
+→ Downloadable export
+
+Backups
+→ Disaster recovery
+P1412: The database should remain the master record.
+P1413: Google Sheets, Excel and future CRM connections should receive copies of the final approved contact information.

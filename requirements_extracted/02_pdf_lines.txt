@@ -1,0 +1,407 @@
+--- PAGE 1 ---
+P001L001: Revised Contact Saving, Excel and Google Sheets
+P001L002: Requirements
+P001L003: 1. Mandatory Contact Fields
+P001L004: A contact can be saved only when the following two fields are available:
+P001L005: 1. Name
+P001L006: 2. Mobile Number
+P001L007: All remaining fields are optional.
+P001L008: The application should not save a contact when either the name or mobile number is missing.
+P001L009: Validation messages
+P001L010: When the name is missing:
+P001L011: Name is required. Please enter the contact's name before saving.
+P001L012: When the mobile number is missing:
+P001L013: Mobile number is required. Please enter a valid mobile number before saving.
+P001L014: When both are missing:
+P001L015: Name and mobile number are required before this contact can be saved.
+P001L016: The user should be able to manually enter missing mandatory information when the AI cannot read it
+P001L017: correctly.
+P001L018: 2. Mandatory and Optional Columns
+P001L019: 2.1 Mandatory Columns
+P001L020: The following columns must always be present in the Google Sheet and Excel file:
+P001L021: Column Requirement Description
+P001L022: Name Mandatory Full name of the person
+P001L023: Mobile Number Mandatory Primary contact number
+P001L024: 1
+--- PAGE 2 ---
+P002L001: These columns cannot be removed from the export or Google Sheet mapping.
+P002L002: 2.2 Recommended System Columns
+P002L003: The following columns should also be maintained automatically by the application:
+P002L004: Column Requirement Description
+P002L005: Contact ID System generated Unique internal identifier for the contact
+P002L006: Created Date System generated Date and time when the contact was first saved
+P002L007: Source System generated Business Card Scan, Business Card Upload or Manual Entry
+P002L008: Uploaded By System generated User who uploaded or scanned the card
+P002L009: These are not fields the user has to fill manually.
+P002L010: However, they are useful for:
+P002L011: • Preventing duplicate entries
+P002L012: • Tracking when a contact was added
+P002L013: • Identifying the original uploader
+P002L014: • Updating the correct Google Sheet row
+P002L015: • Maintaining an audit trail
+P002L016: 2.3 Optional Contact Columns
+P002L017: The following fields are optional:
+P002L018: Column Description
+P002L019: Company Name Company or organisation name
+P002L020: Designation Job title or role
+P002L021: Department Department of the person
+P002L022: Secondary Mobile Number Additional mobile number
+P002L023: Office Number Office or landline number
+P002L024: Email Address Primary email
+P002L025: Secondary Email Additional email
+P002L026: Website Company or personal website
+P002L027: LinkedIn URL LinkedIn profile
+P002L028: Address Complete address
+P002L029: 2
+--- PAGE 3 ---
+P003L001: Column Description
+P003L002: City City
+P003L003: State State
+P003L004: Postal Code PIN or postal code
+P003L005: Country Country
+P003L006: Notes Additional information
+P003L007: Tags User-defined contact classifications
+P003L008: Card Image Reference Reference to the uploaded business-card image
+P003L009: Extraction Confidence AI extraction confidence
+P003L010: Review Status Reviewed, Needs Review or Not Reviewed
+P003L011: 3. Exhibition Information
+P003L012: Two new columns should be introduced:
+P003L013: Column Requirement Description
+P003L014: Exhibition Name Optional Name of the exhibition, trade show or event
+P003L015: Exhibition Date Optional Date on which the contact was collected
+P003L016: Example:
+P003L017: Name Mobile Number Company Exhibition Name Exhibition Date
+P003L018: Rahul Sharma +91 98765 43210 ABC Jewellers IIJS Premiere 2026 08 August 2026
+P003L019: 3.1 Exhibition Name Entry
+P003L020: The user should be able to enter the exhibition name before uploading or scanning cards.
+P003L021: Example:
+P003L022: Exhibition Name: IIJS Premiere 2026
+P003L023: The entered exhibition name should automatically be applied to every card in that upload batch.
+P003L024: The user should still be able to change the exhibition name for an individual contact during review.
+P003L025: 3
+--- PAGE 4 ---
+P004L001: 3.2 Exhibition Date Entry
+P004L002: The user should be able to select an exhibition date before uploading or scanning cards.
+P004L003: The date should be selected using a calendar field.
+P004L004: Recommended stored format:
+P004L005: 2026-08-08
+P004L006: Recommended display format:
+P004L007: 08 August 2026
+P004L008: The selected date should automatically be applied to all cards in the batch.
+P004L009: 3.3 Remembering Exhibition Information
+P004L010: When the user scans multiple cards from the same exhibition, the application should remember the
+P004L011: selected:
+P004L012: • Exhibition name
+P004L013: • Exhibition date
+P004L014: • Destination sheet or Excel collection
+P004L015: This information should remain selected until:
+P004L016: • The user changes it
+P004L017: • The user starts a new exhibition collection
+P004L018: • The user logs out
+P004L019: • The current collection is closed
+P004L020: 4. Contact Collection Concept
+P004L021: The system should treat all related scans and uploads as part of a contact collection.
+P004L022: A collection may represent:
+P004L023: • One exhibition
+P004L024: • One trade show
+P004L025: • One client visit
+P004L026: • One sales trip
+P004L027: • One networking event
+P004L028: • One manually created contact group
+P004L029: 4
+--- PAGE 5 ---
+P005L001: Example collection:
+P005L002: Collection Name: IIJS Premiere 2026
+P005L003: Exhibition Name: IIJS Premiere 2026
+P005L004: Exhibition Date: 08 August 2026
+P005L005: Destination: Existing Google Sheet
+P005L006: All new contacts should be added to this collection by default.
+P005L007: 5. Default Append Behaviour
+P005L008: After the user saves the first batch, the application should remember the selected destination.
+P005L009: For every later upload or scan, the default behaviour should be:
+P005L010: Append new contacts to the existing sheet or Excel collection.
+P005L011: The application must never overwrite previously saved rows.
+P005L012: New contacts must always be added after the last occupied row.
+P005L013: Example:
+P005L014: Existing data ends at row 125
+P005L015: ↓
+P005L016: User saves 10 new contacts
+P005L017: ↓
+P005L018: New contacts are added from row 126 to row 135
+P005L019: Rows 1 to 125 must remain unchanged.
+P005L020: 6. Confirmation After Every Upload or Scan
+P005L021: After each upload or scan is completed, the application should ask:
+P005L022: Where would you like to save these contacts?
+P005L023: The user should see two options.
+P005L024: 5
+--- PAGE 6 ---
+P006L001: Option 1: Continue with Existing Collection
+P006L002: This should be selected by default.
+P006L003: Example:
+P006L004: ● Continue adding to “IIJS Premiere 2026”
+P006L005: New contacts will be appended after the existing rows.
+P006L006: When selected:
+P006L007: • Use the existing Google Sheet or Excel collection.
+P006L008: • Use the existing column structure.
+P006L009: • Append new contacts after the last row.
+P006L010: • Do not overwrite previous records.
+P006L011: • Continue using the current exhibition name and date unless changed.
+P006L012: Option 2: Create a New Collection
+P006L013: Example:
+P006L014: ○ Create a new sheet or Excel collection
+P006L015: When selected, the user should enter:
+P006L016: • Collection name
+P006L017: • Exhibition name, optional
+P006L018: • Exhibition date, optional
+P006L019: • Destination type:
+P006L020: • New Google Sheet
+P006L021: • New worksheet or tab
+P006L022: • New downloadable Excel file
+P006L023: 7. Default Selection
+P006L024: The system should always default to:
+P006L025: Continue adding to the existing collection
+P006L026: This reduces repeated work for users scanning many cards from the same event.
+P006L027: The application should display the destination clearly.
+P006L028: 6
+--- PAGE 7 ---
+P007L001: Example:
+P007L002: Current destination:
+P007L003: Google Sheet — IIJS Premiere 2026 Contacts
+P007L004: 25 contacts are already saved.
+P007L005: The next contact will be added from row 27.
+P007L006: Row 1 may contain the column headings, so 25 contacts would occupy rows 2 to 26.
+P007L007: 8. Google Sheets Append Requirements
+P007L008: When saving to an existing Google Sheet, the system should:
+P007L009: 1. Identify the configured spreadsheet.
+P007L010: 2. Identify the correct worksheet or tab.
+P007L011: 3. Locate the last occupied row.
+P007L012: 4. Validate that the expected header columns are present.
+P007L013: 5. Add new contacts beginning from the next empty row.
+P007L014: 6. Preserve all existing rows.
+P007L015: 7. Preserve existing formatting where possible.
+P007L016: 8. Record the row number used for every contact.
+P007L017: 9. Prevent the same contact from being appended twice during retries.
+P007L018: 8.1 Example Append Flow
+P007L019: Current sheet:
+P007L020: Row Name Mobile Number
+P007L021: 1 Name Mobile Number
+P007L022: 2 Amit Jain +91 98111 11111
+P007L023: 3 Priya Shah +91 98222 22222
+P007L024: 4 Rahul Mehta +91 98333 33333
+P007L025: After adding a new contact:
+P007L026: Row Name Mobile Number
+P007L027: 1 Name Mobile Number
+P007L028: 2 Amit Jain +91 98111 11111
+P007L029: 3 Priya Shah +91 98222 22222
+P007L030: 7
+--- PAGE 8 ---
+P008L001: Row Name Mobile Number
+P008L002: 4 Rahul Mehta +91 98333 33333
+P008L003: 5 Neha Agarwal +91 98444 44444
+P008L004: The system must add the new contact to row 5.
+P008L005: It must not edit rows 2 to 4.
+P008L006: 9. Existing Sheet Header Validation
+P008L007: Before appending data, the system should check that the existing sheet contains at least:
+P008L008: • Name
+P008L009: • Mobile Number
+P008L010: When Exhibition Name and Exhibition Date are enabled, the application should add or map:
+P008L011: • Exhibition Name
+P008L012: • Exhibition Date
+P008L013: If optional columns are missing, the system should ask:
+P008L014: Some application fields are not available in this sheet.
+P008L015: Would you like to:
+P008L016: 1. Add the missing columns
+P008L017: 2. Continue without those fields
+P008L018: 3. Review the field mapping
+P008L019: The system should never place information under an incorrect column.
+P008L020: 10. New Google Sheet Behaviour
+P008L021: When the user selects Create New Google Sheet, the application should:
+P008L022: 1. Ask for the sheet name.
+P008L023: 2. Create the spreadsheet.
+P008L024: 3. Create the header row.
+P008L025: 4. Save the Google Sheet connection.
+P008L026: 5. Add the new contacts beginning from row 2.
+P008L027: 6. Set the new sheet as the current destination.
+P008L028: Example sheet name:
+P008L029: 8
+--- PAGE 9 ---
+P009L001: IIJS Premiere 2026 – Business Card Contacts
+P009L002: 11. Existing Google Sheet Behaviour
+P009L003: When the user selects an existing sheet:
+P009L004: • The application should remember the selected sheet.
+P009L005: • The selected sheet becomes the default destination.
+P009L006: • Every new batch should be appended to it.
+P009L007: • The user should not need to select it again after every upload.
+P009L008: • The user can change the destination from the collection settings.
+P009L009: 12. Excel Collection Behaviour
+P009L010: A browser cannot continuously modify a previously downloaded local Excel file without the user
+P009L011: uploading it again.
+P009L012: Therefore, the application should maintain an internal contact collection in the database.
+P009L013: When the user clicks Download Excel:
+P009L014: 1. Retrieve all contacts belonging to the selected collection.
+P009L015: 2. Include previous and newly uploaded contacts.
+P009L016: 3. Generate a fresh Excel file containing the complete collection.
+P009L017: 4. Download the latest version.
+P009L018: Example:
+P009L019: First upload: 50 contacts
+P009L020: Second upload: 20 contacts
+P009L021: Third upload: 30 contacts
+P009L022: Latest Excel download:
+P009L023: 100 contacts
+P009L024: The user does not need to manually combine three separate Excel files.
+P009L025: 13. Excel File Naming
+P009L026: Recommended file name:
+P009L027: 9
+--- PAGE 10 ---
+P010L001: IIJS_Premiere_2026_Contacts_2026-08-08.xlsx
+P010L002: When the user downloads an updated version later:
+P010L003: IIJS_Premiere_2026_Contacts_2026-08-08_v2.xlsx
+P010L004: Alternatively, the download timestamp may be used:
+P010L005: IIJS_Premiere_2026_Contacts_2026-08-08_1830.xlsx
+P010L006: 14. Excel Download Options
+P010L007: The user should be able to download:
+P010L008: • Complete current collection
+P010L009: • Only newly added contacts
+P010L010: • Selected contacts
+P010L011: • Contacts from a specific exhibition
+P010L012: • Contacts from a date range
+P010L013: • Contacts added by a particular user
+P010L014: The default should be:
+P010L015: Download the complete current collection
+P010L016: 15. Required Google Sheet and Excel Column
+P010L017: Order
+P010L018: Recommended default order:
+P010L019: 1. Contact ID
+P010L020: 2. Name
+P010L021: 3. Mobile Number
+P010L022: 4. Company Name
+P010L023: 5. Designation
+P010L024: 6. Department
+P010L025: 7. Secondary Mobile Number
+P010L026: 8. Office Number
+P010L027: 9. Email Address
+P010L028: 10. Secondary Email
+P010L029: 11. Website
+P010L030: 10
+--- PAGE 11 ---
+P011L001: 12. LinkedIn URL
+P011L002: 13. Address
+P011L003: 14. City
+P011L004: 15. State
+P011L005: 16. Postal Code
+P011L006: 17. Country
+P011L007: 18. Exhibition Name
+P011L008: 19. Exhibition Date
+P011L009: 20. Notes
+P011L010: 21. Tags
+P011L011: 22. Source
+P011L012: 23. Uploaded By
+P011L013: 24. Created Date
+P011L014: 25. Extraction Confidence
+P011L015: 26. Review Status
+P011L016: 27. Card Image Reference
+P011L017: Only the following fields require manual or AI-provided values before saving:
+P011L018: • Name
+P011L019: • Mobile Number
+P011L020: System fields such as Contact ID and Created Date are filled automatically.
+P011L021: 16. Revised Save Validation
+P011L022: Before saving each contact, the application should check:
+P011L023: Is Name present?
+P011L024: Is Mobile Number present?
+P011L025: Is the Mobile Number valid?
+P011L026: Is this contact a possible duplicate?
+P011L027: Is the destination available?
+P011L028: A contact should be saved only after the mandatory-field validation succeeds.
+P011L029: 17. Batch Validation
+P011L030: For a batch containing multiple cards:
+P011L031: • Valid contacts should be saveable.
+P011L032: • Invalid contacts should remain under Needs Review.
+P011L033: • One invalid card should not block the full batch.
+P011L034: Example:
+P011L035: 11
+--- PAGE 12 ---
+P012L001: 20 cards processed
+P012L002: 17 ready to save
+P012L003: 2 missing mobile numbers
+P012L004: 1 missing a name
+P012L005: The user should be able to:
+P012L006: • Save the 17 valid contacts.
+P012L007: • Correct the remaining 3 contacts.
+P012L008: • Save the remaining contacts later.
+P012L009: 18. Duplicate Mobile Number Handling
+P012L010: Because the mobile number is mandatory, it should be the strongest duplicate identifier.
+P012L011: Before appending a new row, check:
+P012L012: • Same normalised mobile number in the database.
+P012L013: • Same mobile number in the current collection.
+P012L014: • Same mobile number in the current upload batch.
+P012L015: • Same Contact ID already synced to the sheet.
+P012L016: When a duplicate is detected, show:
+P012L017: A contact with this mobile number already exists.
+P012L018: Existing Contact:
+P012L019: Rahul Sharma
+P012L020: +91 98765 43210
+P012L021: ABC Jewellers
+P012L022: Available actions:
+P012L023: • Skip new contact
+P012L024: • Update existing contact
+P012L025: • Keep both
+P012L026: • Merge information
+P012L027: The application should not silently append duplicates.
+P012L028: 12
+--- PAGE 13 ---
+P013L001: 19. Editing an Existing Contact
+P013L002: When an existing contact is edited:
+P013L003: • Update the contact in the database.
+P013L004: • Do not append it as a new contact.
+P013L005: • If it has already been synced to Google Sheets, update its existing row using the saved row
+P013L006: reference.
+P013L007: • Do not create a new row unless the user explicitly selects Save as New Contact.
+P013L008: 20. Safe Retry Behaviour
+P013L009: If Google Sheets saving fails after the database save:
+P013L010: • Keep the contact safely stored in the database.
+P013L011: • Mark Google sync as Failed or Pending.
+P013L012: • Retry using the same Contact ID.
+P013L013: • Do not append a duplicate row during retry.
+P013L014: Example:
+P013L015: Contact saved successfully.
+P013L016: Google Sheet sync is pending and will be retried.
+P013L017: 21. Recommended Collection Screen
+P013L018: The collection screen should display:
+P013L019: Collection: IIJS Premiere 2026
+P013L020: Exhibition Date: 08 August 2026
+P013L021: Destination: Google Sheet
+P013L022: Sheet: IIJS Premiere 2026 Contacts
+P013L023: Total Contacts: 275
+P013L024: New in Current Batch: 18
+P013L025: Needs Review: 3
+P013L026: Synced: 272
+P013L027: Sync Pending: 3
+P013L028: Available actions:
+P013L029: • Scan more cards
+P013L030: • Upload more cards
+P013L031: 13
+--- PAGE 14 ---
+P014L001: • Download complete Excel
+P014L002: • Open Google Sheet
+P014L003: • Change destination
+P014L004: • Start new collection
+P014L005: • Edit exhibition details
+P014L006: 22. Final Revised Rules
+P014L007: 1. Name is mandatory.
+P014L008: 2. Mobile Number is mandatory.
+P014L009: 3. All other contact fields are optional.
+P014L010: 4. Exhibition Name is an additional optional column.
+P014L011: 5. Exhibition Date is an additional optional column.
+P014L012: 6. New contacts should append to the current collection by default.
+P014L013: 7. Existing Google Sheet rows must never be overwritten.
+P014L014: 8. New rows should begin after the last occupied row.
+P014L015: 9. The user should confirm whether to continue with the existing collection or create a new one
+P014L016: after every scan or upload.
+P014L017: 10. Continue with Existing Collection should be selected by default.
+P014L018: 11. The application should remember the current Google Sheet or Excel collection.
+P014L019: 12. Excel downloads should contain the complete collection, including all previous and newly added
+P014L020: contacts.
+P014L021: 13. Google Sheets and Excel files should always include Name and Mobile Number.
+P014L022: 14. Existing contacts should be updated in their original row rather than appended as duplicates.
+P014L023: 15. The database should remain the primary source of contact information.
+P014L024: 14

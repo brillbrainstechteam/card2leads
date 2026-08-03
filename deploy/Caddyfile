@@ -1,0 +1,31 @@
+# Card2Leads reverse proxy (Caddy v2)
+# Recommended setup: Cloudflare (proxied, orange cloud) in "Full (strict)" SSL mode,
+# with a Cloudflare Origin Certificate installed on this server.
+#
+# 1) In Cloudflare: SSL/TLS -> Origin Server -> Create Certificate.
+#    Save the cert + key on the server, e.g.:
+#      /etc/caddy/cf-origin.pem   (certificate)
+#      /etc/caddy/cf-origin.key   (private key)
+# 2) Cloudflare: SSL/TLS -> Overview -> set mode to "Full (strict)".
+# 3) Cloudflare DNS: A record  card2leads -> <VPS_IP>  (Proxied / orange cloud).
+
+card2leads.brillbrainsconsultants.com {
+	# Use the Cloudflare Origin Certificate (valid only between Cloudflare and this origin).
+	tls /etc/caddy/cf-origin.pem /etc/caddy/cf-origin.key
+
+	encode gzip zstd
+
+	# Forward everything to the Node app on localhost:5173.
+	reverse_proxy 127.0.0.1:5173 {
+		# Pass the real client IP through (Cloudflare sets these; the app reads them
+		# because TRUST_PROXY=true).
+		header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+		header_up X-Forwarded-Proto {scheme}
+	}
+}
+
+# ---------------------------------------------------------------------------
+# ALTERNATIVE (no Cloudflare proxy): if you set the DNS record to "DNS only"
+# (grey cloud), delete the `tls` line above and Caddy will obtain a free
+# Let's Encrypt certificate automatically over HTTP. Everything else stays.
+# ---------------------------------------------------------------------------
