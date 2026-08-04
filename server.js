@@ -1352,7 +1352,13 @@ async function razorpayApi(path, { method = "GET", body } = {}) {
   });
   const text = await res.text();
   const data = text ? JSON.parse(text) : {};
-  if (!res.ok) throw new Error(data.error?.description || `Payment provider error (${res.status}).`);
+  if (!res.ok) {
+    const e = data.error || {};
+    // Log the full Razorpay error server-side so we can see exactly what failed.
+    console.error(`[razorpay] ${method} ${path} -> ${res.status}: ${JSON.stringify(data.error || data)}`);
+    const detail = [e.description, e.field ? `(field: ${e.field})` : ""].filter(Boolean).join(" ");
+    throw new Error(detail || `Payment provider error (${res.status}).`);
+  }
   return data;
 }
 
