@@ -1955,7 +1955,7 @@ function setupVoiceRecorder(node, targetType, targetIds, targetLabel) {
       const sourceIndex = levels ? Math.floor((index / barCount) * levels.length) : index;
       const strength = levels ? levels[sourceIndex] / 255 : 0.07 + 0.035 * Math.sin(index * 0.7);
       const barHeight = Math.max(4 * ratio, strength * height * 0.82);
-      canvasContext.fillStyle = levels ? "#2f7f77" : "#c9d8d7";
+      canvasContext.fillStyle = levels ? "#8f63aa" : "#c9d8d7";
       canvasContext.fillRect(index * (barWidth + gap), center - barHeight / 2, barWidth, barHeight);
     }
   };
