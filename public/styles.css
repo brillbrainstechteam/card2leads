@@ -6,16 +6,17 @@
   --ink: #20222a;
   --muted: #6f7180;
   --line: #dfe5ea;
-  --accent: #e47a32;
-  --accent-strong: #c96324;
+  --accent: #223558;
+  --accent-strong: #1a2a48;
   --accent-soft: #f2eaf8;
   --accent-cool: #58bdd0;
-  --sidebar: #292b33;
-  --sidebar-strong: #202229;
+  --sidebar: #1b2942;
+  --sidebar-strong: #131f36;
   --purple: #8f63aa;
   --purple-soft: #f0e7f7;
-  --yellow: #f2ae2e;
-  --yellow-soft: #fff7dc;
+  --gold: #c79a3e;
+  --yellow: #c79a3e;
+  --yellow-soft: #fbf3df;
   --warn: #c08316;
   --danger: #b42318;
   --ok: #2f9b68;
@@ -1509,8 +1510,8 @@ label {
   margin-left: calc(50% - 50vw);
   margin-right: calc(50% - 50vw);
   padding: 12px max(28px, calc((100vw - 1240px) / 2 + 20px));
-  background: #242631;
-  border-bottom: 1px solid #343744;
+  background: #1b2942;
+  border-bottom: 1px solid #2a3a5c;
 }
 
 .public-brand {
@@ -1753,7 +1754,7 @@ label {
   align-items: center;
   gap: 12px;
   margin: 0 0 12px;
-  color: #9a9ca7;
+  color: #b0851f;
   font-size: 12px;
   font-weight: 650;
   letter-spacing: 0.22em;
@@ -1764,7 +1765,7 @@ label {
   content: "";
   width: 78px;
   height: 2px;
-  background: var(--ok);
+  background: var(--gold);
 }
 
 .flow-steps {
@@ -1822,7 +1823,7 @@ label {
   grid-template-columns: minmax(0, 0.8fr) minmax(420px, 1fr);
   gap: 28px;
   align-items: center;
-  background: #292b33;
+  background: #1b2942;
   color: #fff;
 }
 
@@ -4781,7 +4782,7 @@ strong {
   flex-wrap: wrap;
   padding: 26px 30px;
   border-radius: 16px;
-  background: linear-gradient(135deg, #242631 0%, #33343f 100%);
+  background: linear-gradient(135deg, #1b2942 0%, #243456 100%);
   color: #fff;
 }
 
