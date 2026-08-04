@@ -24,6 +24,8 @@ logs/
 # runtime state / uploads (NEVER commit user data)
 data/db.json
 data/*.json
+# duplicate source illustrations — the app serves data/illustration_final only
+data/illustration/
 private_storage/
 uploads/
 storage/
