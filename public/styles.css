@@ -3524,16 +3524,16 @@ strong {
   }
 
   .upload-picker:hover {
-    border-color: #256b65;
-    background: #256b65;
+    border-color: #223558;
+    background: #223558;
   }
 
   .upload-picker.camera {
     grid-row: 1;
-    border-color: #e47a32;
-    background: #e47a32;
+    border-color: #8f63aa;
+    background: #8f63aa;
     color: #fff;
-    box-shadow: 0 8px 20px rgba(228, 122, 50, 0.2);
+    box-shadow: 0 8px 20px rgba(143, 99, 170, 0.2);
   }
 
   .pair-toggle {

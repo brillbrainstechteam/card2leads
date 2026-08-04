@@ -2915,7 +2915,7 @@ async function startSubscription(plan) {
       name: "Card2Leads",
       description: `${plan.charAt(0).toUpperCase() + plan.slice(1)} plan`,
       prefill: { name: state.user?.name || "", email: state.user?.email || "" },
-      theme: { color: "#e47a32" },
+      theme: { color: "#223558" },
       handler: () => {
         state.message = { text: "Payment received. Your plan will activate in a moment.", bad: false };
         render();
@@ -2943,7 +2943,7 @@ async function startTopup() {
       name: "Card2Leads",
       description: `${order.scans} extra scans`,
       prefill: { name: state.user?.name || "", email: state.user?.email || "" },
-      theme: { color: "#e47a32" },
+      theme: { color: "#223558" },
       handler: async (response) => {
         try {
           await api("/api/billing/topup/verify", { method: "POST", body: response });
