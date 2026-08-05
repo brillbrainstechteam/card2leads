@@ -4649,8 +4649,8 @@ strong {
   justify-content: space-between;
   gap: 12px;
   padding: 9px 12px;
-  background: var(--panel-alt);
-  border: 1px solid var(--line);
+  background: #f3f8f8;
+  border: 1px solid #cfe3e0;
   border-radius: 9px;
   font-size: 14px;
 }
@@ -4660,8 +4660,8 @@ strong {
   padding: 14px;
   color: var(--muted);
   font-size: 14px;
-  background: var(--panel-alt);
-  border: 1px dashed var(--line);
+  background: #f3f8f8;
+  border: 1px dashed #cfe3e0;
   border-radius: 9px;
 }
 
