@@ -1571,6 +1571,12 @@ label {
   gap: 12px;
 }
 
+.hero-fineprint {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
 .public-links {
   flex: 1;
   justify-content: flex-start;

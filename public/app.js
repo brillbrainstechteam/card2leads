@@ -271,11 +271,11 @@ function authView() {
       <nav class="public-nav">
         <a class="public-brand" href="#top" aria-label="Card2Leads home">
           <strong>Card2Leads</strong>
-          <small>By BrillBrains</small>
+          <small>By BrillBrains Consultants</small>
         </a>
         <div class="public-links" aria-label="Product sections">
           <a href="#features">Features</a>
-          <a href="#exports">Exports</a>
+          <a href="#exports">How It Works</a>
           <a href="#pricing">Pricing</a>
         </div>
         <div class="public-actions">
@@ -286,16 +286,17 @@ function authView() {
 
       <section class="public-hero" id="top">
         <div class="hero-copy">
-          <p class="section-kicker">Built for exhibitions</p>
-          <h1>Turn exhibition contact cards into clean follow-up sheets.</h1>
-          <p class="hero-text">Snap one card or upload a whole batch. Card2Leads pulls out the details, flags anything unclear, then saves each approved contact to Excel, CSV, Google Sheets, or straight to your phone contacts — every one labelled by exhibition.</p>
+          <p class="section-kicker">Business card capture, simplified</p>
+          <h1>Turn business cards into organised, ready-to-use contacts.</h1>
+          <p class="hero-text">Card2Leads is a business-card scanning and contact-management application that converts individual or bulk card uploads into structured contact records. Review extracted details, add labels and voice notes, then export or sync approved contacts to Google Contacts and Google Sheets.</p>
           <div class="hero-actions">
-            <button type="button" data-auth-mode="signup">Create account</button>
+            <button type="button" data-auth-mode="signup">Start free</button>
             <button type="button" class="secondary" data-auth-mode="login">Log in</button>
           </div>
+          <p class="hero-fineprint">20 free scans. No payment details required.</p>
         </div>
         <div class="hero-visual" aria-label="Card scanning preview">
-          <img class="auth-illustration" src="/illustrations-final/main%20page%20illustration_before_login.png?v=final-20260729" alt="Business cards converted into a contact sheet" />
+          <img class="auth-illustration" src="/illustrations-final/main%20page%20illustration_before_login.png?v=final-20260805" alt="Business cards converted into ready-to-use contacts" />
           <div class="mini-sheet" aria-hidden="true">
             <span>Name</span><span>Mobile</span><span>Interest</span>
             <strong>Riya Shah</strong><strong>+91 98765...</strong><strong>Bridal sets</strong>
@@ -307,27 +308,27 @@ function authView() {
       <section class="public-section features-section" id="features">
         <div class="features-copy">
           <p class="section-kicker">Features</p>
-          <h2>Capture cards, voice notes, and exports in one simple flow.</h2>
+          <h2>Capture, organise and use every business contact in one simple flow.</h2>
           <div class="feature-strip" aria-label="Card2Leads highlights">
             <article>
               <span class="feature-icon">01</span>
-              <strong>Instant card capture</strong>
-              <p>Batch upload on desktop, camera scan on mobile.</p>
+              <strong>Scan or upload cards</strong>
+              <p>Capture a card using your phone camera or upload individual and bulk card images from desktop or mobile.</p>
             </article>
             <article>
               <span class="feature-icon">02</span>
               <strong>Review before saving</strong>
-              <p>Field confidence, duplicate checks, and fast edits.</p>
+              <p>Check extracted names, phone numbers, emails, companies and designations before approving each contact.</p>
             </article>
             <article>
               <span class="feature-icon">03</span>
-              <strong>Voice notes</strong>
-              <p>Save raw interest notes in Hindi or English.</p>
+              <strong>Add voice input and notes</strong>
+              <p>Add individual or bulk voice inputs in Hindi, English or Hinglish and keep the transcription with the relevant contacts.</p>
             </article>
             <article>
               <span class="feature-icon">04</span>
-              <strong>Save anywhere</strong>
-              <p>Excel, CSV, Google Sheets, or straight to phone contacts — labelled by exhibition.</p>
+              <strong>Export or sync your contacts</strong>
+              <p>Download approved records as Excel, CSV or VCF files, or choose to sync them to Google Contacts and Google Sheets.</p>
             </article>
           </div>
         </div>
@@ -338,17 +339,17 @@ function authView() {
         <article class="public-panel">
           <img class="panel-illustration" src="/illustrations-final/excel_save.png?v=final-20260729" alt="Contacts saved to a spreadsheet" />
           <div>
-            <p class="section-kicker">Card export</p>
-            <h2>Clean sheets, ready to use.</h2>
-            <p>Save every approved contact to the next empty row, then download Excel/CSV or sync Google Sheets.</p>
+            <p class="section-kicker">Structured exports</p>
+            <h2>Clean contact data, ready to use.</h2>
+            <p>Turn reviewed contacts into a clean, structured table. Download the records as Excel or CSV, or add approved rows to a Google Sheet selected or created through Card2Leads.</p>
           </div>
         </article>
         <article class="public-panel">
           <img class="panel-illustration" src="/illustrations-final/voice%20input%20illustration_right_section.png?v=final-20260729" alt="Voice note captured for a contact" />
           <div>
-            <p class="section-kicker">Follow-up context</p>
-            <h2>Remember every request.</h2>
-            <p>Record Hindi or English voice notes and keep the transcript with the saved contact.</p>
+            <p class="section-kicker">Voice-based context</p>
+            <h2>Capture the details that cards cannot.</h2>
+            <p>Add spoken notes, interests and follow-up instructions in Hindi, English or Hinglish. Card2Leads converts the input into text and links it to the relevant contact.</p>
           </div>
         </article>
       </section>
@@ -356,13 +357,13 @@ function authView() {
       <section class="public-section demo-panel" id="demo">
         <div class="demo-copy">
           <p class="section-kicker">Guided demo</p>
-          <h2>See how scanned cards become a ready-to-use contact sheet.</h2>
-          <p>Try a sample batch, review extracted details and voice notes, then preview the finished sheet. No account is needed for the demo.</p>
+          <h2>See how business cards become organised contact records.</h2>
+          <p>Try the complete Card2Leads workflow using sample cards: extract contact information, review the results, add voice notes and preview the final structured table before exporting or syncing.</p>
         </div>
         <div class="demo-steps" aria-label="Demo flow">
-          <article><strong>1</strong><span>Upload sample cards</span><p>Use demo cards or selected images to show extraction.</p></article>
-          <article><strong>2</strong><span>Review and add voice notes</span><p>Keep Hindi, English, or Hinglish context with each contact.</p></article>
-          <article><strong>3</strong><span>Export preview</span><p>Preview the sheet. Login is requested before download/sync.</p></article>
+          <article><strong>1</strong><span>Upload or scan cards</span><p>Use sample cards, upload your own images or capture a card using your device camera.</p></article>
+          <article><strong>2</strong><span>Review and enrich</span><p>Check the extracted fields, correct any errors, add labels and attach Hindi, English or Hinglish voice inputs.</p></article>
+          <article><strong>3</strong><span>Preview and save</span><p>Preview the structured table. Sign in before downloading records or syncing approved information with Google.</p></article>
         </div>
         <div class="demo-actions">
           <button type="button" data-demo-start>${state.guestDemoStep ? "Restart demo" : "Try the demo"}</button>
@@ -375,71 +376,83 @@ function authView() {
         <div class="pricing-heading">
           <div>
             <p class="section-kicker">Pricing</p>
-            <h2>AI-powered contact capture for every exhibition.</h2>
+            <h2>Simple plans for every business-card workflow.</h2>
           </div>
-          <p>Every plan includes AI extraction, review, voice notes, and all exports — Excel, CSV, Google Sheets, Google Contacts, and phone contacts. Plans differ only by how many cards you scan.</p>
+          <p>Every plan includes AI-assisted card extraction, manual review, labels, voice inputs, Excel and CSV exports, VCF downloads, Google Sheets sync and Google Contacts sync. Plans differ only by the number of card scans included.</p>
         </div>
         <div class="pricing-grid">
           <article class="price-card">
             <span class="price-label">Trial</span>
             <h3>Free</h3>
-            <p>20 scans to try extraction, review, and voice notes.</p>
+            <p>20 card scans to try extraction, review, labels, voice input and export features.</p>
             <button type="button" class="secondary" data-auth-mode="signup">Start free</button>
           </article>
           <article class="price-card">
             <span class="price-label">Monthly</span>
             <h3><span>&#8377;499</span> / month</h3>
-            <p>150 scans a month. Everything included.</p>
-            <button type="button" class="secondary" data-auth-mode="signup" data-plan="monthly">Choose monthly</button>
+            <p>150 card scans every month, with access to all Card2Leads features.</p>
+            <button type="button" class="secondary" data-auth-mode="signup" data-plan="monthly">Start monthly plan</button>
           </article>
           <article class="price-card featured">
             <span class="price-label">Quarterly</span>
             <h3><span>&#8377;799</span> / 3 months</h3>
-            <p>300 scans over 3 months. Best value for regular exhibitors.</p>
-            <button type="button" data-auth-mode="signup" data-plan="quarterly">Choose quarterly</button>
+            <p>300 card scans valid for 3 months. Ideal for exhibitions, events and regular lead capture.</p>
+            <button type="button" data-auth-mode="signup" data-plan="quarterly">Start quarterly plan</button>
           </article>
           <article class="price-card">
             <span class="price-label">Annual</span>
             <h3><span>&#8377;1,499</span> / year</h3>
-            <p>1,500 scans a year at the lowest price per scan.</p>
-            <button type="button" class="secondary" data-auth-mode="signup" data-plan="annual">Choose annual</button>
+            <p>1,500 card scans valid for one year, at the lowest included cost per scan.</p>
+            <button type="button" class="secondary" data-auth-mode="signup" data-plan="annual">Start annual plan</button>
           </article>
         </div>
-        <p class="pricing-note">Run out mid-plan? Add 100 scans for &#8377;499, anytime.</p>
+        <p class="pricing-note">Need more scans? Add 100 additional card scans for &#8377;499 at any time during an active plan.</p>
       </section>
 
       <section class="public-section faq-section" id="faq">
         <div class="faq-head">
           <p class="section-kicker">FAQ</p>
-          <h2>Questions, answered.</h2>
+          <h2>Frequently asked questions</h2>
         </div>
         <div class="faq-grid">
           <details>
             <summary>Is my contact data private?</summary>
-            <p>Your contacts stay in your own workspace. Exports and Google sync happen only when you choose them, and Google tokens are stored encrypted.</p>
+            <p>Yes. Your business-card images, extracted contact details, labels and voice inputs are processed only to provide the Card2Leads features you request. We do not sell your contact data or use it for third-party advertising. Temporary uploads are handled according to our published Privacy Policy and Data Retention Policy.</p>
           </details>
           <details>
-            <summary>Which languages do voice notes support?</summary>
-            <p>Record interest notes in Hindi, English, or a mix — the transcript is saved with each contact.</p>
+            <summary>Which languages does voice input support?</summary>
+            <p>Card2Leads currently supports voice input in Hindi, English and Hinglish. Transcription quality can vary depending on pronunciation, background noise and recording clarity, so users should review the generated text before saving.</p>
           </details>
           <details>
             <summary>Do I need internet to scan?</summary>
-            <p>Yes. Card extraction runs on AI in the cloud, so keep the device online while scanning and saving.</p>
+            <p>Yes. An internet connection is required to upload card images, extract contact details, process voice inputs and sync records. Camera capture may begin on your device, but processing takes place through the Card2Leads service.</p>
           </details>
           <details>
-            <summary>How are exhibition labels added?</summary>
-            <p>Every contact is tagged with its exhibition name and year, so phone and Google Contacts group them automatically for follow-up.</p>
+            <summary>How can I organise my contacts?</summary>
+            <p>You can add labels such as exhibition name, event, source, product interest or follow-up status. Labels can be applied while reviewing a contact and are included in supported exports and synchronisation workflows.</p>
+          </details>
+          <details>
+            <summary>What happens when I sync with Google Contacts?</summary>
+            <p>Card2Leads syncs a contact only after you review the information and choose the Google Contacts option. Google will ask you to authorise access before the first sync. Card2Leads uses that access to create or update contacts requested by you and does not sell Google user data or use it for advertising.</p>
+          </details>
+          <details>
+            <summary>Can Card2Leads access all my Google Sheets?</summary>
+            <p>Card2Leads is designed to work only with spreadsheets created by the app or explicitly selected for use with it. Approved contact records are added only when you initiate the Google Sheets sync.</p>
+          </details>
+          <details>
+            <summary>Are extracted contact details always accurate?</summary>
+            <p>Card2Leads uses AI-assisted extraction, but results can vary depending on image clarity, card layout, language and print quality. Every contact should be reviewed before it is exported, downloaded or synced.</p>
           </details>
         </div>
       </section>
 
       <section class="public-cta">
         <div class="public-cta-copy">
-          <h2>Ready to turn cards into contacts?</h2>
-          <p>Start free with 20 scans. No card details needed.</p>
+          <h2>Ready to organise your business contacts?</h2>
+          <p>Start with 20 free card scans. No payment details required.</p>
         </div>
         <div class="public-cta-actions">
-          <button type="button" data-auth-mode="signup">Create account</button>
+          <button type="button" data-auth-mode="signup">Start free</button>
           <button type="button" class="secondary" data-auth-mode="login">Log in</button>
         </div>
       </section>
@@ -447,15 +460,15 @@ function authView() {
       <footer class="public-footer">
         <div class="public-footer-brand">
           <strong>Card2Leads</strong>
-          <span>By BrillBrains</span>
+          <span>A product of BrillBrains Consultants Pvt. Ltd.</span>
         </div>
         <nav class="public-footer-links" aria-label="Legal and contact">
-          <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a>
-          <a href="/terms.html" target="_blank" rel="noopener">Terms</a>
-          <a href="/retention.html" target="_blank" rel="noopener">Data retention</a>
-          <a href="mailto:tech@brillbrainsconsultants.com">Contact</a>
+          <a href="/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>
+          <a href="/terms.html" target="_blank" rel="noopener">Terms of Use</a>
+          <a href="/retention.html" target="_blank" rel="noopener">Data Retention</a>
+          <a href="mailto:tech@brillbrainsconsultants.com">Contact Us</a>
         </nav>
-        <p class="public-footer-note">&copy; ${new Date().getFullYear()} BrillBrains. All rights reserved.</p>
+        <p class="public-footer-note">&copy; ${new Date().getFullYear()} BrillBrains Consultants Pvt. Ltd. All rights reserved.</p>
       </footer>
     </main>
   `);
@@ -481,7 +494,7 @@ function authScreen() {
     <main class="auth-screen">
       <div class="auth-screen-card">
         <button type="button" class="auth-back" data-auth-close>&larr; Back to site</button>
-        <a class="auth-screen-brand" href="#top" data-auth-close><strong>Card2Leads</strong><span>By BrillBrains</span></a>
+        <a class="auth-screen-brand" href="#top" data-auth-close><strong>Card2Leads</strong><span>By BrillBrains Consultants</span></a>
         ${authFormMarkup(isSignup, isForgot, isReset)}
       </div>
     </main>
