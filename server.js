@@ -163,7 +163,8 @@ async function ensureStorage() {
       dbCache = await loadPostgresDb();
       const retentionChanged = applyCardImageRetention(dbCache);
       const exhibitionAssignmentsChanged = repairCollectionExhibitionAssignments(dbCache);
-      if (retentionChanged || exhibitionAssignmentsChanged) await saveDb(dbCache);
+      const locationsChanged = normalizeContactLocations(dbCache);
+      if (retentionChanged || exhibitionAssignmentsChanged || locationsChanged) await saveDb(dbCache);
       console.log("Storage: PostgreSQL");
       return;
     } catch (err) {
@@ -181,7 +182,8 @@ async function ensureStorage() {
   }
   const retentionChanged = applyCardImageRetention(dbCache);
   const exhibitionAssignmentsChanged = repairCollectionExhibitionAssignments(dbCache);
-  if (retentionChanged || exhibitionAssignmentsChanged) await saveDb(dbCache);
+  const locationsChanged = normalizeContactLocations(dbCache);
+  if (retentionChanged || exhibitionAssignmentsChanged || locationsChanged) await saveDb(dbCache);
   console.log("Storage: local JSON fallback");
 }
 
@@ -1496,6 +1498,35 @@ function repairCollectionExhibitionAssignments(db) {
   return changed;
 }
 
+// One-time (idempotent) cleanup for records saved before city/state normalization
+// existed: merges casing variants like "SURAT" and "Surat" into one value, and
+// backfills a missing state from a recognized city.
+function normalizeContactLocations(db) {
+  let changed = false;
+  for (const contact of db.contacts) {
+    const cleanCity = toTitleCase(contact.city);
+    const cleanState = toTitleCase(contact.state) || (cleanCity ? inferStateFromCity(cleanCity) : "");
+    if (cleanCity !== (contact.city || "") || cleanState !== (contact.state || "")) {
+      contact.city = cleanCity;
+      contact.state = cleanState;
+      contact.updatedAt = now();
+      changed = true;
+    }
+  }
+  for (const card of db.cards) {
+    if (!card.extraction) continue;
+    const cleanCity = toTitleCase(card.extraction.city);
+    const cleanState = toTitleCase(card.extraction.state) || (cleanCity ? inferStateFromCity(cleanCity) : "");
+    if (cleanCity !== (card.extraction.city || "") || cleanState !== (card.extraction.state || "")) {
+      card.extraction.city = cleanCity;
+      card.extraction.state = cleanState;
+      card.updatedAt = now();
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 function makeManualReviewExtraction(fileName, collection, reason = "") {
   return {
     name: "",
@@ -1837,8 +1868,8 @@ function normalizeExtraction(raw, collection) {
     website: cleanText(raw.website),
     linkedInUrl: cleanText(raw.linkedInUrl),
     address: cleanText(raw.address),
-    city: cleanText(raw.city),
-    state: cleanText(raw.state),
+    city: toTitleCase(raw.city),
+    state: toTitleCase(raw.state),
     postalCode: cleanText(raw.postalCode),
     country: cleanText(raw.country),
     exhibitionName: collection.exhibitionName || "",
@@ -1866,6 +1897,14 @@ function normalizeExtraction(raw, collection) {
   extraction.officeNumber = normalizedPhones.officeNumber;
   if (extraction.secondaryMobileNumber && Number(extraction.fieldConfidence.secondaryMobileNumber || 0) === 0) {
     extraction.fieldConfidence.secondaryMobileNumber = extraction.fieldConfidence.mobileNumber || 0;
+  }
+
+  if (extraction.city && !extraction.state) {
+    const inferredState = inferStateFromCity(extraction.city);
+    if (inferredState) {
+      extraction.state = inferredState;
+      extraction.fieldConfidence.state = extraction.fieldConfidence.city || 60;
+    }
   }
 
   if (!extraction.name) extraction.warnings.push("Name was not confidently extracted. Please enter it before saving.");
@@ -1907,6 +1946,60 @@ function deriveOverallConfidence(extraction, providerConfidence = 0) {
 
 function cleanText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function toTitleCase(value) {
+  const trimmed = cleanText(value);
+  if (!trimmed) return trimmed;
+  return trimmed
+    .toLowerCase()
+    .split(/(\s+|-)/)
+    .map((part) => (/^[a-z]/.test(part) ? part.charAt(0).toUpperCase() + part.slice(1) : part))
+    .join("");
+}
+
+// Common Indian cities mapped to their state, used to fill in a missing state
+// when only the city was legible on the card. Not exhaustive — covers major
+// metros and trade-show hubs; anything not listed is left for manual entry.
+const INDIA_CITY_STATE_MAP = {
+  mumbai: "Maharashtra", bombay: "Maharashtra", pune: "Maharashtra", poona: "Maharashtra",
+  nagpur: "Maharashtra", nashik: "Maharashtra", thane: "Maharashtra", aurangabad: "Maharashtra",
+  navimumbai: "Maharashtra", kolhapur: "Maharashtra", solapur: "Maharashtra",
+  surat: "Gujarat", ahmedabad: "Gujarat", vadodara: "Gujarat", baroda: "Gujarat",
+  rajkot: "Gujarat", bhavnagar: "Gujarat", jamnagar: "Gujarat", gandhinagar: "Gujarat", anand: "Gujarat",
+  delhi: "Delhi", newdelhi: "Delhi",
+  gurgaon: "Haryana", gurugram: "Haryana", faridabad: "Haryana", panipat: "Haryana",
+  noida: "Uttar Pradesh", ghaziabad: "Uttar Pradesh", lucknow: "Uttar Pradesh", kanpur: "Uttar Pradesh",
+  agra: "Uttar Pradesh", varanasi: "Uttar Pradesh", meerut: "Uttar Pradesh", allahabad: "Uttar Pradesh",
+  prayagraj: "Uttar Pradesh", moradabad: "Uttar Pradesh",
+  jaipur: "Rajasthan", jodhpur: "Rajasthan", udaipur: "Rajasthan", kota: "Rajasthan",
+  ajmer: "Rajasthan", bikaner: "Rajasthan",
+  kolkata: "West Bengal", calcutta: "West Bengal", howrah: "West Bengal", siliguri: "West Bengal",
+  chennai: "Tamil Nadu", madras: "Tamil Nadu", coimbatore: "Tamil Nadu", madurai: "Tamil Nadu",
+  tiruppur: "Tamil Nadu", salem: "Tamil Nadu", trichy: "Tamil Nadu", tiruchirappalli: "Tamil Nadu",
+  bengaluru: "Karnataka", bangalore: "Karnataka", mysuru: "Karnataka", mysore: "Karnataka",
+  hubli: "Karnataka", mangaluru: "Karnataka", mangalore: "Karnataka", belgaum: "Karnataka",
+  hyderabad: "Telangana", secunderabad: "Telangana", warangal: "Telangana",
+  vijayawada: "Andhra Pradesh", visakhapatnam: "Andhra Pradesh", vizag: "Andhra Pradesh", guntur: "Andhra Pradesh",
+  kochi: "Kerala", cochin: "Kerala", thiruvananthapuram: "Kerala", trivandrum: "Kerala",
+  kozhikode: "Kerala", calicut: "Kerala", thrissur: "Kerala",
+  indore: "Madhya Pradesh", bhopal: "Madhya Pradesh", jabalpur: "Madhya Pradesh", gwalior: "Madhya Pradesh", ujjain: "Madhya Pradesh",
+  patna: "Bihar", gaya: "Bihar", muzaffarpur: "Bihar",
+  raipur: "Chhattisgarh", bhilai: "Chhattisgarh",
+  bhubaneswar: "Odisha", cuttack: "Odisha",
+  guwahati: "Assam",
+  chandigarh: "Chandigarh",
+  ludhiana: "Punjab", amritsar: "Punjab", jalandhar: "Punjab", patiala: "Punjab",
+  dehradun: "Uttarakhand", haridwar: "Uttarakhand",
+  ranchi: "Jharkhand", jamshedpur: "Jharkhand",
+  shimla: "Himachal Pradesh",
+  panaji: "Goa", goa: "Goa", margao: "Goa",
+  vapi: "Gujarat", ankleshwar: "Gujarat", morbi: "Gujarat"
+};
+
+function inferStateFromCity(city) {
+  const key = String(city || "").toLowerCase().replace(/[^a-z]/g, "");
+  return INDIA_CITY_STATE_MAP[key] || "";
 }
 
 function parseDataUrl(dataUrl) {
@@ -3916,6 +4009,8 @@ function cleanContactFields(fields) {
   for (const field of OPTIONAL_FIELDS) cleaned[field] = String(normalizedFields[field] || "").trim();
   if (cleaned.website) cleaned.website = normalizeUrl(cleaned.website);
   if (cleaned.linkedInUrl) cleaned.linkedInUrl = normalizeUrl(cleaned.linkedInUrl);
+  cleaned.city = toTitleCase(cleaned.city);
+  cleaned.state = toTitleCase(cleaned.state) || (cleaned.city ? inferStateFromCity(cleaned.city) : "");
   return cleaned;
 }
 
