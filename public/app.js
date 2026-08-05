@@ -1641,6 +1641,7 @@ function cardReview(card) {
   const fields = { ...card.extraction };
   const fieldConfidence = { ...(card.extraction?.fieldConfidence || {}) };
   normalizeReviewPhoneFields(fields, fieldConfidence);
+  normalizeReviewEmailFields(fields, fieldConfidence);
   const busy = state.processingCards.has(card.id);
   const statusClass = card.status === "completed" || card.status === "saved" ? "ok" : card.status === "failed" ? "bad" : "warn";
   const node = el(`
@@ -1747,6 +1748,41 @@ function normalizeReviewPhoneFields(fields, fieldConfidence = {}) {
   }
 }
 
+function normalizeReviewEmailFields(fields, fieldConfidence = {}) {
+  const emailValues = [fields.emailAddress, fields.secondaryEmail]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  const emails = [];
+  const websiteCandidates = [];
+
+  emailValues.forEach((value) => {
+    if (isValidEmail(value)) {
+      if (!emails.some((email) => email.toLowerCase() === value.toLowerCase())) emails.push(value);
+    } else if (isLikelyWebsite(value)) {
+      websiteCandidates.push(value);
+    }
+  });
+
+  fields.emailAddress = emails[0] || "";
+  fields.secondaryEmail = emails[1] || "";
+  if (!String(fields.website || "").trim() && websiteCandidates.length) {
+    fields.website = websiteCandidates[0];
+    if (!Number(fieldConfidence.website)) {
+      fieldConfidence.website = fieldConfidence.secondaryEmail || fieldConfidence.emailAddress || 0;
+    }
+  }
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(String(value || "").trim());
+}
+
+function isLikelyWebsite(value) {
+  const text = String(value || "").trim();
+  if (!text || text.includes("@")) return false;
+  return /^(https?:\/\/)?(www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:[/?#].*)?$/i.test(text);
+}
+
 function inputField(field, value, multiline = false, confidence = undefined) {
   const required = field === "name" || field === "mobileNumber";
   const span = field === "address" || field === "notes" ? "span-3" : "";
@@ -1788,6 +1824,7 @@ async function reprocessCard(cardId) {
 
 async function saveCard(cardId, form, duplicateAction = "") {
   normalizeReviewPhoneInputs(form);
+  normalizeReviewEmailInputs(form);
   const fields = Object.fromEntries(new FormData(form).entries());
   if (duplicateAction) fields.duplicateAction = duplicateAction;
   try {
@@ -1829,6 +1866,33 @@ function normalizeReviewPhoneInputs(form) {
       .map((value) => value.trim())
       .filter(Boolean)
       .join(" / ");
+  }
+}
+
+function normalizeReviewEmailInputs(form) {
+  const primaryInput = form.elements.namedItem("emailAddress");
+  const secondaryInput = form.elements.namedItem("secondaryEmail");
+  const websiteInput = form.elements.namedItem("website");
+  if (!(primaryInput instanceof HTMLInputElement) || !(secondaryInput instanceof HTMLInputElement)) return;
+
+  const values = [primaryInput.value, secondaryInput.value]
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const emails = [];
+  const websiteCandidates = [];
+
+  values.forEach((value) => {
+    if (isValidEmail(value)) {
+      if (!emails.some((email) => email.toLowerCase() === value.toLowerCase())) emails.push(value);
+    } else if (isLikelyWebsite(value)) {
+      websiteCandidates.push(value);
+    }
+  });
+
+  primaryInput.value = emails[0] || "";
+  secondaryInput.value = emails[1] || "";
+  if (websiteInput instanceof HTMLInputElement && !websiteInput.value.trim() && websiteCandidates.length) {
+    websiteInput.value = websiteCandidates[0];
   }
 }
 

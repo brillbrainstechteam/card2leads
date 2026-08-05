@@ -1091,6 +1091,7 @@ function uniqueWarnings(warnings = []) {
 function applyRequiredExtractionFallbacks(extraction = {}) {
   extraction.fieldConfidence = extraction.fieldConfidence || {};
   extraction.warnings = Array.isArray(extraction.warnings) ? extraction.warnings : [];
+  normalizeExtractionEmailFields(extraction);
   const normalizedPhones = normalizePhoneFields(extraction);
   extraction.mobileNumber = normalizedPhones.mobileNumber;
   extraction.secondaryMobileNumber = normalizedPhones.secondaryMobileNumber;
@@ -1125,6 +1126,38 @@ function applyRequiredExtractionFallbacks(extraction = {}) {
     extraction.warnings = extraction.warnings.filter((warning) => !/mobile number was not confidently extracted|no (?:mobile|phone|contact) number|(?:mobile|phone|contact) number (?:is |was )?(?:not printed|missing)/i.test(warning));
   }
   extraction.warnings = uniqueWarnings(extraction.warnings);
+  return extraction;
+}
+
+function normalizeExtractionEmailFields(extraction = {}) {
+  const primary = cleanText(extraction.emailAddress);
+  const secondary = cleanText(extraction.secondaryEmail);
+  const website = cleanText(extraction.website);
+  const websiteCandidates = [];
+
+  extraction.emailAddress = "";
+  extraction.secondaryEmail = "";
+
+  for (const value of [primary, secondary]) {
+    if (!value) continue;
+    if (isValidEmail(value)) {
+      if (!extraction.emailAddress) {
+        extraction.emailAddress = value;
+      } else if (!extraction.secondaryEmail && value.toLowerCase() !== extraction.emailAddress.toLowerCase()) {
+        extraction.secondaryEmail = value;
+      }
+    } else if (isLikelyWebsite(value)) {
+      websiteCandidates.push(value);
+    }
+  }
+
+  extraction.website = website || websiteCandidates[0] || "";
+  if (extraction.secondaryEmail && Number(extraction.fieldConfidence.secondaryEmail || 0) === 0) {
+    extraction.fieldConfidence.secondaryEmail = extraction.fieldConfidence.emailAddress || 0;
+  }
+  if (!website && extraction.website && Number(extraction.fieldConfidence.website || 0) === 0) {
+    extraction.fieldConfidence.website = extraction.fieldConfidence.secondaryEmail || extraction.fieldConfidence.emailAddress || 0;
+  }
   return extraction;
 }
 
@@ -1916,6 +1949,7 @@ Rules:
 - Keep phone numbers exactly as visible when uncertain.
 - Put landline/office numbers in officeNumber.
 - If an office number contains a slash-separated alternate number or extension, preserve both in officeNumber separated by " / ".
+- Only put values containing "@" in emailAddress or secondaryEmail. Put domains and URLs without "@" in website, not in email fields.
 - confidence must be an integer from 0 to 100.
 - fieldConfidence must contain an integer 0 to 100 for every extracted field.
 - Use fieldConfidence below 70 when the text is partially cut, blurred, rotated, handwritten, or inferred from context.

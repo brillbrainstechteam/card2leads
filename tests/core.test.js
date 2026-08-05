@@ -275,6 +275,29 @@ test("company and any available phone number fill missing required contact field
   assert.deepEqual(extraction.warnings, []);
 });
 
+test("email fields ignore website-like values without an at sign", () => {
+  const extraction = normalizeExtraction({
+    name: "DIVYANSHI FASHION",
+    mobileNumber: "+917021667405",
+    companyName: "DIVYANSHI FASHION",
+    emailAddress: "sales18fire@gmail.com",
+    secondaryEmail: "info18fire.com",
+    website: "www.18fire.com",
+    fieldConfidence: {
+      name: 90,
+      mobileNumber: 90,
+      companyName: 90,
+      emailAddress: 95,
+      secondaryEmail: 80,
+      website: 90
+    }
+  }, {});
+
+  assert.equal(extraction.emailAddress, "sales18fire@gmail.com");
+  assert.equal(extraction.secondaryEmail, "");
+  assert.equal(extraction.website, "www.18fire.com");
+});
+
 test("first-time users do not receive an implicit collection", () => {
   const db = { collections: [] };
   const user = { organisationId: "org_1" };
