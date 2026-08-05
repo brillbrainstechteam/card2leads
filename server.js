@@ -39,7 +39,7 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_BATCH_BYTES = 100 * 1024 * 1024;
 const EXTRACTION_CONCURRENCY = Math.min(5, Math.max(1, Number(process.env.EXTRACTION_CONCURRENCY || 3)));
 const PLAN_LIMITS = Object.freeze({
-  trial: 20,
+  trial: 0,
   monthly: 150,
   quarterly: 300,
   annual: 1500,
@@ -1327,9 +1327,15 @@ function collectionForUser(db, user, requestedId) {
 
 function planUsage(organisation) {
   const plan = String(organisation?.plan || "trial").toLowerCase();
-  const limit = Number(organisation?.scanLimit || PLAN_LIMITS[plan] || PLAN_LIMITS.trial);
+  const limit = plan === "trial" ? 0 : Number(organisation?.scanLimit || PLAN_LIMITS[plan] || 0);
   const used = Math.max(0, Number(organisation?.scansUsed || 0));
   return { plan, limit, used, remaining: Math.max(0, limit - used) };
+}
+
+function hasActivePaidPlan(organisation) {
+  const plan = String(organisation?.plan || "trial").toLowerCase();
+  const status = String(organisation?.subscriptionStatus || "").toLowerCase();
+  return plan !== "trial" && status === "active";
 }
 
 function billingConfigured() {
@@ -3056,6 +3062,9 @@ async function handleApi(req, res, pathname) {
       if (totalBytes > MAX_BATCH_BYTES) return error(res, 400, "The combined batch size cannot exceed 100 MB.");
       const organisation = db.organisations.find((o) => o.id === user.organisationId);
       const usage = planUsage(organisation);
+      if (!hasActivePaidPlan(organisation)) {
+        return error(res, 402, "An active paid plan is required to scan cards.");
+      }
       if (files.length > usage.remaining) {
         return error(res, 402, `This upload exceeds the ${usage.limit}-scan plan allowance. ${usage.remaining} scan(s) remain.`);
       }
@@ -4852,6 +4861,7 @@ module.exports = {
   normalizeExtraction,
   normalizePhoneFields,
   parseDataUrl,
+  hasActivePaidPlan,
   planUsage,
   repairCollectionExhibitionAssignments,
   saveContactRecord,

@@ -31,7 +31,6 @@ const state = {
   authActionText: "",
   pendingVerificationEmail: "",
   nativeIntroStep: 3,
-  guestDemoStep: 0,
   resetToken: "",
   onboardingError: "",
   view: "upload",
@@ -280,7 +279,7 @@ function authView() {
         </div>
         <div class="public-actions">
           <button type="button" class="secondary" data-auth-mode="login">Log in</button>
-          <button type="button" data-auth-mode="signup">Start free</button>
+          <button type="button" data-auth-mode="signup">Get started</button>
         </div>
       </nav>
 
@@ -290,10 +289,10 @@ function authView() {
           <h1>Turn business cards into organised, ready-to-use contacts.</h1>
           <p class="hero-text">Card2Leads is a business-card scanning and contact-management application that converts individual or bulk card uploads into structured contact records. Review extracted details, add labels and voice notes, then export or sync approved contacts to Google Contacts and Google Sheets.</p>
           <div class="hero-actions">
-            <button type="button" data-auth-mode="signup">Start free</button>
+            <button type="button" data-auth-mode="signup">Get started</button>
             <button type="button" class="secondary" data-auth-mode="login">Log in</button>
           </div>
-          <p class="hero-fineprint">20 free scans. No payment details required.</p>
+          <p class="hero-fineprint">Choose a paid plan to start scanning.</p>
         </div>
         <div class="hero-visual" aria-label="Card scanning preview">
           <img class="auth-illustration" src="/illustrations-final/main%20page%20illustration_before_login.png?v=final-20260805" alt="Business cards converted into ready-to-use contacts" />
@@ -354,24 +353,6 @@ function authView() {
         </article>
       </section>
 
-      <section class="public-section demo-panel" id="demo">
-        <div class="demo-copy">
-          <p class="section-kicker">Guided demo</p>
-          <h2>See how business cards become organised contact records.</h2>
-          <p>Try the complete Card2Leads workflow using sample cards: extract contact information, review the results, add voice notes and preview the final structured table before exporting or syncing.</p>
-        </div>
-        <div class="demo-steps" aria-label="Demo flow">
-          <article><strong>1</strong><span>Upload or scan cards</span><p>Use sample cards, upload your own images or capture a card using your device camera.</p></article>
-          <article><strong>2</strong><span>Review and enrich</span><p>Check the extracted fields, correct any errors, add labels and attach Hindi, English or Hinglish voice inputs.</p></article>
-          <article><strong>3</strong><span>Preview and save</span><p>Preview the structured table. Sign in before downloading records or syncing approved information with Google.</p></article>
-        </div>
-        <div class="demo-actions">
-          <button type="button" data-demo-start>${state.guestDemoStep ? "Restart demo" : "Try the demo"}</button>
-          <button type="button" class="secondary" data-auth-mode="login">I already have an account</button>
-        </div>
-        ${guestDemoMarkup()}
-      </section>
-
       <section class="public-section pricing-section" id="pricing">
         <div class="pricing-heading">
           <div>
@@ -382,27 +363,24 @@ function authView() {
         </div>
         <div class="pricing-grid">
           <article class="price-card">
-            <span class="price-label">Trial</span>
-            <h3>Free</h3>
-            <p>20 card scans to try extraction, review, labels, voice input and export features.</p>
-            <button type="button" class="secondary" data-auth-mode="signup">Start free</button>
-          </article>
-          <article class="price-card">
             <span class="price-label">Monthly</span>
             <h3><span>&#8377;499</span> / month</h3>
             <p>150 card scans every month, with access to all Card2Leads features.</p>
+            <span class="plan-cancel">Cancel anytime</span>
             <button type="button" class="secondary" data-auth-mode="signup" data-plan="monthly">Start monthly plan</button>
           </article>
           <article class="price-card featured">
             <span class="price-label">Quarterly</span>
             <h3><span>&#8377;799</span> / 3 months</h3>
             <p>300 card scans valid for 3 months. Ideal for exhibitions, events and regular lead capture.</p>
+            <span class="plan-cancel">Cancel anytime</span>
             <button type="button" data-auth-mode="signup" data-plan="quarterly">Start quarterly plan</button>
           </article>
           <article class="price-card">
             <span class="price-label">Annual</span>
             <h3><span>&#8377;1,499</span> / year</h3>
             <p>1,500 card scans valid for one year, at the lowest included cost per scan.</p>
+            <span class="plan-cancel">Cancel anytime</span>
             <button type="button" class="secondary" data-auth-mode="signup" data-plan="annual">Start annual plan</button>
           </article>
         </div>
@@ -449,10 +427,10 @@ function authView() {
       <section class="public-cta">
         <div class="public-cta-copy">
           <h2>Ready to organise your business contacts?</h2>
-          <p>Start with 20 free card scans. No payment details required.</p>
+          <p>Choose the paid plan that fits your card-scanning needs.</p>
         </div>
         <div class="public-cta-actions">
-          <button type="button" data-auth-mode="signup">Start free</button>
+          <button type="button" data-auth-mode="signup">View plans</button>
           <button type="button" class="secondary" data-auth-mode="login">Log in</button>
         </div>
       </section>
@@ -473,16 +451,6 @@ function authView() {
     </main>
   `);
   node.querySelectorAll("[data-auth-mode]").forEach((btn) => btn.addEventListener("click", () => openAuth(btn.dataset.authMode, btn.dataset.plan)));
-  node.querySelectorAll("[data-demo-start]").forEach((btn) => btn.addEventListener("click", () => {
-    state.guestDemoStep = 1;
-    render();
-    window.requestAnimationFrame(() => document.getElementById("demo")?.scrollIntoView({ behavior: "smooth", block: "start" }));
-  }));
-  node.querySelector("[data-demo-next]")?.addEventListener("click", () => {
-    state.guestDemoStep = Math.min(3, state.guestDemoStep + 1);
-    render();
-    window.requestAnimationFrame(() => document.getElementById("demo")?.scrollIntoView({ block: "center" }));
-  });
   return node;
 }
 
@@ -494,6 +462,7 @@ function authScreen() {
     <main class="auth-screen">
       <div class="auth-screen-card">
         <button type="button" class="auth-back" data-auth-close>&larr; Back to site</button>
+        <button type="button" class="auth-close" data-auth-close aria-label="Close and return to the Card2Leads home page">&times;</button>
         <a class="auth-screen-brand" href="#top" data-auth-close><strong>Card2Leads</strong><span>By BrillBrains Consultants</span></a>
         ${authFormMarkup(isSignup, isForgot, isReset)}
       </div>
@@ -692,24 +661,6 @@ function nativeIntroView() {
     }, 1400);
   }
   return node;
-}
-
-function guestDemoMarkup() {
-  const step = state.guestDemoStep;
-  if (!step) return "";
-  const body = step === 1
-    ? `<div class="demo-sample-files"><div><strong>Riya_Shah_card.jpg</strong><span>Ready to extract</span></div><div><strong>Sagar_Patel_card.jpg</strong><span>Ready to extract</span></div></div>`
-    : step === 2
-      ? `<div class="demo-review-grid"><div><span>Name</span><strong>Riya Shah</strong></div><div><span>Mobile</span><strong>+91 98765 43210</strong></div><div><span>Company</span><strong>ABC Exports</strong></div><div><span>Voice note</span><strong>Lightweight range mein interest hai. September mein follow up.</strong></div></div>`
-      : `<div class="demo-export-wrap"><table><thead><tr><th>Name</th><th>Mobile</th><th>Company</th><th>Voice Notes</th></tr></thead><tbody><tr><td>Riya Shah</td><td>+91 98765 43210</td><td>ABC Exports</td><td>Lightweight range; follow up in September</td></tr><tr><td>Sagar Patel</td><td>+91 99887 54321</td><td>SP Traders</td><td>Send catalogue</td></tr></tbody></table></div>`;
-  return `
-    <div class="guest-demo" aria-live="polite">
-      <div class="guest-demo-head"><strong>Step ${step} of 3</strong><span>${step === 1 ? "Sample cards selected" : step === 2 ? "Details reviewed" : "Export ready"}</span></div>
-      ${body}
-      <div class="actions">
-        ${step < 3 ? `<button type="button" data-demo-next>${step === 1 ? "Extract sample cards" : "Preview export"}</button>` : `<button type="button" data-auth-mode="signup">Create account to download</button>`}
-      </div>
-    </div>`;
 }
 
 async function authenticate(mode, form) {
@@ -3149,13 +3100,14 @@ function accountView() {
         <div class="usage-meter"><span style="width:${usagePercent}%"></span></div>
         ${billing.status && billing.status !== "trial"
           ? `<p class="muted">Your <strong>${escapeHtml(statusLabel(billing.plan || "trial"))}</strong> plan is <strong>${escapeHtml(billing.status)}</strong>${billing.currentPeriodEnd ? ` · renews ${escapeHtml(displayDate(billing.currentPeriodEnd))}` : ""}.</p>`
-          : `<p class="muted">You are on the <strong>Free</strong> plan. Choose a plan to scan more cards.</p>`}
+          : `<p class="muted">An active paid plan is required to scan cards. Choose a plan to continue.</p>`}
         ${billing.configured ? `
           <div class="plan-choices">
             <button type="button" class="secondary" data-subscribe="monthly" ${billing.availablePlans.includes("monthly") ? "" : "disabled"}>Monthly · ₹499 / 150 scans</button>
             <button type="button" class="secondary" data-subscribe="quarterly" ${billing.availablePlans.includes("quarterly") ? "" : "disabled"}>Quarterly · ₹799 / 300 scans</button>
             <button type="button" class="secondary" data-subscribe="annual" ${billing.availablePlans.includes("annual") ? "" : "disabled"}>Annual · ₹1,499 / 1,500 scans</button>
           </div>
+          <p class="muted">Cancel anytime.</p>
           <div class="actions">
             <button type="button" id="buyTopup">Add ${Number(billing.topupScans)} scans · ₹${Number(billing.topupAmount)}</button>
           </div>
@@ -3233,7 +3185,8 @@ function accountView() {
 }
 
 function statusLabel(status) {
-  return String(status || "").replace(/_/g, " ");
+  const value = String(status || "").replace(/_/g, " ");
+  return value === "trial" ? "No active" : value;
 }
 
 function syncStatusLabel(status) {

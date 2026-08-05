@@ -1526,6 +1526,7 @@ label {
   width: 100%;
   margin: 0 auto;
   padding: 0 0 36px;
+  background: #ffffff;
 }
 
 .public-nav {
@@ -2002,7 +2003,7 @@ label {
 
 .pricing-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -2019,8 +2020,8 @@ label {
 }
 
 .price-card.featured {
-  border-color: var(--accent);
-  box-shadow: 0 12px 30px rgba(229, 123, 31, 0.13);
+  border-color: var(--yellow);
+  box-shadow: 0 12px 30px rgba(237, 190, 19, 0.18);
 }
 
 .price-card h3 {
@@ -2030,6 +2031,13 @@ label {
 .price-card p {
   flex: 1;
   color: var(--muted);
+}
+
+.plan-cancel {
+  margin: 0 0 16px;
+  color: #6a4f0a;
+  font-size: 0.86rem;
+  font-weight: 650;
 }
 
 .price-label {
@@ -2043,6 +2051,19 @@ label {
 .upload-allowance {
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.pricing-note {
+  margin: 0;
+  padding: 16px 18px;
+  border: 1px solid var(--yellow);
+  border-left-width: 5px;
+  border-radius: 10px;
+  background: var(--yellow-soft);
+  color: #5f4708;
+  font-size: 1rem;
+  font-weight: 650;
+  box-shadow: 0 8px 20px rgba(237, 190, 19, 0.12);
 }
 
 @media (max-width: 1180px) {
@@ -4793,6 +4814,7 @@ strong {
   padding: 22px 28px 30px;
   display: grid;
   gap: 12px;
+  position: relative;
 }
 
 .auth-screen-card .auth-back {
@@ -4806,6 +4828,31 @@ strong {
   font-weight: 500;
   cursor: pointer;
   min-height: auto;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.auth-screen-card .auth-close {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 26px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.auth-screen-card .auth-close:hover {
+  background: var(--yellow-soft);
+  color: var(--ink);
 }
 
 .auth-screen-card .auth-back:hover {
@@ -4886,15 +4933,15 @@ strong {
 
 /* CTA band */
 .public-cta {
-  width: min(1240px, calc(100% - 44px));
-  margin: 0 auto;
+  width: 100%;
+  margin: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
   flex-wrap: wrap;
   padding: 26px 30px;
-  border-radius: 16px;
+  border-radius: 0;
   background: linear-gradient(135deg, #1b2942 0%, #243456 100%);
   color: #fff;
 }

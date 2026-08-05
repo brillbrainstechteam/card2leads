@@ -325,6 +325,15 @@ test("current subscription plans use their configured scan limits", () => {
   assert.equal(planUsage({ plan: "annual", scansUsed: 1000 }).remaining, 500);
 });
 
+test("trial accounts have no scan allowance", () => {
+  assert.deepEqual(planUsage({ plan: "trial", scanLimit: 20, scansUsed: 0 }), {
+    plan: "trial",
+    limit: 0,
+    used: 0,
+    remaining: 0
+  });
+});
+
 test("password rules require length and character classes", () => {
   assert.ok(validatePasswordStrength("weakpassword"));
   assert.equal(validatePasswordStrength("StrongPass#10"), "");
