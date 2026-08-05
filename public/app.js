@@ -249,6 +249,7 @@ function render() {
     });
   });
   document.getElementById("logoutBtn").addEventListener("click", logout);
+  document.getElementById("topbarUpgradeBtn")?.addEventListener("click", () => navigateToView("account"));
   const slot = document.getElementById("viewSlot");
   slot.appendChild(messageView());
   if (state.view === "upload") slot.appendChild(uploadView());
@@ -389,19 +390,19 @@ function authView() {
             <span class="price-label">Monthly</span>
             <h3><span>&#8377;499</span> / month</h3>
             <p>150 scans a month. Everything included.</p>
-            <button type="button" class="secondary" data-auth-mode="signup">Choose monthly</button>
+            <button type="button" class="secondary" data-auth-mode="signup" data-plan="monthly">Choose monthly</button>
           </article>
           <article class="price-card featured">
             <span class="price-label">Quarterly</span>
             <h3><span>&#8377;799</span> / 3 months</h3>
             <p>300 scans over 3 months. Best value for regular exhibitors.</p>
-            <button type="button" data-auth-mode="signup">Choose quarterly</button>
+            <button type="button" data-auth-mode="signup" data-plan="quarterly">Choose quarterly</button>
           </article>
           <article class="price-card">
             <span class="price-label">Annual</span>
             <h3><span>&#8377;1,499</span> / year</h3>
             <p>1,500 scans a year at the lowest price per scan.</p>
-            <button type="button" class="secondary" data-auth-mode="signup">Choose annual</button>
+            <button type="button" class="secondary" data-auth-mode="signup" data-plan="annual">Choose annual</button>
           </article>
         </div>
         <p class="pricing-note">Run out mid-plan? Add 100 scans for &#8377;499, anytime.</p>
@@ -458,7 +459,7 @@ function authView() {
       </footer>
     </main>
   `);
-  node.querySelectorAll("[data-auth-mode]").forEach((btn) => btn.addEventListener("click", () => openAuth(btn.dataset.authMode)));
+  node.querySelectorAll("[data-auth-mode]").forEach((btn) => btn.addEventListener("click", () => openAuth(btn.dataset.authMode, btn.dataset.plan)));
   node.querySelectorAll("[data-demo-start]").forEach((btn) => btn.addEventListener("click", () => {
     state.guestDemoStep = 1;
     render();
@@ -517,7 +518,7 @@ function authFormMarkup(isSignup, isForgot, isReset) {
 }
 
 function wireAuth(node) {
-  node.querySelectorAll("[data-auth-mode]").forEach((btn) => btn.addEventListener("click", () => openAuth(btn.dataset.authMode)));
+  node.querySelectorAll("[data-auth-mode]").forEach((btn) => btn.addEventListener("click", () => openAuth(btn.dataset.authMode, btn.dataset.plan)));
   node.querySelectorAll("[data-auth-close]").forEach((btn) => btn.addEventListener("click", (event) => {
     event.preventDefault();
     closeAuth();
@@ -532,7 +533,7 @@ function wireAuth(node) {
   });
 }
 
-function openAuth(mode) {
+function openAuth(mode, plan) {
   state.authMode = mode || "login";
   state.authOpen = true;
   state.authError = "";
@@ -540,8 +541,35 @@ function openAuth(mode) {
   state.authActionLink = "";
   state.authActionText = "";
   state.pendingVerificationEmail = "";
+  if (plan) {
+    try { localStorage.setItem("c2l_pending_plan", plan); } catch {}
+  }
   render();
   window.scrollTo({ top: 0 });
+}
+
+// Reads back a plan chosen on the public pricing page before the user signed up
+// or logged in, so checkout can resume automatically once they're in the app.
+// Stored in localStorage (not just in-memory state) because email verification
+// can involve a page reload or a link opened in a new tab.
+function consumePendingPlanSelection() {
+  let plan = "";
+  try {
+    plan = localStorage.getItem("c2l_pending_plan") || "";
+    localStorage.removeItem("c2l_pending_plan");
+  } catch {}
+  return plan;
+}
+
+// Called once the user has actually landed in the authenticated app (not mid
+// email-verification, not mid-onboarding) so a plan chosen on the public
+// pricing page opens the exact same checkout used from the Account screen.
+function resumePendingPlanCheckout() {
+  if (state.overview?.needsOnboarding) return;
+  const plan = consumePendingPlanSelection();
+  if (!plan) return;
+  navigateToView("account", { replace: true });
+  setTimeout(() => startSubscription(plan), 300);
 }
 
 function closeAuth() {
@@ -697,6 +725,7 @@ async function authenticate(mode, form) {
     state.pendingVerificationEmail = "";
     await refreshAll();
     navigateToView("upload", { replace: true });
+    resumePendingPlanCheckout();
   } catch (err) {
     state.authError = err.message;
     if (err.data?.verificationRequired) {
@@ -800,6 +829,7 @@ function shell() {
             <span class="muted">${state.view === "upload" ? "Up to 20 cards at once &middot; one card per photo" : escapeHtml(state.overview?.activeCollection?.name || "")}</span>
           </div>
           <div class="topbar-actions">
+            ${state.view === "account" ? "" : topbarUpgradeButtonHtml()}
             <span class="session-pill">${escapeHtml(state.user.name)}</span>
             <button id="logoutBtn" class="secondary">Log out</button>
           </div>
@@ -808,6 +838,16 @@ function shell() {
       </main>
     </div>
   `;
+}
+
+function topbarUpgradeButtonHtml() {
+  const billing = state.overview?.billing;
+  if (!billing?.configured) return "";
+  const plan = String(billing.plan || "trial");
+  const isPaid = plan !== "trial";
+  const needsAttention = ["halted", "cancelled", "paused"].includes(String(billing.status || ""));
+  const label = needsAttention ? "Fix billing" : isPaid ? "Manage plan" : "Upgrade";
+  return `<button type="button" id="topbarUpgradeBtn" class="topbar-upgrade-btn ${isPaid && !needsAttention ? "secondary" : ""} ${needsAttention ? "danger" : ""}">${escapeHtml(label)}</button>`;
 }
 
 function navButton(view, label) {
@@ -881,6 +921,7 @@ function onboardingView() {
       state.onboardingError = "";
       await refreshAll();
       navigateToView("upload", { replace: true });
+      resumePendingPlanCheckout();
     } catch (err) {
       state.onboardingError = err.message;
       render();
@@ -3073,36 +3114,47 @@ function accountView() {
   const usage = state.overview?.usage || {};
   const billing = state.overview?.billing || { availablePlans: [] };
   billing.availablePlans = billing.availablePlans || [];
+  const initials = (state.user?.name || "?").trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() || "").join("") || "?";
+  const usagePercent = Math.min(100, Math.round((Number(usage.used || 0) / Math.max(1, Number(usage.limit || 1))) * 100));
+  const topupBalance = Number(billing.topupBalance || 0);
   const node = el(`
     <section class="panel account-panel">
-      <div class="section-heading">
+      <div class="account-profile-header">
+        <div class="account-profile-avatar" aria-hidden="true">${escapeHtml(initials)}</div>
+        <div class="account-profile-info">
+          <strong>${escapeHtml(state.user?.name || "")}</strong>
+          <span class="muted">${escapeHtml(state.user?.email || "")}</span>
+          <span class="muted">${escapeHtml(state.organisation?.name || "Workspace")}</span>
+        </div>
+        <div class="account-profile-plan">
+          <span class="plan-badge">${escapeHtml(statusLabel(usage.plan || "trial"))} plan</span>
+        </div>
+      </div>
+      <div class="account-block billing-block billing-block-primary">
+        <h3>Plan &amp; billing</h3>
+        <p class="muted"><strong>${escapeHtml(statusLabel(usage.plan || "trial"))}</strong> plan · ${Number(usage.used || 0)} of ${Number(usage.limit || 0)} scans used${topupBalance ? ` (includes ${topupBalance} top-up scans)` : ""}.</p>
+        <div class="usage-meter"><span style="width:${usagePercent}%"></span></div>
+        ${billing.status && billing.status !== "trial"
+          ? `<p class="muted">Your <strong>${escapeHtml(statusLabel(billing.plan || "trial"))}</strong> plan is <strong>${escapeHtml(billing.status)}</strong>${billing.currentPeriodEnd ? ` · renews ${escapeHtml(displayDate(billing.currentPeriodEnd))}` : ""}.</p>`
+          : `<p class="muted">You are on the <strong>Free</strong> plan. Choose a plan to scan more cards.</p>`}
+        ${billing.configured ? `
+          <div class="plan-choices">
+            <button type="button" class="secondary" data-subscribe="monthly" ${billing.availablePlans.includes("monthly") ? "" : "disabled"}>Monthly · ₹499 / 150 scans</button>
+            <button type="button" class="secondary" data-subscribe="quarterly" ${billing.availablePlans.includes("quarterly") ? "" : "disabled"}>Quarterly · ₹799 / 300 scans</button>
+            <button type="button" class="secondary" data-subscribe="annual" ${billing.availablePlans.includes("annual") ? "" : "disabled"}>Annual · ₹1,499 / 1,500 scans</button>
+          </div>
+          <div class="actions">
+            <button type="button" id="buyTopup">Add ${Number(billing.topupScans)} scans · ₹${Number(billing.topupAmount)}</button>
+          </div>
+        ` : `<p class="muted">Online payments will be enabled shortly.</p>`}
+      </div>
+      <div class="section-heading account-secondary-heading">
         <div>
           <h2>Account and security</h2>
           <p class="muted">Manage connected accounts and data controls for this workspace.</p>
         </div>
       </div>
       <div class="account-grid">
-        <div class="account-block">
-          <h3>Plan usage</h3>
-          <p class="muted"><strong>${escapeHtml(statusLabel(usage.plan || "trial"))}</strong> plan · ${Number(usage.used || 0)} of ${Number(usage.limit || 0)} scans used.</p>
-          <div class="usage-meter"><span style="width:${Math.min(100, Math.round((Number(usage.used || 0) / Math.max(1, Number(usage.limit || 1))) * 100))}%"></span></div>
-        </div>
-        <div class="account-block billing-block">
-          <h3>Plan &amp; billing</h3>
-          ${billing.status && billing.status !== "trial"
-            ? `<p class="muted">Your <strong>${escapeHtml(statusLabel(billing.plan || "trial"))}</strong> plan is <strong>${escapeHtml(billing.status)}</strong>${billing.currentPeriodEnd ? ` · renews ${escapeHtml(displayDate(billing.currentPeriodEnd))}` : ""}.</p>`
-            : `<p class="muted">You are on the <strong>Free</strong> plan. Choose a plan to scan more cards.</p>`}
-          ${billing.configured ? `
-            <div class="plan-choices">
-              <button type="button" class="secondary" data-subscribe="monthly" ${billing.availablePlans.includes("monthly") ? "" : "disabled"}>Monthly · ₹499 / 150 scans</button>
-              <button type="button" class="secondary" data-subscribe="quarterly" ${billing.availablePlans.includes("quarterly") ? "" : "disabled"}>Quarterly · ₹799 / 300 scans</button>
-              <button type="button" class="secondary" data-subscribe="annual" ${billing.availablePlans.includes("annual") ? "" : "disabled"}>Annual · ₹1,499 / 1,500 scans</button>
-            </div>
-            <div class="actions">
-              <button type="button" id="buyTopup">Add ${Number(billing.topupScans)} scans · ₹${Number(billing.topupAmount)}</button>
-            </div>
-          ` : `<p class="muted">Online payments will be enabled shortly.</p>`}
-        </div>
         <div class="account-block">
           <h3>Google Sheets</h3>
           <p class="muted">${google.sheetsConnected ? `${google.needsReconnect ? "This older connection has broad access. Disconnect and reconnect it below to switch to file-limited access." : `Connected${google.googleEmail ? ` as ${escapeHtml(google.googleEmail)}` : ""} with file-limited access.`} Tokens are encrypted on the server.` : "Not connected. You can still download Excel/CSV files."}</p>

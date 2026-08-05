@@ -1344,7 +1344,8 @@ function billingSummary(organisation) {
     currentPeriodEnd: organisation?.currentPeriodEnd || "",
     availablePlans: Object.keys(RAZORPAY_PLAN_IDS).filter((plan) => RAZORPAY_PLAN_IDS[plan]),
     topupScans: TOPUP_SCANS,
-    topupAmount: TOPUP_AMOUNT_PAISE / 100
+    topupAmount: TOPUP_AMOUNT_PAISE / 100,
+    topupBalance: Number(organisation?.topupScans || 0)
   };
 }
 
@@ -1400,14 +1401,21 @@ function planFromRazorpayPlanId(planId) {
 }
 
 // Apply a subscription's plan/allowance. Called only from verified webhook state.
-// scansUsed resets to 0 only when `resetUsage` is set (a new billing period), so
-// duplicate/retried webhooks for the same period never wipe a user's usage.
+// scansUsed resets to 0, and scanLimit resets to the plan's base allowance, only
+// when `resetUsage` is set (a genuine new billing period) — so a duplicate or
+// retried webhook for the *same* period never wipes usage or a top-up a user
+// already bought mid-cycle. Top-up scans (organisation.topupScans) are tracked
+// separately and are carried forward into the new period's limit rather than
+// being reset, since they were purchased outright and aren't part of the plan's
+// recurring allowance.
 function applySubscriptionPlan(organisation, plan, { subscriptionId, currentPeriodEnd, status, resetUsage } = {}) {
   if (!organisation) return;
   organisation.plan = plan;
   organisation.subscriptionPlan = plan;
-  organisation.scanLimit = Number(PLAN_LIMITS[plan] || PLAN_LIMITS.trial);
-  if (resetUsage) organisation.scansUsed = 0;
+  if (resetUsage || !organisation.scanLimit) {
+    organisation.scansUsed = 0;
+    organisation.scanLimit = Number(PLAN_LIMITS[plan] || PLAN_LIMITS.trial) + Number(organisation.topupScans || 0);
+  }
   if (subscriptionId) organisation.subscriptionId = subscriptionId;
   organisation.subscriptionStatus = status || "active";
   if (currentPeriodEnd) organisation.currentPeriodEnd = currentPeriodEnd;
@@ -1417,6 +1425,7 @@ function applySubscriptionPlan(organisation, plan, { subscriptionId, currentPeri
 
 function grantTopupEntitlement(organisation, scans = TOPUP_SCANS) {
   if (!organisation) return;
+  organisation.topupScans = Number(organisation.topupScans || 0) + Number(scans);
   const base = Number(organisation.scanLimit || PLAN_LIMITS[organisation.plan] || PLAN_LIMITS.trial);
   organisation.scanLimit = base + Number(scans);
   organisation.updatedAt = now();
@@ -2367,6 +2376,7 @@ async function handleApi(req, res, pathname) {
         plan: "trial",
         scanLimit: PLAN_LIMITS.trial,
         scansUsed: 0,
+        topupScans: 0,
         retentionPolicy: "90-days",
         setupComplete: false,
         createdAt: now(),
@@ -2543,6 +2553,7 @@ async function handleApi(req, res, pathname) {
           plan: "trial",
           scanLimit: PLAN_LIMITS.trial,
           scansUsed: 0,
+          topupScans: 0,
           retentionPolicy: "90-days",
           setupComplete: false,
           createdAt: now(),

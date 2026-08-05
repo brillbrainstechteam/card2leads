@@ -269,6 +269,17 @@ label {
   gap: 10px;
 }
 
+.topbar-upgrade-btn:not(.secondary):not(.danger) {
+  background: var(--gold);
+  color: #3a2c05;
+  font-weight: 600;
+}
+
+.topbar-upgrade-btn:not(.secondary):not(.danger):hover {
+  background: #ebc12a;
+  color: #3a2c05;
+}
+
 .session-pill {
   max-width: 220px;
   padding: 7px 10px;
@@ -2403,6 +2414,64 @@ label {
 .checkbox-label span {
   display: block;
   min-width: 0;
+}
+
+.account-profile-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-alt);
+}
+
+.account-profile-avatar {
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 0.02em;
+}
+
+.account-profile-info {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.account-profile-info strong {
+  font-size: 15px;
+}
+
+.account-profile-plan {
+  flex: 0 0 auto;
+}
+
+.plan-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--yellow-soft);
+  color: #6a4f0a;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.billing-block-primary {
+  border-color: #cfe3e0;
+  background: #f3f8f8;
+}
+
+.account-secondary-heading {
+  margin-top: 6px;
 }
 
 .account-grid {
@@ -5123,6 +5192,12 @@ strong {
 }
 
 @media (max-width: 880px) {
+  .account-profile-header {
+    flex-wrap: wrap;
+  }
+  .account-profile-plan {
+    width: 100%;
+  }
   .contact-card {
     grid-template-columns: auto 1fr;
     row-gap: 12px;
