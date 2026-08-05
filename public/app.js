@@ -295,7 +295,7 @@ function authView() {
           <p class="hero-fineprint">20 free scans. No payment details required.</p>
         </div>
         <div class="hero-visual" aria-label="Card scanning preview">
-          <img class="auth-illustration" src="/illustrations-final/main%20page%20illustration_before_login.png?v=final-20260805" alt="Business cards converted into ready-to-use contacts" />
+          <img class="auth-illustration" src="/illustrations-final/main%20page%20illustration_before_login.png?v=final-20260805-v2" alt="Business cards converted into ready-to-use contacts" />
           <div class="mini-sheet" aria-hidden="true">
             <span>Name</span><span>Mobile</span><span>Interest</span>
             <strong>Riya Shah</strong><strong>+91 98765...</strong><strong>Bridal sets</strong>
