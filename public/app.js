@@ -384,7 +384,10 @@ function authView() {
             <button type="button" class="secondary" data-auth-mode="signup" data-plan="annual">Start annual plan</button>
           </article>
         </div>
-        <p class="pricing-note">Need more scans? Add 100 additional card scans for &#8377;499 at any time during an active plan.</p>
+        <aside class="pricing-note" aria-label="Additional scan top-up">
+          <span class="pricing-note-icon" aria-hidden="true">+</span>
+          <span><strong>Need more scans?</strong> Add 100 additional card scans for <strong>&#8377;499</strong> at any time during an active plan.</span>
+        </aside>
       </section>
 
       <section class="public-section faq-section" id="faq">

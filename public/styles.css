@@ -1525,7 +1525,7 @@ label {
   display: block;
   width: 100%;
   margin: 0 auto;
-  padding: 0 0 36px;
+  padding: 0;
   background: #ffffff;
 }
 
@@ -2054,16 +2054,42 @@ label {
 }
 
 .pricing-note {
+  justify-self: start;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: auto;
+  max-width: 100%;
   margin: 0;
-  padding: 16px 18px;
-  border: 1px solid var(--yellow);
-  border-left-width: 5px;
-  border-radius: 10px;
-  background: var(--yellow-soft);
+  padding: 12px 16px 12px 12px;
+  border: 0;
+  border-left: 4px solid var(--yellow);
+  border-radius: 8px;
+  background: #fffaf0;
   color: #5f4708;
-  font-size: 1rem;
-  font-weight: 650;
-  box-shadow: 0 8px 20px rgba(237, 190, 19, 0.12);
+  font-size: 0.94rem;
+  font-weight: 500;
+  line-height: 1.45;
+  box-shadow: 0 6px 16px rgba(95, 71, 8, 0.08);
+}
+
+.pricing-note-icon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--yellow);
+  color: #3d2d04;
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.pricing-note strong {
+  color: #493604;
+  font-weight: 750;
 }
 
 @media (max-width: 1180px) {
@@ -3346,7 +3372,7 @@ strong {
   }
 
   .auth-wrap.public-page {
-    padding: 0 0 28px;
+    padding: 0;
   }
 
   .public-nav {
@@ -4964,8 +4990,8 @@ strong {
 /* Footer */
 .public-footer {
   width: min(1240px, calc(100% - 44px));
-  margin: 8px auto 0;
-  padding: 24px 0 40px;
+  margin: 0 auto;
+  padding: 16px 0 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
