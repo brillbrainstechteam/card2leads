@@ -279,7 +279,7 @@ function authView() {
         </div>
         <div class="public-actions">
           <button type="button" class="secondary" data-auth-mode="login">Log in</button>
-          <button type="button" data-auth-mode="signup">Get started</button>
+          <button type="button" data-auth-mode="signup">Start free</button>
         </div>
       </nav>
 
@@ -289,10 +289,10 @@ function authView() {
           <h1>Turn business cards into organised, ready-to-use contacts.</h1>
           <p class="hero-text">Card2Leads is a business-card scanning and contact-management application that converts individual or bulk card uploads into structured contact records. Review extracted details, add labels and voice notes, then export or sync approved contacts to Google Contacts and Google Sheets.</p>
           <div class="hero-actions">
-            <button type="button" data-auth-mode="signup">Get started</button>
+            <button type="button" data-auth-mode="signup">Start free</button>
             <button type="button" class="secondary" data-auth-mode="login">Log in</button>
           </div>
-          <p class="hero-fineprint">Choose a paid plan to start scanning.</p>
+          <p class="hero-fineprint">20 free scans. No payment details required.</p>
         </div>
         <div class="hero-visual" aria-label="Card scanning preview">
           <img class="auth-illustration" src="/illustrations-final/main%20page%20illustration_before_login.png?v=final-20260805" alt="Business cards converted into ready-to-use contacts" />
@@ -363,6 +363,12 @@ function authView() {
         </div>
         <div class="pricing-grid">
           <article class="price-card">
+            <span class="price-label">Trial</span>
+            <h3>Free</h3>
+            <p>20 card scans to try extraction, review, labels, voice input and export features.</p>
+            <button type="button" class="secondary" data-auth-mode="signup">Start free</button>
+          </article>
+          <article class="price-card">
             <span class="price-label">Monthly</span>
             <h3><span>&#8377;499</span> / month</h3>
             <p>150 card scans every month, with access to all Card2Leads features.</p>
@@ -430,10 +436,10 @@ function authView() {
       <section class="public-cta">
         <div class="public-cta-copy">
           <h2>Ready to organise your business contacts?</h2>
-          <p>Choose the paid plan that fits your card-scanning needs.</p>
+          <p>Start with 20 free card scans. No payment details required.</p>
         </div>
         <div class="public-cta-actions">
-          <button type="button" data-auth-mode="signup">View plans</button>
+          <button type="button" data-auth-mode="signup">Start free</button>
           <button type="button" class="secondary" data-auth-mode="login">Log in</button>
         </div>
       </section>
@@ -3103,7 +3109,7 @@ function accountView() {
         <div class="usage-meter"><span style="width:${usagePercent}%"></span></div>
         ${billing.status && billing.status !== "trial"
           ? `<p class="muted">Your <strong>${escapeHtml(statusLabel(billing.plan || "trial"))}</strong> plan is <strong>${escapeHtml(billing.status)}</strong>${billing.currentPeriodEnd ? ` · renews ${escapeHtml(displayDate(billing.currentPeriodEnd))}` : ""}.</p>`
-          : `<p class="muted">An active paid plan is required to scan cards. Choose a plan to continue.</p>`}
+          : `<p class="muted">You are on the <strong>Free</strong> plan with 20 scans. Choose a paid plan when you need more.</p>`}
         ${billing.configured ? `
           <div class="plan-choices">
             <button type="button" class="secondary" data-subscribe="monthly" ${billing.availablePlans.includes("monthly") ? "" : "disabled"}>Monthly · ₹499 / 150 scans</button>
@@ -3188,8 +3194,7 @@ function accountView() {
 }
 
 function statusLabel(status) {
-  const value = String(status || "").replace(/_/g, " ");
-  return value === "trial" ? "No active" : value;
+  return String(status || "").replace(/_/g, " ");
 }
 
 function syncStatusLabel(status) {

@@ -325,12 +325,12 @@ test("current subscription plans use their configured scan limits", () => {
   assert.equal(planUsage({ plan: "annual", scansUsed: 1000 }).remaining, 500);
 });
 
-test("trial accounts have no scan allowance", () => {
-  assert.deepEqual(planUsage({ plan: "trial", scanLimit: 20, scansUsed: 0 }), {
+test("trial accounts receive a 20-scan demo allowance", () => {
+  assert.deepEqual(planUsage({ plan: "trial", scansUsed: 0 }), {
     plan: "trial",
-    limit: 0,
+    limit: 20,
     used: 0,
-    remaining: 0
+    remaining: 20
   });
 });
 
