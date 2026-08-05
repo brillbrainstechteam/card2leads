@@ -815,7 +815,7 @@ label {
   inset: 0 auto 0 0;
   width: 34%;
   border-radius: inherit;
-  background: var(--purple);
+  background: var(--accent);
   animation: processing-track 1.5s ease-in-out infinite;
   transition: width 0.8s ease;
 }
