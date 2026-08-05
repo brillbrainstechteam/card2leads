@@ -2543,15 +2543,14 @@ label {
 }
 
 .export-sync-menu summary {
-  min-height: 42px;
-  padding: 10px 15px;
+  padding: 8px 14px;
   border: 1px solid var(--accent);
   border-radius: 6px;
   background: var(--accent);
   color: #fff;
   cursor: pointer;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   list-style: none;
   white-space: nowrap;
 }
