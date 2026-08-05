@@ -1017,17 +1017,10 @@ function uploadView() {
   const draftCollectionName = state.draftCollectionName || (needsFirstSheet ? (draftExhibitionName || "Exhibition Leads") : "");
   const node = el(`
     <section class="panel upload-panel">
-      <div class="section-heading">
-        <div>
-          <h2>Add your business cards</h2>
-          <p class="muted">Add photos of the cards you collected. Card2Leads turns them into ready-to-use contacts.</p>
-        </div>
+      <div class="upload-topbar">
+        <h2>Upload business cards</h2>
+        <span class="upload-topbar-hint">Up to 20 cards at once · one card per photo</span>
       </div>
-      <ol class="upload-steps" aria-label="How it works">
-        <li><span class="upload-step-num">1</span><div><strong>Add card photos</strong><small>Pick from your device or take a photo.</small></div></li>
-        <li><span class="upload-step-num">2</span><div><strong>We read the details</strong><small>Name, number and company, automatically.</small></div></li>
-        <li><span class="upload-step-num">3</span><div><strong>Check and save</strong><small>Fix anything, then save to your list.</small></div></li>
-      </ol>
       ${!createNewSelected ? `<div class="destination-selector">
         <label class="destination-field">
           <span class="destination-kicker">Saving cards to</span>
@@ -1039,20 +1032,18 @@ function uploadView() {
       </div>` : `<div id="uploadSettings" class="new-exhibition-settings">
         <div class="new-exhibition-heading">
           <div>
-            <span class="destination-kicker">${needsFirstSheet ? "Your first contact list" : "New exhibition"}</span>
-            <h3>${needsFirstSheet ? "Where should your first cards be saved?" : "Create a separate contact list"}</h3>
-            <p>${needsFirstSheet ? "Give the list a simple name. New scans will be added to its next empty row." : "Use a new list for a different exhibition or event."}</p>
+            <span class="destination-kicker">${needsFirstSheet ? "Save these cards to" : "New exhibition"}</span>
+            <h3>${needsFirstSheet ? "Name your first list" : "Create a separate contact list"}</h3>
           </div>
           ${needsFirstSheet ? "" : `<button type="button" class="secondary slim" id="cancelNewExhibition">Use current exhibition</button>`}
         </div>
-        <div class="grid two new-exhibition-fields">
-          <label>Exhibition or event <input id="exhibitionName" value="${escapeAttr(draftExhibitionName)}" placeholder="For example, GJEPC 2026" /></label>
-          <label>Contact list name <input id="collectionName" value="${escapeAttr(draftCollectionName)}" placeholder="For example, GJEPC 2026 Leads" /></label>
+        <div class="grid three new-exhibition-fields">
+          <label>Exhibition or event <input id="exhibitionName" value="${escapeAttr(draftExhibitionName)}" placeholder="GJEPC 2026" /></label>
+          <label>Contact list name <input id="collectionName" value="${escapeAttr(draftCollectionName)}" placeholder="GJEPC 2026 Leads" /></label>
           <label>Event date <span class="optional-label">Optional</span><input id="exhibitionDate" type="date" value="${escapeAttr(draftExhibitionDate)}" /></label>
         </div>
         <div class="new-exhibition-actions">
-          <button type="button" id="createExhibitionBtn">Create exhibition</button>
-          <p class="muted">After it is created, the cards below will be added to this exhibition.</p>
+          <button type="button" id="createExhibitionBtn">Create &amp; continue</button>
         </div>
         <div id="newExhibitionError" class="inline-form-error hidden" role="alert"></div>
       </div>`}
@@ -1063,8 +1054,8 @@ function uploadView() {
             <circle cx="12" cy="12.5" r="3.2" />
           </svg>
         </div>
-        <strong>${state.selectedFiles.length ? `${state.selectedFiles.length} card photo${state.selectedFiles.length === 1 ? "" : "s"} added` : "Add your card photos"}</strong>
-        <p class="muted">Up to 20 photos. Keep one clear business card in each photo.</p>
+        <strong>${state.selectedFiles.length ? `${state.selectedFiles.length} card${state.selectedFiles.length === 1 ? "" : "s"} added${state.selectedFiles.length < 20 ? " · add more or upload" : ""}` : "Drop card photos here or pick them below"}</strong>
+        <p class="muted"><strong>Front side of each card</strong> — one card per photo. Add the back later only if it has extra details.</p>
         ${state.overview.usage ? `<p class="upload-allowance">${Number(state.overview.usage.remaining)} of ${Number(state.overview.usage.limit)} scans left on your plan</p>` : ""}
         <div class="dropzone-actions">
           <label class="upload-picker">
@@ -1440,12 +1431,15 @@ function addSelectedFiles(fileList) {
     });
     state.selectedFiles = state.selectedFiles.slice(0, 20);
   }
+  // Photos are compressed in the browser before upload (see readCardFileData),
+  // so the actual request is a fraction of the raw size. Keep a generous ceiling
+  // that comfortably fits 20 high-resolution phone photos (~25 MB each).
   let totalBytes = state.selectedFiles.reduce((sum, file) => sum + Number(file.size || 0) + Number(file.backSideFile?.size || 0), 0);
-  while (totalBytes > 100 * 1024 * 1024 && state.selectedFiles.length) {
+  while (totalBytes > 600 * 1024 * 1024 && state.selectedFiles.length) {
     const removed = state.selectedFiles.pop();
     totalBytes -= Number(removed.size || 0);
     if (removed.previewUrl) URL.revokeObjectURL(removed.previewUrl);
-    state.message = { text: "The combined batch size cannot exceed 100 MB. The last selected file was removed.", bad: true };
+    state.message = { text: "This batch is very large. The last photo was removed — try uploading in two goes.", bad: true };
   }
 }
 
@@ -2295,7 +2289,7 @@ function contactsView() {
           ${exportMenu}
         </div>
       </div>
-      <div class="contacts-filters">
+      ${state.contacts.length ? `<div class="contacts-filters">
         <label class="filter-field">
           <span>Exhibition</span>
           <select id="filterExhibition">
@@ -2323,7 +2317,19 @@ function contactsView() {
         </div>
       </div>
       <ul class="contact-list"></ul>
-      ${visibleContacts.length ? "" : `<p class="contact-empty">${state.contacts.length ? "No contacts match these filters." : "No contacts yet. Upload cards and they will appear here."}</p>`}
+      ${visibleContacts.length ? "" : `<p class="contact-empty">No contacts match these filters.</p>`}` : `
+      <div class="contacts-empty">
+        <div class="contacts-empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="5" width="18" height="14" rx="2.5" />
+            <circle cx="9" cy="11" r="2.2" />
+            <path d="M5.5 16c.6-1.7 2-2.6 3.5-2.6s2.9.9 3.5 2.6M15 9.5h3.5M15 13h3" />
+          </svg>
+        </div>
+        <h3>No contacts yet</h3>
+        <p>Upload your business cards and Card2Leads turns them into saved contacts here.</p>
+        <button type="button" id="contactsEmptyUpload">Upload cards</button>
+      </div>`}
     </section>
   `);
   const tbody = node.querySelector(".contact-list");
@@ -2391,6 +2397,7 @@ function contactsView() {
     assignContact(select.dataset.assign, select.value);
   }));
   node.querySelector("#manageTeamButton")?.addEventListener("click", showManageTeamModal);
+  node.querySelector("#contactsEmptyUpload")?.addEventListener("click", () => navigateToView("upload"));
   tbody.querySelectorAll("[data-voice-contact]").forEach((btn) => btn.addEventListener("click", () => {
     showVoiceNoteModal("contact", [btn.dataset.voiceContact], btn.dataset.contactName || "this contact");
   }));
