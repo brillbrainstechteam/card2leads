@@ -1619,7 +1619,14 @@ function reviewIssuesNotice(card) {
   const isDuplicateText = (w) => /uploaded before|matches another uploaded card/i.test(w);
   const isRotationText = (w) => /rotat|upside.?down|reorient/i.test(w);
   const raw = Array.isArray(card.extraction?.warnings) ? card.extraction.warnings : [];
-  const issues = raw.filter((w) => !isRotationText(w) && !isDuplicateText(w));
+  const seenIssues = new Set();
+  const issues = raw.filter((w) => {
+    if (isRotationText(w) || isDuplicateText(w)) return false;
+    const key = String(w || "").trim().toLowerCase().replace(/\s+/g, " ");
+    if (!key || seenIssues.has(key)) return false;
+    seenIssues.add(key);
+    return true;
+  });
   if (card.duplicateImageOf) {
     issues.unshift("This image appears to have been uploaded before. You can still save it if it is a valid separate contact.");
   }

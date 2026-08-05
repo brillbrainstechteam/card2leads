@@ -252,6 +252,29 @@ test("missing mandatory contact fields cap overall confidence", () => {
   assert.equal(value, 35);
 });
 
+test("company and any available phone number fill missing required contact fields without repeated warnings", () => {
+  const extraction = normalizeExtraction({
+    name: "",
+    mobileNumber: "",
+    companyName: "DMYANSHI FASHION",
+    officeNumber: "+91 70216 67405 / +91 99206 71818",
+    fieldConfidence: { companyName: 96, officeNumber: 91 },
+    warnings: [
+      "No contact person name is printed on the card.",
+      "Name was not confidently extracted. Please enter it before saving.",
+      "Mobile Number was not confidently extracted. Please enter it before saving.",
+      "Name was not confidently extracted. Please enter it before saving.",
+      "Mobile Number was not confidently extracted. Please enter it before saving."
+    ]
+  }, {});
+
+  assert.equal(extraction.name, "DMYANSHI FASHION");
+  assert.equal(extraction.companyName, "DMYANSHI FASHION");
+  assert.equal(extraction.mobileNumber, "+917021667405");
+  assert.equal(extraction.officeNumber, "+919920671818");
+  assert.deepEqual(extraction.warnings, []);
+});
+
 test("first-time users do not receive an implicit collection", () => {
   const db = { collections: [] };
   const user = { organisationId: "org_1" };

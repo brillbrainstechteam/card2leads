@@ -164,7 +164,8 @@ async function ensureStorage() {
       const retentionChanged = applyCardImageRetention(dbCache);
       const exhibitionAssignmentsChanged = repairCollectionExhibitionAssignments(dbCache);
       const locationsChanged = normalizeContactLocations(dbCache);
-      if (retentionChanged || exhibitionAssignmentsChanged || locationsChanged) await saveDb(dbCache);
+      const extractionFallbacksChanged = repairStoredCardExtractionFallbacks(dbCache);
+      if (retentionChanged || exhibitionAssignmentsChanged || locationsChanged || extractionFallbacksChanged) await saveDb(dbCache);
       console.log("Storage: PostgreSQL");
       return;
     } catch (err) {
@@ -183,7 +184,8 @@ async function ensureStorage() {
   const retentionChanged = applyCardImageRetention(dbCache);
   const exhibitionAssignmentsChanged = repairCollectionExhibitionAssignments(dbCache);
   const locationsChanged = normalizeContactLocations(dbCache);
-  if (retentionChanged || exhibitionAssignmentsChanged || locationsChanged) await saveDb(dbCache);
+  const extractionFallbacksChanged = repairStoredCardExtractionFallbacks(dbCache);
+  if (retentionChanged || exhibitionAssignmentsChanged || locationsChanged || extractionFallbacksChanged) await saveDb(dbCache);
   console.log("Storage: local JSON fallback");
 }
 
@@ -1076,6 +1078,56 @@ function normalizePhoneFields(fields = {}) {
   return normalized;
 }
 
+function uniqueWarnings(warnings = []) {
+  const seen = new Set();
+  return warnings.filter((warning) => {
+    const key = cleanText(warning).toLowerCase().replace(/\s+/g, " ");
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function applyRequiredExtractionFallbacks(extraction = {}) {
+  extraction.fieldConfidence = extraction.fieldConfidence || {};
+  extraction.warnings = Array.isArray(extraction.warnings) ? extraction.warnings : [];
+  const normalizedPhones = normalizePhoneFields(extraction);
+  extraction.mobileNumber = normalizedPhones.mobileNumber;
+  extraction.secondaryMobileNumber = normalizedPhones.secondaryMobileNumber;
+  extraction.officeNumber = normalizedPhones.officeNumber;
+  if (extraction.secondaryMobileNumber && Number(extraction.fieldConfidence.secondaryMobileNumber || 0) === 0) {
+    extraction.fieldConfidence.secondaryMobileNumber = extraction.fieldConfidence.mobileNumber || 0;
+  }
+
+  if (!cleanText(extraction.name) && cleanText(extraction.companyName)) {
+    extraction.name = cleanText(extraction.companyName);
+    extraction.fieldConfidence.name = extraction.fieldConfidence.companyName || 60;
+  }
+
+  if (!extraction.mobileNumber && extraction.secondaryMobileNumber) {
+    const secondaryNumbers = splitPhoneValues(extraction.secondaryMobileNumber).map(normalizeMobile).filter(Boolean);
+    extraction.mobileNumber = secondaryNumbers.shift() || "";
+    extraction.secondaryMobileNumber = secondaryNumbers.join(" / ");
+    extraction.fieldConfidence.mobileNumber = extraction.fieldConfidence.secondaryMobileNumber || 60;
+  }
+
+  if (!extraction.mobileNumber && extraction.officeNumber) {
+    const officeNumbers = splitPhoneValues(extraction.officeNumber).map(normalizeMobile).filter(Boolean);
+    extraction.mobileNumber = officeNumbers.shift() || "";
+    extraction.officeNumber = officeNumbers.join(" / ");
+    extraction.fieldConfidence.mobileNumber = extraction.fieldConfidence.officeNumber || 60;
+  }
+
+  if (extraction.name) {
+    extraction.warnings = extraction.warnings.filter((warning) => !/no contact person name|name was not confidently extracted|contact(?: person)?(?:'s)? name (?:is |was )?(?:not printed|missing)/i.test(warning));
+  }
+  if (extraction.mobileNumber) {
+    extraction.warnings = extraction.warnings.filter((warning) => !/mobile number was not confidently extracted|no (?:mobile|phone|contact) number|(?:mobile|phone|contact) number (?:is |was )?(?:not printed|missing)/i.test(warning));
+  }
+  extraction.warnings = uniqueWarnings(extraction.warnings);
+  return extraction;
+}
+
 function isValidMobile(value) {
   const digits = String(value || "").replace(/\D/g, "");
   return digits.length >= 7 && digits.length <= 15;
@@ -1536,6 +1588,24 @@ function normalizeContactLocations(db) {
   return changed;
 }
 
+// Idempotently repairs review cards created before required-field fallbacks and
+// warning deduplication were applied during extraction.
+function repairStoredCardExtractionFallbacks(db) {
+  let changed = false;
+  for (const card of db.cards) {
+    if (!card.extraction || card.deletedAt || ["saved", "deleted", "skipped", "skipped_duplicate"].includes(card.status)) continue;
+    const before = JSON.stringify(card.extraction);
+    applyRequiredExtractionFallbacks(card.extraction);
+    if (before === JSON.stringify(card.extraction)) continue;
+    if (card.extraction.name && isValidMobile(card.extraction.mobileNumber) && !card.duplicateImageOf && card.status === "requires_review") {
+      card.status = "completed";
+    }
+    card.updatedAt = now();
+    changed = true;
+  }
+  return changed;
+}
+
 function makeManualReviewExtraction(fileName, collection, reason = "") {
   return {
     name: "",
@@ -1838,7 +1908,9 @@ function extractionUserPrompt() {
 
 Rules:
 - Use the person's full visible name for name.
+- If no contact person's name is printed but a company name is visible, use the company name for both name and companyName. Do not leave name blank in this case.
 - Use the primary mobile/cell number for mobileNumber.
+- If mobileNumber would otherwise be blank but any valid contact, telephone, office, or secondary number is visible, put the most prominent number in mobileNumber and keep any remaining numbers in their appropriate secondary or office fields.
 - When two mobile numbers are separated by a slash or similar divider, put the first in mobileNumber and the second in secondaryMobileNumber. Never combine two mobile numbers in mobileNumber.
 - If the card lists more than one person (for example two names, each with their own number), put the most prominent person in name/mobileNumber, the next person in secondaryName/secondaryMobileNumber, and a third person in tertiaryName/tertiaryMobileNumber. Only name is mandatory — leave secondaryName, tertiaryName and their numbers blank when there is only one person. Do not add a warning about multiple people when you have captured them in these fields.
 - Keep phone numbers exactly as visible when uncertain.
@@ -1900,13 +1972,7 @@ function normalizeExtraction(raw, collection) {
       : []
   };
 
-  const normalizedPhones = normalizePhoneFields(extraction);
-  extraction.mobileNumber = normalizedPhones.mobileNumber;
-  extraction.secondaryMobileNumber = normalizedPhones.secondaryMobileNumber;
-  extraction.officeNumber = normalizedPhones.officeNumber;
-  if (extraction.secondaryMobileNumber && Number(extraction.fieldConfidence.secondaryMobileNumber || 0) === 0) {
-    extraction.fieldConfidence.secondaryMobileNumber = extraction.fieldConfidence.mobileNumber || 0;
-  }
+  applyRequiredExtractionFallbacks(extraction);
 
   if (extraction.city && !extraction.state) {
     const inferredState = inferStateFromCity(extraction.city);
@@ -1921,6 +1987,7 @@ function normalizeExtraction(raw, collection) {
   if (extraction.mobileNumber && !isValidMobile(extraction.mobileNumber)) {
     extraction.warnings.push("Extracted mobile number may be invalid. Please verify before saving.");
   }
+  extraction.warnings = uniqueWarnings(extraction.warnings);
   extraction.confidence = deriveOverallConfidence(extraction, raw.confidence);
   extraction.fieldConfidence = normalizeFieldConfidence(extraction.fieldConfidence, extraction.confidence);
 
