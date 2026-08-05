@@ -2001,6 +2001,31 @@ label {
   color: var(--muted);
 }
 
+.pricing-mode-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.pricing-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: #fff6da;
+  color: #5f4708;
+  font-size: 0.86rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.pricing-mode-caption {
+  color: var(--muted);
+  font-size: 0.94rem;
+}
+
 .pricing-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2031,6 +2056,11 @@ label {
 .price-card p {
   flex: 1;
   color: var(--muted);
+}
+
+.price-card.compact {
+  min-height: 215px;
+  padding: 20px;
 }
 
 .plan-cancel {
@@ -2092,8 +2122,43 @@ label {
   font-weight: 750;
 }
 
+.pricing-subscription-block {
+  display: grid;
+  gap: 18px;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7ee;
+}
+
+.pricing-subscription-block > div:first-child {
+  max-width: 680px;
+}
+
+.pricing-subscription-block h3 {
+  margin: 4px 0 8px;
+}
+
+.subscription-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.billing-choice-group {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid #e5e7ee;
+}
+
+.billing-choice-group h4 {
+  margin: 0 0 4px;
+}
+
 @media (max-width: 1180px) {
   .pricing-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .subscription-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

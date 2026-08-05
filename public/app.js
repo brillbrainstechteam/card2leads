@@ -254,7 +254,7 @@ function render() {
   if (state.view === "upload") slot.appendChild(uploadView());
   if (state.view === "review") slot.appendChild(reviewView());
   if (state.view === "contacts") slot.appendChild(contactsWorkspaceView());
-  if (state.view === "account") slot.appendChild(accountView());
+  if (state.view === "account") slot.appendChild(accountBillingView());
   if (state.modal) app.appendChild(modalView());
 }
 
@@ -361,6 +361,10 @@ function authView() {
           </div>
           <p>Every plan includes AI-assisted card extraction, manual review, labels, voice inputs, Excel and CSV exports, VCF downloads, Google Sheets sync and Google Contacts sync. Plans differ only by the number of card scans included.</p>
         </div>
+        <div class="pricing-mode-head">
+          <span class="pricing-mode-pill active">Pay once</span>
+          <span class="pricing-mode-caption">Default option · no recurring charge</span>
+        </div>
         <div class="pricing-grid">
           <article class="price-card">
             <span class="price-label">Trial</span>
@@ -369,26 +373,56 @@ function authView() {
             <button type="button" class="secondary" data-auth-mode="signup">Start free</button>
           </article>
           <article class="price-card">
-            <span class="price-label">Monthly</span>
-            <h3><span>&#8377;499</span> / month</h3>
-            <p>150 card scans every month, with access to all Card2Leads features.</p>
-            <span class="plan-cancel">Cancel anytime</span>
-            <button type="button" class="secondary" data-auth-mode="signup" data-plan="monthly">Start monthly plan</button>
+            <span class="price-label">1 month</span>
+            <h3><span>&#8377;499</span> once</h3>
+            <p>150 card scans valid for 1 month. Pay once with no recurring charge.</p>
+            <span class="plan-cancel">No auto-renewal</span>
+            <button type="button" class="secondary" data-auth-mode="signup" data-plan="monthly" data-billing-mode="one_time">Buy 1 month</button>
           </article>
           <article class="price-card featured">
-            <span class="price-label">Quarterly</span>
-            <h3><span>&#8377;799</span> / 3 months</h3>
+            <span class="price-label">3 months</span>
+            <h3><span>&#8377;799</span> once</h3>
             <p>300 card scans valid for 3 months. Ideal for exhibitions, events and regular lead capture.</p>
-            <span class="plan-cancel">Cancel anytime</span>
-            <button type="button" data-auth-mode="signup" data-plan="quarterly">Start quarterly plan</button>
+            <span class="plan-cancel">No auto-renewal</span>
+            <button type="button" data-auth-mode="signup" data-plan="quarterly" data-billing-mode="one_time">Buy 3 months</button>
           </article>
           <article class="price-card">
-            <span class="price-label">Annual</span>
-            <h3><span>&#8377;1,499</span> / year</h3>
+            <span class="price-label">1 year</span>
+            <h3><span>&#8377;1,499</span> once</h3>
             <p>1,500 card scans valid for one year, at the lowest included cost per scan.</p>
-            <span class="plan-cancel">Cancel anytime</span>
-            <button type="button" class="secondary" data-auth-mode="signup" data-plan="annual">Start annual plan</button>
+            <span class="plan-cancel">No auto-renewal</span>
+            <button type="button" class="secondary" data-auth-mode="signup" data-plan="annual" data-billing-mode="one_time">Buy 1 year</button>
           </article>
+        </div>
+        <div class="pricing-subscription-block" aria-label="Recurring subscription plans">
+          <div>
+            <p class="section-kicker">Subscription option</p>
+            <h3>Prefer automatic renewal?</h3>
+            <p>Choose the same scan packages as recurring plans. These renew automatically and can be cancelled anytime.</p>
+          </div>
+          <div class="pricing-grid subscription-grid">
+            <article class="price-card compact">
+              <span class="price-label">Monthly</span>
+              <h3><span>&#8377;499</span> / month</h3>
+              <p>150 scans every month.</p>
+              <span class="plan-cancel">Cancel anytime</span>
+              <button type="button" class="secondary" data-auth-mode="signup" data-plan="monthly" data-billing-mode="subscription">Subscribe monthly</button>
+            </article>
+            <article class="price-card compact">
+              <span class="price-label">Quarterly</span>
+              <h3><span>&#8377;799</span> / 3 months</h3>
+              <p>300 scans every 3 months.</p>
+              <span class="plan-cancel">Cancel anytime</span>
+              <button type="button" class="secondary" data-auth-mode="signup" data-plan="quarterly" data-billing-mode="subscription">Subscribe quarterly</button>
+            </article>
+            <article class="price-card compact">
+              <span class="price-label">Annual</span>
+              <h3><span>&#8377;1,499</span> / year</h3>
+              <p>1,500 scans every year.</p>
+              <span class="plan-cancel">Cancel anytime</span>
+              <button type="button" class="secondary" data-auth-mode="signup" data-plan="annual" data-billing-mode="subscription">Subscribe yearly</button>
+            </article>
+          </div>
         </div>
         <aside class="pricing-note" aria-label="Additional scan top-up">
           <span class="pricing-note-icon" aria-hidden="true">+</span>
@@ -459,7 +493,7 @@ function authView() {
       </footer>
     </main>
   `);
-  node.querySelectorAll("[data-auth-mode]").forEach((btn) => btn.addEventListener("click", () => openAuth(btn.dataset.authMode, btn.dataset.plan)));
+  node.querySelectorAll("[data-auth-mode]").forEach((btn) => btn.addEventListener("click", () => openAuth(btn.dataset.authMode, btn.dataset.plan, btn.dataset.billingMode)));
   return node;
 }
 
@@ -509,7 +543,7 @@ function authFormMarkup(isSignup, isForgot, isReset) {
 }
 
 function wireAuth(node) {
-  node.querySelectorAll("[data-auth-mode]").forEach((btn) => btn.addEventListener("click", () => openAuth(btn.dataset.authMode, btn.dataset.plan)));
+  node.querySelectorAll("[data-auth-mode]").forEach((btn) => btn.addEventListener("click", () => openAuth(btn.dataset.authMode, btn.dataset.plan, btn.dataset.billingMode)));
   node.querySelectorAll("[data-auth-close]").forEach((btn) => btn.addEventListener("click", (event) => {
     event.preventDefault();
     closeAuth();
@@ -524,7 +558,7 @@ function wireAuth(node) {
   });
 }
 
-function openAuth(mode, plan) {
+function openAuth(mode, plan, billingMode = "one_time") {
   state.authMode = mode || "login";
   state.authOpen = true;
   state.authError = "";
@@ -533,7 +567,7 @@ function openAuth(mode, plan) {
   state.authActionText = "";
   state.pendingVerificationEmail = "";
   if (plan) {
-    try { localStorage.setItem("c2l_pending_plan", plan); } catch {}
+    try { localStorage.setItem("c2l_pending_plan", JSON.stringify({ plan, billingMode })); } catch {}
   }
   render();
   window.scrollTo({ top: 0 });
@@ -544,12 +578,20 @@ function openAuth(mode, plan) {
 // Stored in localStorage (not just in-memory state) because email verification
 // can involve a page reload or a link opened in a new tab.
 function consumePendingPlanSelection() {
-  let plan = "";
+  let selection = null;
   try {
-    plan = localStorage.getItem("c2l_pending_plan") || "";
+    const stored = localStorage.getItem("c2l_pending_plan") || "";
     localStorage.removeItem("c2l_pending_plan");
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        selection = { plan: parsed.plan || "", billingMode: parsed.billingMode || "one_time" };
+      } catch {
+        selection = { plan: stored, billingMode: "subscription" };
+      }
+    }
   } catch {}
-  return plan;
+  return selection;
 }
 
 // Called once the user has actually landed in the authenticated app (not mid
@@ -557,10 +599,16 @@ function consumePendingPlanSelection() {
 // pricing page opens the exact same checkout used from the Account screen.
 function resumePendingPlanCheckout() {
   if (state.overview?.needsOnboarding) return;
-  const plan = consumePendingPlanSelection();
-  if (!plan) return;
+  const selection = consumePendingPlanSelection();
+  if (!selection?.plan) return;
   navigateToView("account", { replace: true });
-  setTimeout(() => startSubscription(plan), 300);
+  setTimeout(() => {
+    if (selection.billingMode === "subscription") {
+      startSubscription(selection.plan);
+    } else {
+      startOneTimePlan(selection.plan);
+    }
+  }, 300);
 }
 
 function closeAuth() {
@@ -3097,6 +3145,40 @@ async function startSubscription(plan) {
   }
 }
 
+async function startOneTimePlan(plan) {
+  try {
+    const Razorpay = await loadRazorpay();
+    const order = await api("/api/billing/one-time", { method: "POST", body: { plan } });
+    const rzp = new Razorpay({
+      key: order.keyId,
+      order_id: order.orderId,
+      amount: order.amount,
+      currency: order.currency,
+      name: "Card2Leads",
+      description: `${order.months === 12 ? "1 year" : `${order.months} month${order.months > 1 ? "s" : ""}`} · ${order.scans} scans`,
+      prefill: { name: state.user?.name || "", email: state.user?.email || "" },
+      theme: { color: "#223558" },
+      handler: async (response) => {
+        try {
+          await api("/api/billing/one-time/verify", { method: "POST", body: response });
+          await refreshAll();
+          state.message = { text: `One-time ${statusLabel(order.plan)} plan activated.`, bad: false };
+          render();
+        } catch (err) {
+          state.message = { text: err.message, bad: true };
+          render();
+        }
+      },
+      modal: { ondismiss: () => { state.message = { text: "Payment cancelled.", bad: false }; render(); } }
+    });
+    rzp.on("payment.failed", () => { state.message = { text: "Payment failed. Please try again.", bad: true }; render(); });
+    rzp.open();
+  } catch (err) {
+    state.message = { text: err.message, bad: true };
+    render();
+  }
+}
+
 async function startTopup() {
   try {
     const Razorpay = await loadRazorpay();
@@ -3136,9 +3218,14 @@ function accountView() {
   const usage = state.overview?.usage || {};
   const billing = state.overview?.billing || { availablePlans: [] };
   billing.availablePlans = billing.availablePlans || [];
+  const oneTimePlans = Array.isArray(billing.oneTimePlans) ? billing.oneTimePlans : [];
   const initials = (state.user?.name || "?").trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() || "").join("") || "?";
   const usagePercent = Math.min(100, Math.round((Number(usage.used || 0) / Math.max(1, Number(usage.limit || 1))) * 100));
   const topupBalance = Number(billing.topupBalance || 0);
+  const periodVerb = billing.mode === "one_time" ? "expires" : "renews";
+  const planStatusText = billing.status && billing.status !== "trial"
+    ? `Your <strong>${escapeHtml(statusLabel(billing.plan || "trial"))}</strong> plan is <strong>${escapeHtml(statusLabel(billing.status))}</strong>${billing.currentPeriodEnd ? ` &middot; ${periodVerb} ${escapeHtml(displayDate(billing.currentPeriodEnd))}` : ""}.`
+    : "You are on the <strong>Free</strong> plan with 20 scans. Choose a paid plan when you need more.";
   const node = el(`
     <section class="panel account-panel">
       <div class="account-profile-header">
@@ -3242,6 +3329,138 @@ function accountView() {
   return node;
 }
 
+function accountBillingView() {
+  const google = state.overview?.google || {};
+  const usage = state.overview?.usage || {};
+  const billing = state.overview?.billing || { availablePlans: [], oneTimePlans: [] };
+  billing.availablePlans = billing.availablePlans || [];
+  const oneTimePlans = Array.isArray(billing.oneTimePlans) ? billing.oneTimePlans : [];
+  const initials = (state.user?.name || "?").trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() || "").join("") || "?";
+  const usagePercent = Math.min(100, Math.round((Number(usage.used || 0) / Math.max(1, Number(usage.limit || 1))) * 100));
+  const topupBalance = Number(billing.topupBalance || 0);
+  const periodVerb = billing.mode === "one_time" ? "expires" : "renews";
+  const planStatusText = billing.status && billing.status !== "trial"
+    ? `Your <strong>${escapeHtml(statusLabel(billing.plan || "trial"))}</strong> plan is <strong>${escapeHtml(statusLabel(billing.status))}</strong>${billing.currentPeriodEnd ? ` &middot; ${periodVerb} ${escapeHtml(displayDate(billing.currentPeriodEnd))}` : ""}.`
+    : "You are on the <strong>Free</strong> plan with 20 scans. Choose a paid plan when you need more.";
+  const oneTimeButtons = oneTimePlans.map((item) => `
+    <button type="button" class="secondary" data-one-time-plan="${escapeAttr(item.plan)}">
+      ${escapeHtml(item.months === 12 ? "1 year" : `${item.months} month${item.months > 1 ? "s" : ""}`)} &middot; &#8377;${Number(item.amount).toLocaleString("en-IN")} / ${Number(item.scans).toLocaleString("en-IN")} scans
+    </button>
+  `).join("");
+  const node = el(`
+    <section class="panel account-panel">
+      <div class="account-profile-header">
+        <div class="account-profile-avatar" aria-hidden="true">${escapeHtml(initials)}</div>
+        <div class="account-profile-info">
+          <strong>${escapeHtml(state.user?.name || "")}</strong>
+          <span class="muted">${escapeHtml(state.user?.email || "")}</span>
+          <span class="muted">${escapeHtml(state.organisation?.name || "Workspace")}</span>
+        </div>
+        <div class="account-profile-plan">
+          <span class="plan-badge">${escapeHtml(statusLabel(usage.plan || "trial"))} plan</span>
+        </div>
+      </div>
+      <div class="account-block billing-block billing-block-primary">
+        <h3>Plan &amp; billing</h3>
+        <p class="muted"><strong>${escapeHtml(statusLabel(usage.plan || "trial"))}</strong> plan &middot; ${Number(usage.used || 0)} of ${Number(usage.limit || 0)} scans used${topupBalance ? ` (includes ${topupBalance} top-up scans)` : ""}.</p>
+        <div class="usage-meter"><span style="width:${usagePercent}%"></span></div>
+        <p class="muted">${planStatusText}</p>
+        ${billing.configured ? `
+          <div class="billing-choice-group">
+            <div>
+              <h4>Pay once</h4>
+              <p class="muted">Default option. No recurring charge.</p>
+            </div>
+            <div class="plan-choices">${oneTimeButtons}</div>
+          </div>
+          <div class="billing-choice-group">
+            <div>
+              <h4>Subscription</h4>
+              <p class="muted">Same packages with automatic renewal. Cancel anytime.</p>
+            </div>
+            <div class="plan-choices">
+              <button type="button" class="secondary" data-subscribe="monthly" ${billing.availablePlans.includes("monthly") ? "" : "disabled"}>Monthly &middot; &#8377;499 / 150 scans</button>
+              <button type="button" class="secondary" data-subscribe="quarterly" ${billing.availablePlans.includes("quarterly") ? "" : "disabled"}>Quarterly &middot; &#8377;799 / 300 scans</button>
+              <button type="button" class="secondary" data-subscribe="annual" ${billing.availablePlans.includes("annual") ? "" : "disabled"}>Annual &middot; &#8377;1,499 / 1,500 scans</button>
+            </div>
+          </div>
+          <div class="actions">
+            <button type="button" id="buyTopup">Add ${Number(billing.topupScans)} scans &middot; &#8377;${Number(billing.topupAmount)}</button>
+          </div>
+        ` : `<p class="muted">Online payments will be enabled shortly.</p>`}
+      </div>
+      <div class="section-heading account-secondary-heading">
+        <div>
+          <h2>Account and security</h2>
+          <p class="muted">Manage connected accounts and data controls for this workspace.</p>
+        </div>
+      </div>
+      <div class="account-grid">
+        <div class="account-block">
+          <h3>Google Sheets</h3>
+          <p class="muted">${google.sheetsConnected ? `${google.needsReconnect ? "This older connection has broad access. Disconnect and reconnect it below to switch to file-limited access." : `Connected${google.googleEmail ? ` as ${escapeHtml(google.googleEmail)}` : ""} with file-limited access.`} Tokens are encrypted on the server.` : "Not connected. You can still download Excel/CSV files."}</p>
+          <div class="actions">
+            ${google.sheetsConnected ? `<button id="disconnectGoogle" class="secondary">Disconnect Google</button>` : google.configured ? `<a href="/api/google/connect?feature=sheets"><button class="secondary" type="button">Connect Google Sheets</button></a>` : `<span class="muted">Google OAuth is not configured.</span>`}
+          </div>
+        </div>
+        <div class="account-block">
+          <h3>Privacy documents</h3>
+          <p class="muted">Use these as starter pages before selling. Replace with lawyer-reviewed terms for production.</p>
+          <div class="actions">
+            <a href="/privacy.html" target="_blank"><button class="secondary" type="button">Privacy policy</button></a>
+            <a href="/terms.html" target="_blank"><button class="secondary" type="button">Terms</button></a>
+            <a href="/retention.html" target="_blank"><button class="secondary" type="button">Data retention</button></a>
+          </div>
+        </div>
+        <div class="account-block danger-zone">
+          <h3>Delete account</h3>
+          <p class="muted">This permanently removes the workspace, contacts, card images, voice recordings and stored Google tokens.</p>
+          <button id="deleteAccount" class="danger">Delete account</button>
+        </div>
+      </div>
+    </section>
+  `);
+  node.querySelectorAll("[data-one-time-plan]").forEach((btn) => btn.addEventListener("click", () => startOneTimePlan(btn.dataset.oneTimePlan)));
+  node.querySelectorAll("[data-subscribe]").forEach((btn) => btn.addEventListener("click", () => startSubscription(btn.dataset.subscribe)));
+  node.querySelector("#buyTopup")?.addEventListener("click", () => startTopup());
+  node.querySelector("#disconnectGoogle")?.addEventListener("click", () => {
+    state.modal = {
+      title: "Disconnect Google Sheets?",
+      body: "Card2Leads will remove the stored Google tokens. Existing Google Sheets stay in your Google Drive.",
+      confirmText: "Disconnect",
+      onConfirm: async () => {
+        await api("/api/google/disconnect", { method: "POST", body: {} });
+        await refreshAll();
+        setMessage("Google Sheets disconnected.");
+      }
+    };
+    render();
+  });
+  node.querySelector("#deleteAccount").addEventListener("click", () => {
+    state.modal = {
+      tone: "danger",
+      title: "Delete this account?",
+      body: "This cannot be undone from the app. Export your contacts first if you need a copy.",
+      detail: state.organisation?.name || state.user.email,
+      confirmText: "Delete account",
+      confirmClass: "danger",
+      onConfirm: async () => {
+        await api("/api/account", { method: "DELETE", body: {} });
+        state.user = null;
+        state.organisation = null;
+        state.csrfToken = "";
+        state.overview = null;
+        state.authInfo = "";
+        state.authError = "";
+        state.authActionLink = "";
+        render();
+      }
+    };
+    render();
+  });
+  return node;
+}
+
 function statusLabel(status) {
   return String(status || "").replace(/_/g, " ");
 }
@@ -3258,7 +3477,8 @@ function syncStatusLabel(status) {
 
 function displayDate(value) {
   if (!value) return "";
-  const date = new Date(`${value}T00:00:00`);
+  const text = String(value);
+  const date = new Date(text.includes("T") ? text : `${text}T00:00:00`);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString(undefined, { day: "2-digit", month: "long", year: "numeric" });
 }

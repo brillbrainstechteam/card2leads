@@ -13,6 +13,7 @@ const {
   exportRow,
   findCollectionForUser,
   contactToGooglePerson,
+  grantOneTimePlan,
   googleContactDisplayName,
   googleScopes,
   normalizeExtraction,
@@ -379,6 +380,40 @@ test("current subscription plans use their configured scan limits", () => {
   assert.equal(planUsage({ plan: "monthly", scansUsed: 25 }).remaining, 125);
   assert.equal(planUsage({ plan: "quarterly", scansUsed: 100 }).remaining, 200);
   assert.equal(planUsage({ plan: "annual", scansUsed: 1000 }).remaining, 500);
+});
+
+test("one-time plan activation grants a fixed non-recurring allowance", () => {
+  const organisation = {
+    id: "org_once",
+    plan: "trial",
+    scanLimit: 20,
+    scansUsed: 12,
+    topupScans: 0
+  };
+  assert.equal(grantOneTimePlan(organisation, "quarterly", { orderId: "order_1", paymentId: "pay_1" }), true);
+  assert.equal(organisation.billingMode, "one_time");
+  assert.equal(organisation.subscriptionStatus, "paid_once");
+  assert.equal(organisation.plan, "quarterly");
+  assert.equal(organisation.scanLimit, 300);
+  assert.equal(organisation.scansUsed, 0);
+  assert.ok(new Date(organisation.currentPeriodEnd).getTime() > Date.now());
+  assert.equal(grantOneTimePlan(organisation, "quarterly", { orderId: "order_1", paymentId: "pay_1" }), false);
+});
+
+test("expired one-time plans cannot use remaining scans", () => {
+  assert.deepEqual(planUsage({
+    plan: "monthly",
+    billingMode: "one_time",
+    currentPeriodEnd: "2020-01-01T00:00:00.000Z",
+    scanLimit: 150,
+    scansUsed: 25
+  }), {
+    plan: "monthly",
+    limit: 150,
+    used: 25,
+    remaining: 0,
+    expired: true
+  });
 });
 
 test("trial accounts receive a 20-scan demo allowance", () => {
