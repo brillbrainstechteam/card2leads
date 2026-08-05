@@ -296,6 +296,16 @@ test("email fields ignore website-like values without an at sign", () => {
   assert.equal(extraction.emailAddress, "sales18fire@gmail.com");
   assert.equal(extraction.secondaryEmail, "");
   assert.equal(extraction.website, "www.18fire.com");
+
+  const extractionWithoutWebsite = normalizeExtraction({
+    name: "DIVYANSHI FASHION",
+    mobileNumber: "+917021667405",
+    emailAddress: "sales18fire@gmail.com",
+    secondaryEmail: "info18fire.com",
+    website: ""
+  }, {});
+  assert.equal(extractionWithoutWebsite.secondaryEmail, "");
+  assert.equal(extractionWithoutWebsite.website, "");
 });
 
 test("first-time users do not receive an implicit collection", () => {

@@ -1133,7 +1133,6 @@ function normalizeExtractionEmailFields(extraction = {}) {
   const primary = cleanText(extraction.emailAddress);
   const secondary = cleanText(extraction.secondaryEmail);
   const website = cleanText(extraction.website);
-  const websiteCandidates = [];
 
   extraction.emailAddress = "";
   extraction.secondaryEmail = "";
@@ -1146,17 +1145,12 @@ function normalizeExtractionEmailFields(extraction = {}) {
       } else if (!extraction.secondaryEmail && value.toLowerCase() !== extraction.emailAddress.toLowerCase()) {
         extraction.secondaryEmail = value;
       }
-    } else if (isLikelyWebsite(value)) {
-      websiteCandidates.push(value);
     }
   }
 
-  extraction.website = website || websiteCandidates[0] || "";
+  extraction.website = website;
   if (extraction.secondaryEmail && Number(extraction.fieldConfidence.secondaryEmail || 0) === 0) {
     extraction.fieldConfidence.secondaryEmail = extraction.fieldConfidence.emailAddress || 0;
-  }
-  if (!website && extraction.website && Number(extraction.fieldConfidence.website || 0) === 0) {
-    extraction.fieldConfidence.website = extraction.fieldConfidence.secondaryEmail || extraction.fieldConfidence.emailAddress || 0;
   }
   return extraction;
 }
