@@ -3365,7 +3365,7 @@ async function handleApi(req, res, pathname) {
       const query = String(url.searchParams.get("q") || "").toLowerCase();
       let contacts = db.contacts.filter((c) => c.organisationId === user.organisationId && !c.deletedAt);
       if (query) {
-        contacts = contacts.filter((c) => [c.name, c.mobileNumber, c.companyName, c.emailAddress, c.city, c.tags, c.notes].some((v) => String(v || "").toLowerCase().includes(query)));
+        contacts = contacts.filter((c) => [c.name, c.mobileNumber, c.companyName, c.emailAddress, c.city, c.tags, c.notes, c.assignedToName, c.exhibitionName].some((v) => String(v || "").toLowerCase().includes(query)));
       }
       contacts.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       return send(res, 200, { contacts });
@@ -3552,18 +3552,28 @@ async function handleApi(req, res, pathname) {
       const collectionId = url.searchParams.get("collectionId");
       const selectedIds = selectedExportIds(url);
       const exportAll = url.searchParams.get("all") === "true";
+      const assigneeId = url.searchParams.get("assigneeId") || "";
       const collection = collectionForUser(db, user, collectionId);
       if (!collection) return error(res, 404, "Collection not found.");
-      const contacts = db.contacts.filter((c) =>
+      let contacts = db.contacts.filter((c) =>
         c.organisationId === user.organisationId &&
         !c.deletedAt &&
         (exportAll || (selectedIds.size ? selectedIds.has(c.id) : c.collectionId === collection.id))
       );
+      let assigneeLabel = "";
+      if (assigneeId === "__unassigned") {
+        contacts = contacts.filter((c) => !c.assignedToId);
+        assigneeLabel = "Unassigned";
+      } else if (assigneeId) {
+        contacts = contacts.filter((c) => c.assignedToId === assigneeId);
+        assigneeLabel = contacts[0]?.assignedToName || teamMembers(db.organisations.find((o) => o.id === user.organisationId)).find((m) => m.id === assigneeId)?.name || "";
+      }
       const vcf = buildVcf(contacts);
-      const fileName = exportAll
-        ? `All_Contacts_${new Date().toISOString().slice(0, 10)}.vcf`
-        : `${slug(collection.name)}_${collection.exhibitionDate || new Date().toISOString().slice(0, 10)}_Contacts.vcf`;
-      audit(db, user, "vcf.downloaded", "collection", collection.id, { contacts: contacts.length, all: exportAll });
+      const baseName = exportAll
+        ? `All_Contacts_${new Date().toISOString().slice(0, 10)}`
+        : `${slug(collection.name)}_${collection.exhibitionDate || new Date().toISOString().slice(0, 10)}_Contacts`;
+      const fileName = `${baseName}${assigneeLabel ? `_${slug(assigneeLabel)}` : ""}.vcf`;
+      audit(db, user, "vcf.downloaded", "collection", collection.id, { contacts: contacts.length, all: exportAll, assigneeId });
       await saveDb(db);
       return send(res, 200, vcf, {
         "Content-Type": "text/vcard; charset=utf-8",

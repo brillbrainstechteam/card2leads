@@ -6,7 +6,7 @@ const state = {
   cards: [],
   contacts: [],
   teamMembers: [],
-  contactFilters: { exhibition: "", assignee: "" },
+  contactFilters: { exhibition: "", assignee: "", city: "", state: "" },
   contactSearchQuery: "",
   selectedFiles: [],
   processingCards: new Set(),
@@ -822,10 +822,11 @@ function navButton(view, label) {
   </button>`;
 }
 
-function exportHref(format, collectionId, ids = [], all = false) {
+function exportHref(format, collectionId, ids = [], all = false, assigneeId = "") {
   const params = new URLSearchParams({ collectionId, csrf: state.csrfToken || "" });
   if (ids.length) params.set("ids", ids.join(","));
   if (all) params.set("all", "true");
+  if (format === "vcf" && assigneeId) params.set("assigneeId", assigneeId);
   return `/api/export.${format}?${params.toString()}`;
 }
 
@@ -2258,15 +2259,19 @@ function blobToDataUrl(blob) {
 }
 
 function contactsView() {
-  const filters = state.contactFilters || { exhibition: "", assignee: "" };
+  const filters = state.contactFilters || { exhibition: "", assignee: "", city: "", state: "" };
   const visibleContacts = state.contacts.filter((contact) => {
     if (filters.exhibition && (contact.exhibitionName || "") !== filters.exhibition) return false;
     if (filters.assignee === "__unassigned" && contact.assignedToId) return false;
     if (filters.assignee && filters.assignee !== "__unassigned" && contact.assignedToId !== filters.assignee) return false;
+    if (filters.city && (contact.city || "") !== filters.city) return false;
+    if (filters.state && (contact.state || "") !== filters.state) return false;
     return true;
   });
   const exhibitionNames = [...new Set(state.contacts.map((contact) => contact.exhibitionName).filter(Boolean))].sort();
-  const filtersActive = Boolean(filters.exhibition || filters.assignee);
+  const cityNames = [...new Set(state.contacts.map((contact) => contact.city).filter(Boolean))].sort();
+  const stateNames = [...new Set(state.contacts.map((contact) => contact.state).filter(Boolean))].sort();
+  const filtersActive = Boolean(filters.exhibition || filters.assignee || filters.city || filters.state);
   const selectedIds = visibleContacts.filter((contact) => state.selectedContactIds.has(contact.id)).map((contact) => contact.id);
   const allVisibleSelected = visibleContacts.length > 0 && selectedIds.length === visibleContacts.length;
   const activeCollectionId = state.overview.activeCollection?.id || state.overview.collections?.find((collection) => collection.status !== "deleted")?.id || "";
@@ -2292,6 +2297,11 @@ function contactsView() {
     : !google.contactsConnected
       ? `<a class="secondary button-link" href="/api/google/connect?feature=contacts">Connect Google Contacts</a>`
       : `<button type="button" class="secondary" id="syncGoogleContacts" ${!selectedIds.length || state.googleContactsSyncing ? "disabled" : ""}>${escapeHtml(peopleButtonLabel)}</button>`;
+  const assigneeFilterLabel = filters.assignee === "__unassigned"
+    ? "Unassigned"
+    : filters.assignee
+      ? (state.teamMembers.find((m) => m.id === filters.assignee)?.name || "")
+      : "";
   const exportMenu = activeCollectionId ? `
     <details class="export-sync-menu">
       <summary>Export &amp; sync</summary>
@@ -2299,7 +2309,7 @@ function contactsView() {
         <span class="export-sync-heading">Download</span>
         <a href="${exportHref("xlsx", activeCollectionId, [], true)}">Download Excel</a>
         <a href="${exportHref("csv", activeCollectionId, [], true)}">Download CSV</a>
-        <a href="${exportHref("vcf", activeCollectionId)}">Download exhibition VCF</a>
+        <a href="${exportHref("vcf", activeCollectionId, [], false, filters.assignee)}">Download exhibition VCF${assigneeFilterLabel ? ` (${escapeHtml(assigneeFilterLabel)})` : ""}</a>
         <span class="export-sync-heading">Google</span>
         ${!google.configured
           ? `<span class="export-sync-note">Google integration is not configured.</span>`
@@ -2330,7 +2340,31 @@ function contactsView() {
         </div>
       </div>
       ${state.contactSearchQuery ? `<p class="search-active-note">Showing results for "${escapeHtml(state.contactSearchQuery)}" &middot; <button type="button" class="link-button" id="clearSearchLink">Clear search</button></p>` : ""}
-      ${state.contacts.length ? `<div class="contacts-filters">
+      ${!state.contacts.length && !state.contactSearchQuery ? `
+      <div class="contacts-empty">
+        <div class="contacts-empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="5" width="18" height="14" rx="2.5" />
+            <circle cx="9" cy="11" r="2.2" />
+            <path d="M5.5 16c.6-1.7 2-2.6 3.5-2.6s2.9.9 3.5 2.6M15 9.5h3.5M15 13h3" />
+          </svg>
+        </div>
+        <h3>No contacts yet</h3>
+        <p>Upload your business cards and Card2Leads turns them into saved contacts here.</p>
+        <button type="button" id="contactsEmptyUpload">Upload cards</button>
+      </div>` : !state.contacts.length ? `
+      <div class="contacts-empty">
+        <div class="contacts-empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M21 21l-4.3-4.3" />
+          </svg>
+        </div>
+        <h3>No matches for "${escapeHtml(state.contactSearchQuery)}"</h3>
+        <p>Try a different name, number, company, or team member — or clear the search to see all contacts.</p>
+        <button type="button" id="contactsEmptyClearSearch">Clear search</button>
+      </div>` : `
+      <div class="contacts-filters">
         <label class="filter-field">
           <span>Exhibition</span>
           <select id="filterExhibition">
@@ -2346,6 +2380,20 @@ function contactsView() {
             ${state.teamMembers.map((m) => `<option value="${m.id}"${filters.assignee === m.id ? " selected" : ""}>${escapeHtml(m.name)}</option>`).join("")}
           </select>
         </label>
+        <label class="filter-field">
+          <span>City</span>
+          <select id="filterCity">
+            <option value="">All cities</option>
+            ${cityNames.map((name) => `<option value="${escapeAttr(name)}"${filters.city === name ? " selected" : ""}>${escapeHtml(name)}</option>`).join("")}
+          </select>
+        </label>
+        <label class="filter-field">
+          <span>State</span>
+          <select id="filterState">
+            <option value="">All states</option>
+            ${stateNames.map((name) => `<option value="${escapeAttr(name)}"${filters.state === name ? " selected" : ""}>${escapeHtml(name)}</option>`).join("")}
+          </select>
+        </label>
         ${filtersActive ? `<button type="button" class="link-button" id="clearContactFilters">Clear filters</button>` : ""}
       </div>
       <div class="contacts-selectbar">
@@ -2358,19 +2406,7 @@ function contactsView() {
         </div>
       </div>
       <ul class="contact-list"></ul>
-      ${visibleContacts.length ? "" : `<p class="contact-empty">No contacts match these filters.</p>`}` : `
-      <div class="contacts-empty">
-        <div class="contacts-empty-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="5" width="18" height="14" rx="2.5" />
-            <circle cx="9" cy="11" r="2.2" />
-            <path d="M5.5 16c.6-1.7 2-2.6 3.5-2.6s2.9.9 3.5 2.6M15 9.5h3.5M15 13h3" />
-          </svg>
-        </div>
-        <h3>No contacts yet</h3>
-        <p>Upload your business cards and Card2Leads turns them into saved contacts here.</p>
-        <button type="button" id="contactsEmptyUpload">Upload cards</button>
-      </div>`}
+      ${visibleContacts.length ? "" : `<p class="contact-empty">No contacts match these filters.</p>`}`}
     </section>
   `);
   const tbody = node.querySelector(".contact-list");
@@ -2384,6 +2420,7 @@ function contactsView() {
         </div>
         <div class="contact-card-sub">
           ${contact.companyName ? `<span>${escapeHtml(contact.companyName)}${contact.designation ? ` · ${escapeHtml(contact.designation)}` : ""}</span>` : ""}
+          ${contact.city || contact.state ? `<span>${[contact.city, contact.state].filter(Boolean).map(escapeHtml).join(", ")}</span>` : ""}
           ${contact.exhibitionName ? `<span class="contact-card-tag">${escapeHtml(contact.exhibitionName)}${contact.exhibitionDate ? ` · ${escapeHtml(displayDate(contact.exhibitionDate))}` : ""}</span>` : ""}
         </div>
       </div>
@@ -2416,8 +2453,16 @@ function contactsView() {
     state.contactFilters = { ...state.contactFilters, assignee: event.target.value };
     render();
   });
+  node.querySelector("#filterCity")?.addEventListener("change", (event) => {
+    state.contactFilters = { ...state.contactFilters, city: event.target.value };
+    render();
+  });
+  node.querySelector("#filterState")?.addEventListener("change", (event) => {
+    state.contactFilters = { ...state.contactFilters, state: event.target.value };
+    render();
+  });
   node.querySelector("#clearContactFilters")?.addEventListener("click", () => {
-    state.contactFilters = { exhibition: "", assignee: "" };
+    state.contactFilters = { exhibition: "", assignee: "", city: "", state: "" };
     render();
   });
   tbody.querySelectorAll("[data-select-contact]").forEach((checkbox) => checkbox.addEventListener("change", () => {
@@ -2471,6 +2516,10 @@ function contactsView() {
     runContactSearch("", { refocus: true });
   });
   node.querySelector("#clearSearchLink")?.addEventListener("click", () => {
+    clearTimeout(contactSearchDebounce);
+    runContactSearch("");
+  });
+  node.querySelector("#contactsEmptyClearSearch")?.addEventListener("click", () => {
     clearTimeout(contactSearchDebounce);
     runContactSearch("");
   });

@@ -14,8 +14,8 @@
   --sidebar-strong: #131f36;
   --purple: #8f63aa;
   --purple-soft: #f0e7f7;
-  --gold: #ddba79;
-  --yellow: #ddba79;
+  --gold: #edbe13;
+  --yellow: #edbe13;
   --yellow-soft: #fdf6e8;
   --warn: #c08316;
   --danger: #b42318;
@@ -207,7 +207,7 @@ label {
 }
 
 .nav button.active:hover {
-  background: #e6cb95;
+  background: #ebc12a;
   color: #20222a;
 }
 
