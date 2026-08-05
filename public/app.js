@@ -88,7 +88,10 @@ function navigateToView(view, options = {}) {
 const fieldLabels = {
   name: "Name",
   mobileNumber: "Mobile Number",
-  secondaryMobileNumber: "Secondary Mobile Number",
+  secondaryName: "Secondary Name (optional)",
+  secondaryMobileNumber: "Secondary Mobile Number (optional)",
+  tertiaryName: "Tertiary Name (optional)",
+  tertiaryMobileNumber: "Tertiary Mobile Number (optional)",
   companyName: "Company Name",
   designation: "Designation",
   officeNumber: "Office Number",
@@ -1577,6 +1580,21 @@ async function saveAllValidContacts() {
   }
 }
 
+function reviewIssuesNotice(card) {
+  const isDuplicateText = (w) => /uploaded before|matches another uploaded card/i.test(w);
+  const isRotationText = (w) => /rotat|upside.?down|reorient/i.test(w);
+  const raw = Array.isArray(card.extraction?.warnings) ? card.extraction.warnings : [];
+  const issues = raw.filter((w) => !isRotationText(w) && !isDuplicateText(w));
+  if (card.duplicateImageOf) {
+    issues.unshift("This image appears to have been uploaded before. You can still save it if it is a valid separate contact.");
+  }
+  if (!issues.length) return "";
+  if (issues.length === 1) {
+    return `<div class="notice bad">${escapeHtml(issues[0])}</div>`;
+  }
+  return `<div class="notice bad"><ul class="notice-list">${issues.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}</ul></div>`;
+}
+
 function cardReview(card) {
   const fields = { ...card.extraction };
   const fieldConfidence = { ...(card.extraction?.fieldConfidence || {}) };
@@ -1599,14 +1617,13 @@ function cardReview(card) {
         <div class="form-grid">
           ${contactFields.map((field) => inputField(field, fields[field] || "", field === "notes" || field === "address", fieldConfidence[field])).join("")}
         </div>
-        ${card.duplicateImageOf ? `<div class="notice bad">This image appears to have been uploaded before. You can still save it if it is a valid separate contact.</div>` : ""}
-        ${(card.extraction.warnings || []).map((w) => `<div class="notice bad">${escapeHtml(w)}</div>`).join("")}
+        ${reviewIssuesNotice(card)}
         <div class="actions review-card-actions">
           <button type="submit" ${busy || card.status === "failed" ? "disabled" : ""}>Save contact</button>
           <button type="button" class="secondary" data-voice-card><span class="button-mic-icon" aria-hidden="true"></span>Add voice note</button>
           <button type="button" class="secondary" data-reprocess-card ${busy || !card.storageUrl ? "disabled" : ""}>${card.status === "failed" ? "Retry failed card" : "Reprocess card"}</button>
           <button type="button" class="secondary" data-skip-card>Skip</button>
-          <button type="button" class="danger" data-delete-card>Delete scanned card</button>
+          <button type="button" class="danger" data-delete-card>Delete</button>
         </div>
       </form>
     </article>

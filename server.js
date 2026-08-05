@@ -96,7 +96,10 @@ const OPTIONAL_FIELDS = [
   "companyName",
   "designation",
   "department",
+  "secondaryName",
   "secondaryMobileNumber",
+  "tertiaryName",
+  "tertiaryMobileNumber",
   "officeNumber",
   "emailAddress",
   "secondaryEmail",
@@ -1500,7 +1503,10 @@ function makeManualReviewExtraction(fileName, collection, reason = "") {
     companyName: "",
     designation: "",
     department: "",
+    secondaryName: "",
     secondaryMobileNumber: "",
+    tertiaryName: "",
+    tertiaryMobileNumber: "",
     officeNumber: "",
     emailAddress: "",
     secondaryEmail: "",
@@ -1735,7 +1741,7 @@ function extractionSystemPrompt() {
     "Never return sample, placeholder, or example contact data.",
     "If the image is blank, unreadable, too small, a screenshot of an app, or not clearly a business card, leave contact fields blank and add a warning.",
     "If a field is unclear or missing, return an empty string and add a warning.",
-    "The business card can be horizontal, vertical, upside down, or rotated; read it in the correct orientation before extracting.",
+    "The business card can be horizontal, vertical, upside down, or rotated; read it in the correct orientation before extracting. Do this silently — never add a warning stating that the card was rotated, upside down, or reoriented.",
     "Name and mobileNumber are critical fields."
   ].join(" ");
 }
@@ -1745,7 +1751,10 @@ function extractionUserPrompt() {
 {
   "name": "",
   "mobileNumber": "",
+  "secondaryName": "",
   "secondaryMobileNumber": "",
+  "tertiaryName": "",
+  "tertiaryMobileNumber": "",
   "companyName": "",
   "designation": "",
   "officeNumber": "",
@@ -1764,7 +1773,10 @@ function extractionUserPrompt() {
   "fieldConfidence": {
     "name": 0,
     "mobileNumber": 0,
+    "secondaryName": 0,
     "secondaryMobileNumber": 0,
+    "tertiaryName": 0,
+    "tertiaryMobileNumber": 0,
     "companyName": 0,
     "designation": 0,
     "officeNumber": 0,
@@ -1788,12 +1800,14 @@ Rules:
 - Use the person's full visible name for name.
 - Use the primary mobile/cell number for mobileNumber.
 - When two mobile numbers are separated by a slash or similar divider, put the first in mobileNumber and the second in secondaryMobileNumber. Never combine two mobile numbers in mobileNumber.
+- If the card lists more than one person (for example two names, each with their own number), put the most prominent person in name/mobileNumber, the next person in secondaryName/secondaryMobileNumber, and a third person in tertiaryName/tertiaryMobileNumber. Only name is mandatory — leave secondaryName, tertiaryName and their numbers blank when there is only one person. Do not add a warning about multiple people when you have captured them in these fields.
 - Keep phone numbers exactly as visible when uncertain.
 - Put landline/office numbers in officeNumber.
 - If an office number contains a slash-separated alternate number or extension, preserve both in officeNumber separated by " / ".
 - confidence must be an integer from 0 to 100.
 - fieldConfidence must contain an integer 0 to 100 for every extracted field.
 - Use fieldConfidence below 70 when the text is partially cut, blurred, rotated, handwritten, or inferred from context.
+- Never add a warning about the card's rotation or orientation.
 - If the image does not appear to be a business card, leave contact fields blank and add a warning.
 - If you cannot read actual visible card text, leave contact fields blank.
 - One image should contain one business card. If multiple cards are visible, extract the most prominent card and add a warning.
@@ -1813,7 +1827,10 @@ function normalizeExtraction(raw, collection) {
     companyName: cleanText(raw.companyName),
     designation: cleanText(raw.designation),
     department: cleanText(raw.department),
+    secondaryName: cleanText(raw.secondaryName),
     secondaryMobileNumber: cleanText(raw.secondaryMobileNumber),
+    tertiaryName: cleanText(raw.tertiaryName),
+    tertiaryMobileNumber: cleanText(raw.tertiaryMobileNumber),
     officeNumber: cleanText(raw.officeNumber),
     emailAddress: cleanText(raw.emailAddress),
     secondaryEmail: cleanText(raw.secondaryEmail),
@@ -1838,7 +1855,9 @@ function normalizeExtraction(raw, collection) {
     rawVisibleText: cleanText(raw.rawVisibleText),
     confidence: 0,
     fieldConfidence: normalizeFieldConfidence(raw.fieldConfidence, raw.confidence),
-    warnings: Array.isArray(raw.warnings) ? raw.warnings.map(cleanText).filter(Boolean) : []
+    warnings: Array.isArray(raw.warnings)
+      ? raw.warnings.map(cleanText).filter(Boolean).filter((w) => !/rotat|upside.?down|reorient/i.test(w))
+      : []
   };
 
   const normalizedPhones = normalizePhoneFields(extraction);

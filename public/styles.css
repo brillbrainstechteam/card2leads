@@ -14,9 +14,9 @@
   --sidebar-strong: #131f36;
   --purple: #8f63aa;
   --purple-soft: #f0e7f7;
-  --gold: #c79a3e;
-  --yellow: #c79a3e;
-  --yellow-soft: #fbf3df;
+  --gold: #d4ab52;
+  --yellow: #d4ab52;
+  --yellow-soft: #fdf6e8;
   --warn: #c08316;
   --danger: #b42318;
   --ok: #2f9b68;
@@ -93,7 +93,16 @@ button.warning {
 }
 
 button.danger {
-  background: var(--danger);
+  background: #ffffff;
+  color: var(--danger);
+  border: 1px solid #f3b9ae;
+  box-shadow: none;
+  padding: 7px 10px;
+}
+
+button.danger:hover {
+  background: #fff2f0;
+  color: var(--danger);
 }
 
 button:disabled {
@@ -338,10 +347,10 @@ label {
   justify-content: space-between;
   gap: 16px;
   padding: 16px 18px;
-  border: 1px solid #ece2d2;
+  border: 1px solid #cfe3e0;
   border-radius: 10px;
-  background: #fdfbf6;
-  box-shadow: 0 5px 16px rgba(90, 70, 40, 0.05);
+  background: #f3f8f8;
+  box-shadow: 0 5px 16px rgba(40, 90, 80, 0.05);
 }
 
 .destination-field {
@@ -530,9 +539,9 @@ label {
 }
 
 .dropzone {
-  border: 1.5px dashed #c9b4dd;
+  border: 1.5px dashed #a9cdc7;
   border-radius: 16px;
-  background: linear-gradient(180deg, #fdfbf6 0%, #fdfbf6 100%);
+  background: #f3f8f8;
   padding: 34px 22px;
   display: grid;
   gap: 10px;
@@ -1278,15 +1287,6 @@ label {
   white-space: nowrap;
 }
 
-.row-actions button.danger {
-  background: #fff5f3;
-  border: 1px solid #f3b9ae;
-  color: var(--danger);
-}
-
-.row-actions button.danger:hover {
-  background: #ffebe7;
-}
 
 .muted {
   color: var(--muted);
@@ -1368,6 +1368,23 @@ label {
 .notice.bad {
   border-color: var(--danger);
   background: #fff2f0;
+}
+
+.notice-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.notice-list li {
+  margin: 4px 0;
+}
+
+.notice-list li:first-child {
+  margin-top: 0;
+}
+
+.notice-list li:last-child {
+  margin-bottom: 0;
 }
 
 .notice-action {
@@ -5096,21 +5113,9 @@ strong {
   margin-top: 8px;
 }
 
-/* Softer delete: creme button with red text, not a red fill */
 .contact-card-actions .danger,
 .selectbar-actions .danger {
-  background: #fdfbf6;
-  color: var(--danger);
-  border: 1px solid #eedcd8;
-  box-shadow: none;
-  padding: 6px 12px;
   font-size: 13px;
-}
-
-.contact-card-actions .danger:hover,
-.selectbar-actions .danger:hover {
-  background: #fbece8;
-  color: var(--danger);
 }
 
 @media (max-width: 880px) {
