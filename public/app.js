@@ -331,7 +331,7 @@ function authView() {
             </article>
           </div>
         </div>
-        <img class="features-illustration" src="/illustrations-final/features%20illustration.png?v=final-20260729" alt="Card2Leads feature overview" />
+        <img class="features-illustration" src="/illustrations-final/features%20illustration.png?v=final-20260805-v2" alt="Card2Leads feature overview" />
       </section>
 
       <section class="public-section public-feature-grid" id="exports">

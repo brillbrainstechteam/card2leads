@@ -1732,7 +1732,7 @@ label {
   display: grid;
   place-items: center;
   color: #fff;
-  background: #5f8f98;
+  background: var(--purple);
   font-weight: 650;
 }
 
