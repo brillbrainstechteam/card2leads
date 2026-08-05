@@ -14,8 +14,8 @@
   --sidebar-strong: #131f36;
   --purple: #8f63aa;
   --purple-soft: #f0e7f7;
-  --gold: #d4ab52;
-  --yellow: #d4ab52;
+  --gold: #ddba79;
+  --yellow: #ddba79;
   --yellow-soft: #fdf6e8;
   --warn: #c08316;
   --danger: #b42318;
@@ -207,7 +207,7 @@ label {
 }
 
 .nav button.active:hover {
-  background: #f6bd48;
+  background: #e6cb95;
   color: #20222a;
 }
 
@@ -342,7 +342,7 @@ label {
 
 .destination-selector {
   display: grid;
-  grid-template-columns: minmax(280px, 560px) auto;
+  grid-template-columns: minmax(220px, 360px) auto;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -373,25 +373,6 @@ label {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-
-.upload-topbar {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-  margin-bottom: 14px;
-}
-
-.upload-topbar h2 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-}
-
-.upload-topbar-hint {
-  font-size: 13px;
-  color: var(--muted);
 }
 
 .new-exhibition-settings {
@@ -2516,6 +2497,47 @@ label {
   width: min(320px, 30vw);
 }
 
+.search-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-field input {
+  padding-right: 30px;
+}
+
+.search-clear {
+  position: absolute;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  min-height: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.search-clear:hover {
+  background: var(--line);
+  color: var(--ink);
+}
+
+.search-active-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.search-active-note .link-button {
+  font-size: 13px;
+}
+
 .export-sync-menu {
   position: relative;
 }
@@ -2967,7 +2989,7 @@ th {
   text-align: right;
 }
 
-.contact-action-group .compact-action {
+.compact-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3534,8 +3556,8 @@ strong {
   .dropzone {
     padding: 18px 14px;
     border-style: solid;
-    border-color: #b9d1ce;
-    background: #fdfbf6;
+    border-color: #a9cdc7;
+    background: #f3f8f8;
     box-shadow: inset 0 1px 0 #fff;
   }
 
@@ -4966,6 +4988,8 @@ strong {
   font-size: 14px;
   color: var(--ink);
   cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .contacts-count {

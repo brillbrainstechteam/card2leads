@@ -7,6 +7,7 @@ const state = {
   contacts: [],
   teamMembers: [],
   contactFilters: { exhibition: "", assignee: "" },
+  contactSearchQuery: "",
   selectedFiles: [],
   processingCards: new Set(),
   selectedContactIds: new Set(),
@@ -188,10 +189,33 @@ async function init() {
 window.addEventListener("popstate", () => applyRouteFromLocation());
 window.addEventListener("hashchange", () => applyRouteFromLocation());
 
+let contactSearchDebounce = null;
+
+async function runContactSearch(query, { refocus = false } = {}) {
+  state.contactSearchQuery = query;
+  const result = await api(`/api/contacts?q=${encodeURIComponent(query)}`);
+  state.contacts = result.contacts;
+  const availableIds = new Set(state.contacts.map((contact) => contact.id));
+  state.selectedContactIds = new Set([...state.selectedContactIds].filter((id) => availableIds.has(id)));
+  render();
+  if (refocus) {
+    const input = document.getElementById("searchBox");
+    if (input) {
+      input.focus();
+      const pos = input.value.length;
+      input.setSelectionRange(pos, pos);
+    }
+  }
+}
+
 async function refreshAll() {
   state.overview = await api("/api/overview");
   state.organisation = state.overview.organisation || state.organisation;
-  const [cards, contacts, team] = await Promise.all([api("/api/cards"), api("/api/contacts"), api("/api/team")]);
+  const [cards, contacts, team] = await Promise.all([
+    api("/api/cards"),
+    api(`/api/contacts?q=${encodeURIComponent(state.contactSearchQuery || "")}`),
+    api("/api/team")
+  ]);
   state.cards = cards.cards;
   state.contacts = contacts.contacts;
   state.teamMembers = team.members || [];
@@ -773,7 +797,7 @@ function shell() {
         <section class="topbar">
           <div>
             <h1>${title}</h1>
-            <span class="muted">${escapeHtml(state.overview?.activeCollection?.name || "")}</span>
+            <span class="muted">${state.view === "upload" ? "Up to 20 cards at once &middot; one card per photo" : escapeHtml(state.overview?.activeCollection?.name || "")}</span>
           </div>
           <div class="topbar-actions">
             <span class="session-pill">${escapeHtml(state.user.name)}</span>
@@ -1020,10 +1044,6 @@ function uploadView() {
   const draftCollectionName = state.draftCollectionName || (needsFirstSheet ? (draftExhibitionName || "Exhibition Leads") : "");
   const node = el(`
     <section class="panel upload-panel">
-      <div class="upload-topbar">
-        <h2>Upload business cards</h2>
-        <span class="upload-topbar-hint">Up to 20 cards at once · one card per photo</span>
-      </div>
       ${!createNewSelected ? `<div class="destination-selector">
         <label class="destination-field">
           <span class="destination-kicker">Saving cards to</span>
@@ -2301,11 +2321,15 @@ function contactsView() {
       <div class="contacts-toolbar">
         <div class="contacts-toolbar-copy"><h2>Saved contacts</h2><span class="muted">Search, filter, assign, add voice notes, or export.</span></div>
         <div class="actions contacts-toolbar-actions">
-          <input id="searchBox" aria-label="Search contacts" placeholder="Search name, number, or company" />
+          <div class="search-field">
+            <input id="searchBox" aria-label="Search contacts" placeholder="Search name, number, or company" value="${escapeAttr(state.contactSearchQuery)}" />
+            ${state.contactSearchQuery ? `<button type="button" class="search-clear" id="clearSearchBox" aria-label="Clear search">&times;</button>` : ""}
+          </div>
           <button type="button" class="secondary" id="manageTeamButton">${state.teamMembers.length ? `Team members (${state.teamMembers.length})` : "+ Add a team member"}</button>
           ${exportMenu}
         </div>
       </div>
+      ${state.contactSearchQuery ? `<p class="search-active-note">Showing results for "${escapeHtml(state.contactSearchQuery)}" &middot; <button type="button" class="link-button" id="clearSearchLink">Clear search</button></p>` : ""}
       ${state.contacts.length ? `<div class="contacts-filters">
         <label class="filter-field">
           <span>Exhibition</span>
@@ -2437,12 +2461,18 @@ function contactsView() {
     };
     render();
   }));
-  node.querySelector("#searchBox").addEventListener("input", async (event) => {
-    const result = await api(`/api/contacts?q=${encodeURIComponent(event.target.value)}`);
-    state.contacts = result.contacts;
-    const availableIds = new Set(state.contacts.map((contact) => contact.id));
-    state.selectedContactIds = new Set([...state.selectedContactIds].filter((id) => availableIds.has(id)));
-    render();
+  node.querySelector("#searchBox").addEventListener("input", (event) => {
+    state.contactSearchQuery = event.target.value;
+    clearTimeout(contactSearchDebounce);
+    contactSearchDebounce = setTimeout(() => runContactSearch(state.contactSearchQuery, { refocus: true }), 300);
+  });
+  node.querySelector("#clearSearchBox")?.addEventListener("click", () => {
+    clearTimeout(contactSearchDebounce);
+    runContactSearch("", { refocus: true });
+  });
+  node.querySelector("#clearSearchLink")?.addEventListener("click", () => {
+    clearTimeout(contactSearchDebounce);
+    runContactSearch("");
   });
   node.querySelector("#bulkDeleteContacts")?.addEventListener("click", () => {
     const ids = state.contacts.filter((contact) => state.selectedContactIds.has(contact.id)).map((contact) => contact.id);
