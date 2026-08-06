@@ -356,41 +356,34 @@ function authView() {
           </div>
         </div>
         <div class="workflow-flow" aria-label="How Card2Leads works, step by step">
-          <ol class="workflow-steps">
-            <li class="workflow-step" style="--step-accent:#c98a2b;">
-              <span class="workflow-num">01</span>
-              <span class="workflow-ico" aria-hidden="true">${WORKFLOW_ICONS.capture}</span>
-              <div class="workflow-text"><strong>Capture cards</strong><p>Scan one card live or upload a whole batch after an event.</p></div>
+          <ol class="workflow-timeline">
+            <li class="wf-item">
+              <div class="wf-node" aria-hidden="true">${WORKFLOW_ICONS.capture}</div>
+              <div class="wf-body"><span class="wf-step">Step 01</span><strong>Capture cards</strong><p>Scan one card live or upload a whole batch after an event.</p></div>
             </li>
-            <li class="workflow-step" style="--step-accent:#2f6db0;">
-              <span class="workflow-num">02</span>
-              <span class="workflow-ico" aria-hidden="true">${WORKFLOW_ICONS.extract}</span>
-              <div class="workflow-text"><strong>Extract details</strong><p>Turn names, phones, emails and companies into clean, structured fields.</p></div>
+            <li class="wf-item">
+              <div class="wf-node" aria-hidden="true">${WORKFLOW_ICONS.extract}</div>
+              <div class="wf-body"><span class="wf-step">Step 02</span><strong>Extract details</strong><p>Turn names, phones, emails and companies into clean, structured fields.</p></div>
             </li>
-            <li class="workflow-step" style="--step-accent:#8f63aa;">
-              <span class="workflow-num">03</span>
-              <span class="workflow-ico" aria-hidden="true">${WORKFLOW_ICONS.review}</span>
-              <div class="workflow-text"><strong>Review &amp; clean</strong><p>Check uncertain fields, fix errors and remove duplicate records.</p></div>
+            <li class="wf-item">
+              <div class="wf-node" aria-hidden="true">${WORKFLOW_ICONS.review}</div>
+              <div class="wf-body"><span class="wf-step">Step 03</span><strong>Review &amp; clean</strong><p>Check uncertain fields, fix errors and remove duplicate records.</p></div>
             </li>
-            <li class="workflow-step" style="--step-accent:#c98a2b;">
-              <span class="workflow-num">04</span>
-              <span class="workflow-ico" aria-hidden="true">${WORKFLOW_ICONS.assign}</span>
-              <div class="workflow-text"><strong>Assign owner</strong><p>Route each contact to the right team member for follow-up.</p></div>
+            <li class="wf-item">
+              <div class="wf-node" aria-hidden="true">${WORKFLOW_ICONS.assign}</div>
+              <div class="wf-body"><span class="wf-step">Step 04</span><strong>Assign owner</strong><p>Route each contact to the right team member for follow-up.</p></div>
             </li>
-            <li class="workflow-step" style="--step-accent:#2f6db0;">
-              <span class="workflow-num">05</span>
-              <span class="workflow-ico" aria-hidden="true">${WORKFLOW_ICONS.search}</span>
-              <div class="workflow-text"><strong>Search &amp; filter</strong><p>Find contacts by name, city, state, exhibition or assigned owner.</p></div>
+            <li class="wf-item">
+              <div class="wf-node" aria-hidden="true">${WORKFLOW_ICONS.search}</div>
+              <div class="wf-body"><span class="wf-step">Step 05</span><strong>Search &amp; filter</strong><p>Find contacts by name, city, state, exhibition or assigned owner.</p></div>
             </li>
-            <li class="workflow-step" style="--step-accent:#8f63aa;">
-              <span class="workflow-num">06</span>
-              <span class="workflow-ico" aria-hidden="true">${WORKFLOW_ICONS.export}</span>
-              <div class="workflow-text"><strong>Export records</strong><p>Download approved contacts as Excel, CSV or VCF files.</p></div>
+            <li class="wf-item">
+              <div class="wf-node" aria-hidden="true">${WORKFLOW_ICONS.export}</div>
+              <div class="wf-body"><span class="wf-step">Step 06</span><strong>Export records</strong><p>Download approved contacts as Excel, CSV or VCF files.</p></div>
             </li>
-            <li class="workflow-step" style="--step-accent:#2f9b68;">
-              <span class="workflow-num">07</span>
-              <span class="workflow-ico" aria-hidden="true">${WORKFLOW_ICONS.google}</span>
-              <div class="workflow-text"><strong>Sync with Google</strong><p>Add approved contacts to Google Contacts or a selected Google Sheet.</p></div>
+            <li class="wf-item wf-item-final">
+              <div class="wf-node" aria-hidden="true">${WORKFLOW_ICONS.google}</div>
+              <div class="wf-body"><span class="wf-step">Step 07</span><strong>Sync with Google</strong><p>Add approved contacts to Google Contacts or a selected Google Sheet.</p></div>
             </li>
           </ol>
         </div>

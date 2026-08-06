@@ -2152,84 +2152,88 @@ label {
 
 .workflow-flow {
   width: 100%;
+  padding: 4px 8px;
 }
 
-.workflow-steps {
+.workflow-timeline {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  gap: 10px;
-  counter-reset: none;
-}
-
-.workflow-step {
   position: relative;
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 14px;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--step-accent, var(--purple));
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 4px 14px rgba(32, 34, 42, 0.05);
-  transition: transform 0.14s ease, box-shadow 0.14s ease;
+  gap: 22px;
 }
 
-.workflow-step:hover {
-  transform: translateX(3px);
-  box-shadow: 0 8px 20px rgba(32, 34, 42, 0.09);
-}
-
-/* connector line between the number chips */
-.workflow-step:not(:last-child)::after {
+.workflow-timeline::before {
   content: "";
   position: absolute;
-  left: 30px;
-  top: calc(100% - 1px);
-  height: 10px;
+  left: 19px;
+  top: 8px;
+  bottom: 8px;
   width: 2px;
-  background: var(--line);
+  border-radius: 2px;
+  background: linear-gradient(180deg, #dca62f 0%, #8f63aa 55%, #2f9b68 100%);
 }
 
-.workflow-num {
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
+.wf-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  gap: 15px;
+  align-items: flex-start;
+}
+
+.wf-node {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
   display: grid;
   place-items: center;
-  font-size: 13px;
-  font-weight: 700;
   color: #fff;
-  background: var(--step-accent, var(--purple));
-  letter-spacing: 0.02em;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px #fff, 0 6px 14px rgba(34, 53, 88, 0.2);
+  z-index: 1;
 }
 
-.workflow-ico {
-  width: 22px;
-  height: 22px;
-  color: var(--step-accent, var(--purple));
-  order: 3;
+.wf-item-final .wf-node {
+  background: var(--ok);
+  box-shadow: 0 0 0 4px #fff, 0 6px 14px rgba(47, 155, 104, 0.22);
 }
 
-.workflow-ico svg {
-  width: 22px;
-  height: 22px;
+.wf-node svg {
+  width: 20px;
+  height: 20px;
 }
 
-.workflow-text strong {
+.wf-body {
+  padding-top: 1px;
+}
+
+.wf-step {
   display: block;
-  font-size: 14.5px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #b98b2e;
+}
+
+.wf-item-final .wf-step {
+  color: #3a8f68;
+}
+
+.wf-body strong {
+  display: block;
+  font-size: 15px;
   font-weight: 650;
   color: var(--ink);
+  margin-top: 1px;
 }
 
-.workflow-text p {
-  margin: 2px 0 0;
-  font-size: 12.5px;
-  line-height: 1.45;
+.wf-body p {
+  margin: 3px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
   color: var(--muted);
 }
 
