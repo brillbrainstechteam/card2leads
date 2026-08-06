@@ -359,12 +359,11 @@ function authView() {
             <p class="section-kicker">Pricing</p>
             <h2>Simple plans for every business-card workflow.</h2>
           </div>
-          <p>Every plan includes AI-assisted card extraction, manual review, labels, voice inputs, Excel and CSV exports, VCF downloads, Google Sheets sync and Google Contacts sync. Plans differ only by the number of card scans included.</p>
         </div>
         <div class="pricing-tabs" role="tablist" aria-label="Pricing options">
           <button type="button" class="pricing-tab active" role="tab" aria-selected="true" data-pricing-tab="one-time">Pay once</button>
           <button type="button" class="pricing-tab" role="tab" aria-selected="false" data-pricing-tab="subscription">Subscription</button>
-          <span class="pricing-mode-caption">Default option · no recurring charge</span>
+          <span class="pricing-mode-caption" data-pricing-caption>Default option &middot; no recurring charge</span>
         </div>
         <div class="pricing-panel active" data-pricing-panel="one-time">
           <div class="pricing-grid">
@@ -506,6 +505,11 @@ function authView() {
 function initPublicPricingTabs(node) {
   const tabs = Array.from(node.querySelectorAll("[data-pricing-tab]"));
   const panels = Array.from(node.querySelectorAll("[data-pricing-panel]"));
+  const caption = node.querySelector("[data-pricing-caption]");
+  const captions = {
+    "one-time": "Default option · no recurring charge",
+    subscription: "Renews automatically · cancel anytime"
+  };
   tabs.forEach((tab) => {
     tab.addEventListener("click", () => {
       const selected = tab.dataset.pricingTab;
@@ -519,6 +523,7 @@ function initPublicPricingTabs(node) {
         panel.classList.toggle("active", active);
         panel.hidden = !active;
       });
+      if (caption) caption.textContent = captions[selected] || "";
     });
   });
 }
@@ -1852,9 +1857,19 @@ function inputField(field, value, multiline = false, confidence = undefined) {
     && Number.isFinite(confidenceValue)
     && confidenceValue > 0
     && confidenceValue < 70;
+  const mobileInputAttributes = {
+    mobileNumber: 'type="tel" inputmode="tel" autocomplete="off"',
+    secondaryMobileNumber: 'type="tel" inputmode="tel" autocomplete="off"',
+    tertiaryMobileNumber: 'type="tel" inputmode="tel" autocomplete="off"',
+    officeNumber: 'type="tel" inputmode="tel" autocomplete="off"',
+    emailAddress: 'type="email" inputmode="email" autocomplete="off" autocapitalize="none" spellcheck="false"',
+    secondaryEmail: 'type="email" inputmode="email" autocomplete="off" autocapitalize="none" spellcheck="false"',
+    website: 'type="url" inputmode="url" autocomplete="off" autocapitalize="none" spellcheck="false"',
+    exhibitionDate: 'type="date"'
+  };
   const input = multiline
     ? `<textarea name="${field}" rows="3">${escapeHtml(value)}</textarea>`
-    : `<input name="${field}" value="${escapeAttr(value)}" ${field === "exhibitionDate" ? 'type="date"' : ""} ${required ? "required" : ""} />`;
+    : `<input name="${field}" value="${escapeAttr(value)}" ${mobileInputAttributes[field] || ""} ${required ? "required" : ""} />`;
   return `
     <label class="${span} ${needsCheck ? "critical-field-warning" : ""}">
       <span class="field-label-row">

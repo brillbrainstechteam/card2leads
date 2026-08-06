@@ -2050,6 +2050,10 @@ label {
   gap: 18px;
 }
 
+.pricing-panel[hidden] {
+  display: none !important;
+}
+
 .pricing-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -3557,6 +3561,57 @@ strong {
 }
 
 @media (max-width: 760px) {
+  .pricing-section {
+    gap: 20px;
+  }
+
+  .pricing-heading h2 {
+    font-size: clamp(1.9rem, 9vw, 2.65rem);
+    line-height: 1.08;
+  }
+
+  .pricing-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+  }
+
+  .pricing-tab {
+    width: 100%;
+    min-width: 0;
+    min-height: 46px;
+    padding: 9px 10px;
+    font-size: 0.78rem;
+  }
+
+  .pricing-mode-caption {
+    grid-column: 1 / -1;
+    padding: 2px 4px 0;
+    font-size: 0.84rem;
+    line-height: 1.35;
+  }
+
+  .price-card {
+    min-height: 0;
+    padding: 20px;
+  }
+
+  .price-card h3 {
+    margin-top: 12px;
+  }
+
+  .pricing-subscription-block {
+    padding: 18px;
+  }
+
+  .pricing-note {
+    align-items: flex-start;
+    padding: 16px;
+    font-size: 0.94rem;
+    line-height: 1.5;
+  }
+
   .google-contacts-context-form {
     grid-template-columns: 1fr;
   }
