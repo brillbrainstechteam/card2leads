@@ -508,4 +508,13 @@ test("office numbers preserve slash-separated alternatives or extensions", () =>
   });
   assert.equal(fields.officeNumber, "04212485515 / 252653");
   assert.equal(validateContact(fields).ok, true);
+
+  // Cards commonly print consecutive lines as two-digit shorthand.
+  const consecutive = normalizePhoneFields({
+    name: "S. Karthikeyan",
+    mobileNumber: "+91 99948 60699",
+    officeNumber: "04212485551 / 52 / 53"
+  });
+  assert.equal(consecutive.officeNumber, "04212485551 / 52 / 53");
+  assert.equal(validateContact(consecutive).ok, true);
 });

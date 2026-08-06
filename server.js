@@ -4438,7 +4438,10 @@ function isValidOfficePhone(value) {
   if (!values.length) return true;
   return values.every((part, index) => {
     const digits = String(part).replace(/\D/g, "");
-    return digits.length >= (index === 0 ? 6 : 3) && digits.length <= 16;
+    // Only the first value is a whole number. The rest are printed shorthand for
+    // consecutive lines or extensions ("04212485551 / 52 / 53"), so they can be
+    // as short as a single digit — requiring at least one still rejects junk.
+    return digits.length >= (index === 0 ? 6 : 1) && digits.length <= 16;
   });
 }
 
