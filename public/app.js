@@ -2190,7 +2190,10 @@ function showDuplicateModal(cardId, form, duplicate) {
   render();
 }
 
-function voiceSummaryView(source = {}) {
+function voiceSummaryView(source) {
+  // Queued cards carry extraction: null, and a default parameter only fills in
+  // for undefined — so guard explicitly rather than relying on `source = {}`.
+  if (!source) return "";
   const hasVoice = source.interest || source.specialRequirement || source.budget || source.followUpDate || source.voiceTranscript || source.voiceAudioUrl;
   if (!hasVoice) return "";
   return `
