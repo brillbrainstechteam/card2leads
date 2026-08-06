@@ -371,41 +371,75 @@ function authView() {
       </section>
 
       <section class="public-section features-section" id="features">
-        <p class="section-kicker">Features</p>
-        <h2 class="features-heading">Capture, organise and use every business contact in <em>one simple flow.</em></h2>
-        <div class="feature-strip" aria-label="Card2Leads highlights">
-          <article>
-            <div class="feature-card-top">
-              <span class="feature-icon">${FEATURE_ICONS.camera}</span>
-              <span class="feature-num">01</span>
-            </div>
-            <strong>Scan or upload cards</strong>
-            <p>Capture a card using your phone camera or upload individual and bulk card images from desktop or mobile.</p>
-          </article>
-          <article>
-            <div class="feature-card-top">
-              <span class="feature-icon">${FEATURE_ICONS.review}</span>
-              <span class="feature-num">02</span>
-            </div>
-            <strong>Review before saving</strong>
-            <p>Check extracted names, phone numbers, emails, companies and designations before approving each contact.</p>
-          </article>
-          <article>
-            <div class="feature-card-top">
-              <span class="feature-icon">${FEATURE_ICONS.mic}</span>
-              <span class="feature-num">03</span>
-            </div>
-            <strong>Add voice input and notes</strong>
-            <p>Add individual or bulk voice inputs in Hindi, English or Hinglish and keep the transcription with the relevant contacts.</p>
-          </article>
-          <article>
-            <div class="feature-card-top">
-              <span class="feature-icon">${FEATURE_ICONS.export}</span>
-              <span class="feature-num">04</span>
-            </div>
-            <strong>Export or sync your contacts</strong>
-            <p>Download approved records as Excel, CSV or VCF files, or choose to sync them to Google Contacts and Google Sheets.</p>
-          </article>
+        <div class="features-copy">
+          <p class="section-kicker">Features</p>
+          <h2>Capture, organise and use every business contact in <em>one simple flow.</em></h2>
+          <div class="feature-strip" aria-label="Card2Leads highlights">
+            <article>
+              <div class="feature-card-top">
+                <span class="feature-icon">${FEATURE_ICONS.camera}</span>
+                <span class="feature-num">01</span>
+              </div>
+              <strong>Scan or upload cards</strong>
+              <p>Capture a card using your phone camera or upload individual and bulk card images from desktop or mobile.</p>
+            </article>
+            <article>
+              <div class="feature-card-top">
+                <span class="feature-icon">${FEATURE_ICONS.review}</span>
+                <span class="feature-num">02</span>
+              </div>
+              <strong>Review before saving</strong>
+              <p>Check extracted names, phone numbers, emails, companies and designations before approving each contact.</p>
+            </article>
+            <article>
+              <div class="feature-card-top">
+                <span class="feature-icon">${FEATURE_ICONS.mic}</span>
+                <span class="feature-num">03</span>
+              </div>
+              <strong>Add voice input and notes</strong>
+              <p>Add individual or bulk voice inputs in Hindi, English or Hinglish and keep the transcription with the relevant contacts.</p>
+            </article>
+            <article>
+              <div class="feature-card-top">
+                <span class="feature-icon">${FEATURE_ICONS.export}</span>
+                <span class="feature-num">04</span>
+              </div>
+              <strong>Export or sync your contacts</strong>
+              <p>Download approved records as Excel, CSV or VCF files, or choose to sync them to Google Contacts and Google Sheets.</p>
+            </article>
+          </div>
+        </div>
+        <div class="workflow-flow" aria-label="How Card2Leads works, step by step">
+          <ol class="workflow-timeline">
+            <li class="wf-item">
+              <div class="wf-node" aria-hidden="true">${WORKFLOW_ICONS.capture}</div>
+              <div class="wf-body"><span class="wf-step">Step 01</span><strong>Capture cards</strong><p>Scan one card live or upload a whole batch after an event.</p></div>
+            </li>
+            <li class="wf-item">
+              <div class="wf-node" aria-hidden="true">${WORKFLOW_ICONS.extract}</div>
+              <div class="wf-body"><span class="wf-step">Step 02</span><strong>Extract details</strong><p>Turn names, phones, emails and companies into clean, structured fields.</p></div>
+            </li>
+            <li class="wf-item">
+              <div class="wf-node" aria-hidden="true">${WORKFLOW_ICONS.review}</div>
+              <div class="wf-body"><span class="wf-step">Step 03</span><strong>Review &amp; clean</strong><p>Check uncertain fields, fix errors and remove duplicate records.</p></div>
+            </li>
+            <li class="wf-item">
+              <div class="wf-node" aria-hidden="true">${WORKFLOW_ICONS.assign}</div>
+              <div class="wf-body"><span class="wf-step">Step 04</span><strong>Assign owner</strong><p>Route each contact to the right team member for follow-up.</p></div>
+            </li>
+            <li class="wf-item">
+              <div class="wf-node" aria-hidden="true">${WORKFLOW_ICONS.search}</div>
+              <div class="wf-body"><span class="wf-step">Step 05</span><strong>Search &amp; filter</strong><p>Find contacts by name, city, state, exhibition or assigned owner.</p></div>
+            </li>
+            <li class="wf-item">
+              <div class="wf-node" aria-hidden="true">${WORKFLOW_ICONS.export}</div>
+              <div class="wf-body"><span class="wf-step">Step 06</span><strong>Export records</strong><p>Download approved contacts as Excel, CSV or VCF files.</p></div>
+            </li>
+            <li class="wf-item wf-item-final">
+              <div class="wf-node" aria-hidden="true">${WORKFLOW_ICONS.google}</div>
+              <div class="wf-body"><span class="wf-step">Step 07</span><strong>Sync with Google</strong><p>Add approved contacts to Google Contacts or a selected Google Sheet.</p></div>
+            </li>
+          </ol>
         </div>
       </section>
 
