@@ -103,7 +103,7 @@ test("customer exports use the minimal sales-ready contact format", () => {
     "Name", "Mobile Number", "Secondary Mobile Number", "Company Name", "Designation",
     "Office Number", "Email Address", "Secondary Email", "Website", "Address", "City",
     "State", "Postal Code", "Country", "Exhibition Name", "Exhibition Date", "Remarks",
-    "Tags", "Created Timestamp"
+    "Voice Note", "Tags", "Created Timestamp"
   ]);
   const row = exportRow({
     id: "internal-only",

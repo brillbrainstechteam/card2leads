@@ -4598,13 +4598,17 @@ function exportRow(contact) {
   ].map(safeSpreadsheetValue);
 }
 
-// Remarks already includes the voice comment (applyVoiceFields merges it in
-// so it's visible/editable in the app's Notes field), so this just returns
-// that combined text. The dedicated Voice Note column below additionally
-// surfaces the raw transcript on its own, so it's never missed or dependent
-// on the merge above.
+// Remarks normally already includes the voice comment, because applyVoiceFields
+// merges it into notes so it stays visible/editable in the app's Notes field.
+// Append it here only when that merge hasn't happened, so a contact that picked
+// up a transcript by some other path still carries it into VCF and Google
+// Contacts (both build their note from this). The dedicated Voice Note column
+// additionally surfaces the raw transcript on its own.
 function exportRemarks(contact) {
-  return String(contact.notes || "").trim();
+  const notes = String(contact.notes || "").trim();
+  const transcript = String(contact.voiceTranscript || "").trim();
+  if (!transcript || notes.includes(transcript)) return notes;
+  return [notes, transcript].filter(Boolean).join("\n\n");
 }
 
 function exportVoiceNote(contact) {
