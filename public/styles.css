@@ -2170,23 +2170,16 @@ label {
 
 .features-section {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(320px, 0.8fr);
-  gap: 34px;
-  align-items: center;
-  overflow: hidden;
+  gap: 24px;
 }
 
-.features-copy {
-  display: grid;
-  gap: 18px;
+.features-heading {
+  margin: 0;
+  max-width: 640px;
 }
 
-.features-copy h2 {
-  margin-bottom: 0;
-}
-
-.features-copy h2 em {
-  display: block;
+.features-heading em {
+  display: inline;
   font-style: italic;
   color: var(--purple);
 }
