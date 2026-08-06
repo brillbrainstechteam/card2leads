@@ -111,6 +111,18 @@ const fieldLabels = {
 
 const contactFields = Object.keys(fieldLabels);
 
+// Inline icons for the public "how it works" flow. Kept as crisp SVG (not a
+// bitmap illustration) so the step text stays sharp and correctly spelled.
+const WORKFLOW_ICONS = {
+  capture: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6H8l1-1.6h6L16 6h1.5A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-8Z"/><circle cx="12" cy="12.5" r="3.2"/></svg>`,
+  extract: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M8 9h8M8 12.5h8M8 16h5"/></svg>`,
+  review: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l4 4 12-11"/></svg>`,
+  assign: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M4 19c0-2.8 2.2-5 5-5s5 2.2 5 5"/><path d="M16 8h5M18.5 5.5v5"/></svg>`,
+  search: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.3-4.3"/></svg>`,
+  export: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M8.5 7.5 12 4l3.5 3.5"/><path d="M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>`,
+  google: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/></svg>`
+};
+
 async function api(path, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
   const headers = options.body instanceof FormData ? {} : { "Content-Type": "application/json" };
@@ -343,7 +355,45 @@ function authView() {
             </article>
           </div>
         </div>
-        <img class="features-illustration" src="/illustrations-final/features%20illustration.png?v=final-20260729" alt="Card2Leads feature overview" />
+        <div class="workflow-flow" aria-label="How Card2Leads works, step by step">
+          <ol class="workflow-steps">
+            <li class="workflow-step" style="--step-accent:#c98a2b;">
+              <span class="workflow-num">01</span>
+              <span class="workflow-ico" aria-hidden="true">${WORKFLOW_ICONS.capture}</span>
+              <div class="workflow-text"><strong>Capture cards</strong><p>Scan one card live or upload a whole batch after an event.</p></div>
+            </li>
+            <li class="workflow-step" style="--step-accent:#2f6db0;">
+              <span class="workflow-num">02</span>
+              <span class="workflow-ico" aria-hidden="true">${WORKFLOW_ICONS.extract}</span>
+              <div class="workflow-text"><strong>Extract details</strong><p>Turn names, phones, emails and companies into clean, structured fields.</p></div>
+            </li>
+            <li class="workflow-step" style="--step-accent:#8f63aa;">
+              <span class="workflow-num">03</span>
+              <span class="workflow-ico" aria-hidden="true">${WORKFLOW_ICONS.review}</span>
+              <div class="workflow-text"><strong>Review &amp; clean</strong><p>Check uncertain fields, fix errors and remove duplicate records.</p></div>
+            </li>
+            <li class="workflow-step" style="--step-accent:#c98a2b;">
+              <span class="workflow-num">04</span>
+              <span class="workflow-ico" aria-hidden="true">${WORKFLOW_ICONS.assign}</span>
+              <div class="workflow-text"><strong>Assign owner</strong><p>Route each contact to the right team member for follow-up.</p></div>
+            </li>
+            <li class="workflow-step" style="--step-accent:#2f6db0;">
+              <span class="workflow-num">05</span>
+              <span class="workflow-ico" aria-hidden="true">${WORKFLOW_ICONS.search}</span>
+              <div class="workflow-text"><strong>Search &amp; filter</strong><p>Find contacts by name, city, state, exhibition or assigned owner.</p></div>
+            </li>
+            <li class="workflow-step" style="--step-accent:#8f63aa;">
+              <span class="workflow-num">06</span>
+              <span class="workflow-ico" aria-hidden="true">${WORKFLOW_ICONS.export}</span>
+              <div class="workflow-text"><strong>Export records</strong><p>Download approved contacts as Excel, CSV or VCF files.</p></div>
+            </li>
+            <li class="workflow-step" style="--step-accent:#2f9b68;">
+              <span class="workflow-num">07</span>
+              <span class="workflow-ico" aria-hidden="true">${WORKFLOW_ICONS.google}</span>
+              <div class="workflow-text"><strong>Sync with Google</strong><p>Add approved contacts to Google Contacts or a selected Google Sheet.</p></div>
+            </li>
+          </ol>
+        </div>
       </section>
 
       <section class="public-section public-feature-grid" id="exports">
@@ -3258,11 +3308,33 @@ function requestTopupPurchase() {
     return;
   }
   if (!billing.canTopup) {
+    const scans = Number(billing.topupScans || 100);
+    const amount = Number(billing.topupAmount || 499).toLocaleString("en-IN");
     state.modal = {
-      title: "Activate a paid plan first",
-      body: billing.topupUnavailableReason || "Extra scan credits are available after a paid plan is active.",
-      detail: "Choose Pay once or Subscribe above. You can add credits immediately after the plan is activated.",
-      actions: [{ label: "View plans", className: "primary", onClick: () => {} }]
+      className: "plan-required-dialog",
+      tone: "credit",
+      iconHtml: "+",
+      title: "Your workspace is ready",
+      body: "To add extra scan credits, first activate a Pay once or Subscribe plan.",
+      contentHtml: `
+        <div class="plan-credit-preview">
+          <span class="plan-credit-preview-icon">+</span>
+          <div><strong>${scans} extra scans</strong><small>&#8377;${amount} one-time payment</small></div>
+        </div>
+        <div class="plan-required-steps" aria-label="How to add scan credits">
+          <div><span>1</span><strong>Choose a plan</strong><small>Pay once or Subscribe</small></div>
+          <div><span>2</span><strong>Activate it</strong><small>Complete secure payment</small></div>
+          <div><span>3</span><strong>Add credits</strong><small>Use them immediately</small></div>
+        </div>
+      `,
+      actions: [
+        { label: "Maybe later", className: "secondary", onClick: () => {} },
+        {
+          label: "Choose a plan",
+          className: "primary",
+          onClick: () => setTimeout(() => document.querySelector(".billing-mode-tabs")?.scrollIntoView({ behavior: "smooth", block: "center" }), 120)
+        }
+      ]
     };
     render();
     return;
