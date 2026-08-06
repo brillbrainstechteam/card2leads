@@ -7,6 +7,7 @@ const {
   buildCsv,
   buildVcf,
   buildXlsx,
+  canPurchaseTopup,
   createCollectionFromUpload,
   deriveOverallConfidence,
   exportRemarks,
@@ -14,12 +15,14 @@ const {
   findCollectionForUser,
   contactToGooglePerson,
   grantOneTimePlan,
+  grantTopupEntitlement,
   googleContactDisplayName,
   googleScopes,
   normalizeExtraction,
   normalizePhoneFields,
   parseDataUrl,
   planUsage,
+  remainingTopupScans,
   repairCollectionExhibitionAssignments,
   saveContactRecord,
   validateTenantIntegrity,
@@ -382,6 +385,32 @@ test("current subscription plans use their configured scan limits", () => {
   assert.equal(planUsage({ plan: "annual", scansUsed: 1000 }).remaining, 500);
 });
 
+test("extra scans can only be purchased for an active paid plan", () => {
+  assert.equal(canPurchaseTopup({ plan: "trial" }), false);
+  assert.equal(canPurchaseTopup({ plan: "monthly", billingMode: "subscription", subscriptionStatus: "active" }), true);
+  assert.equal(canPurchaseTopup({ plan: "monthly", billingMode: "subscription", subscriptionStatus: "halted" }), false);
+  assert.equal(canPurchaseTopup({
+    plan: "quarterly",
+    billingMode: "one_time",
+    subscriptionStatus: "paid_once",
+    currentPeriodEnd: "2099-01-01T00:00:00.000Z"
+  }), true);
+  assert.equal(canPurchaseTopup({
+    plan: "quarterly",
+    billingMode: "one_time",
+    subscriptionStatus: "paid_once",
+    currentPeriodEnd: "2020-01-01T00:00:00.000Z"
+  }), false);
+});
+
+test("top-up balance reflects credits actually remaining", () => {
+  const organisation = { plan: "monthly", scanLimit: 250, scansUsed: 170, topupScans: 100 };
+  assert.equal(remainingTopupScans(organisation), 80);
+  grantTopupEntitlement(organisation, 100);
+  assert.equal(organisation.scanLimit, 350);
+  assert.equal(remainingTopupScans(organisation), 180);
+});
+
 test("one-time plan activation grants a fixed non-recurring allowance", () => {
   const organisation = {
     id: "org_once",
@@ -398,6 +427,21 @@ test("one-time plan activation grants a fixed non-recurring allowance", () => {
   assert.equal(organisation.scansUsed, 0);
   assert.ok(new Date(organisation.currentPeriodEnd).getTime() > Date.now());
   assert.equal(grantOneTimePlan(organisation, "quarterly", { orderId: "order_1", paymentId: "pay_1" }), false);
+});
+
+test("changing plans carries only unused purchased scans", () => {
+  const organisation = {
+    plan: "monthly",
+    billingMode: "subscription",
+    subscriptionStatus: "active",
+    scanLimit: 250,
+    scansUsed: 170,
+    topupScans: 100
+  };
+  assert.equal(grantOneTimePlan(organisation, "annual", { orderId: "order_carry", paymentId: "pay_carry" }), true);
+  assert.equal(organisation.topupScans, 80);
+  assert.equal(organisation.scanLimit, 1580);
+  assert.equal(organisation.scansUsed, 0);
 });
 
 test("expired one-time plans cannot use remaining scans", () => {

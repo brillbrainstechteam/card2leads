@@ -380,6 +380,7 @@ function authView() {
             <button type="button" class="secondary" data-auth-mode="signup" data-plan="monthly" data-billing-mode="one_time">Buy 1 month</button>
           </article>
           <article class="price-card featured">
+            <span class="popular-badge">Most popular</span>
             <span class="price-label">3 months</span>
             <h3><span>&#8377;799</span> once</h3>
             <p>300 card scans valid for 3 months. Ideal for exhibitions, events and regular lead capture.</p>
@@ -410,7 +411,8 @@ function authView() {
               <span class="plan-cancel">Cancel anytime</span>
               <button type="button" class="secondary" data-auth-mode="signup" data-plan="monthly" data-billing-mode="subscription">Subscribe monthly</button>
             </article>
-            <article class="price-card compact">
+            <article class="price-card compact featured">
+              <span class="popular-badge">Most popular</span>
               <span class="price-label">Quarterly</span>
               <h3><span>&#8377;799</span> / 3 months</h3>
               <p>300 scans every 3 months.</p>
@@ -427,9 +429,13 @@ function authView() {
           </div>
         </div>
         </div>
-        <aside class="pricing-note" aria-label="Additional scan top-up">
+        <aside class="pricing-note" aria-label="Additional scan credits">
           <span class="pricing-note-icon" aria-hidden="true">+</span>
-          <span><strong>Need more scans?</strong> Add 100 additional card scans for <strong>&#8377;499</strong> at any time during an active plan.</span>
+          <div class="pricing-note-copy">
+            <strong>Need more scans?</strong>
+            <span>Add 100 extra card scans for <strong>&#8377;499</strong> with any active paid plan.</span>
+          </div>
+          <button type="button" class="secondary pricing-note-action" data-topup-entry>Add scan credits</button>
         </aside>
       </section>
 
@@ -498,6 +504,7 @@ function authView() {
   `);
   initPublicPricingTabs(node);
   node.querySelectorAll("[data-auth-mode]").forEach((btn) => btn.addEventListener("click", () => openAuth(btn.dataset.authMode, btn.dataset.plan, btn.dataset.billingMode)));
+  node.querySelector("[data-topup-entry]")?.addEventListener("click", openTopupFromPricing);
   return node;
 }
 
@@ -618,16 +625,34 @@ function consumePendingPlanSelection() {
   return selection;
 }
 
+function openTopupFromPricing() {
+  try { localStorage.setItem("c2l_pending_topup", "1"); } catch {}
+  openAuth("login");
+}
+
+function consumePendingTopupSelection() {
+  try {
+    const pending = localStorage.getItem("c2l_pending_topup") === "1";
+    localStorage.removeItem("c2l_pending_topup");
+    return pending;
+  } catch {
+    return false;
+  }
+}
+
 // Called once the user has actually landed in the authenticated app (not mid
 // email-verification, not mid-onboarding) so a plan chosen on the public
 // pricing page opens the exact same checkout used from the Account screen.
 function resumePendingPlanCheckout() {
   if (state.overview?.needsOnboarding) return;
   const selection = consumePendingPlanSelection();
-  if (!selection?.plan) return;
+  const pendingTopup = consumePendingTopupSelection();
+  if (!selection?.plan && !pendingTopup) return;
   navigateToView("account", { replace: true });
   setTimeout(() => {
-    if (selection.billingMode === "subscription") {
+    if (pendingTopup) {
+      requestTopupPurchase();
+    } else if (selection.billingMode === "subscription") {
       startSubscription(selection.plan);
     } else {
       startOneTimePlan(selection.plan);
@@ -3213,6 +3238,35 @@ async function startOneTimePlan(plan) {
   }
 }
 
+function requestTopupPurchase() {
+  const billing = state.overview?.billing || {};
+  if (!billing.configured) {
+    state.message = { text: "Online payments are not available yet.", bad: true };
+    render();
+    return;
+  }
+  if (!billing.canTopup) {
+    state.modal = {
+      title: "Activate a paid plan first",
+      body: billing.topupUnavailableReason || "Extra scan credits are available after a paid plan is active.",
+      detail: "Choose Pay once or Subscribe above. You can add credits immediately after the plan is activated.",
+      actions: [{ label: "View plans", className: "primary", onClick: () => {} }]
+    };
+    render();
+    return;
+  }
+  state.modal = {
+    title: `Add ${Number(billing.topupScans || 100)} scan credits?`,
+    body: `These credits are added immediately to your active plan after payment is verified.`,
+    detail: `One-time payment: ₹${Number(billing.topupAmount || 499).toLocaleString("en-IN")}. This does not start or change a subscription.`,
+    cancelText: "Not now",
+    confirmText: "Continue to payment",
+    confirmClass: "primary",
+    onConfirm: startTopup
+  };
+  render();
+}
+
 async function startTopup() {
   try {
     const Razorpay = await loadRazorpay();
@@ -3230,7 +3284,7 @@ async function startTopup() {
         try {
           await api("/api/billing/topup/verify", { method: "POST", body: response });
           await refreshAll();
-          state.message = { text: `${order.scans} scans added to your plan.`, bad: false };
+          state.message = { text: `${order.scans} extra scans are ready to use.`, bad: false };
           render();
         } catch (err) {
           state.message = { text: err.message, bad: true };
@@ -3363,6 +3417,24 @@ function accountView() {
   return node;
 }
 
+function initAccountBillingTabs(node) {
+  const tabs = Array.from(node.querySelectorAll("[data-account-billing-tab]"));
+  const panels = Array.from(node.querySelectorAll("[data-account-billing-panel]"));
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const selected = tab.dataset.accountBillingTab;
+      tabs.forEach((candidate) => {
+        const active = candidate.dataset.accountBillingTab === selected;
+        candidate.classList.toggle("active", active);
+        candidate.setAttribute("aria-selected", active ? "true" : "false");
+      });
+      panels.forEach((panel) => {
+        panel.hidden = panel.dataset.accountBillingPanel !== selected;
+      });
+    });
+  });
+}
+
 function accountBillingView() {
   const google = state.overview?.google || {};
   const usage = state.overview?.usage || {};
@@ -3377,8 +3449,11 @@ function accountBillingView() {
     ? `Your <strong>${escapeHtml(statusLabel(billing.plan || "trial"))}</strong> plan is <strong>${escapeHtml(statusLabel(billing.status))}</strong>${billing.currentPeriodEnd ? ` &middot; ${periodVerb} ${escapeHtml(displayDate(billing.currentPeriodEnd))}` : ""}.`
     : "You are on the <strong>Free</strong> plan with 20 scans. Choose a paid plan when you need more.";
   const oneTimeButtons = oneTimePlans.map((item) => `
-    <button type="button" class="secondary" data-one-time-plan="${escapeAttr(item.plan)}">
-      ${escapeHtml(item.months === 12 ? "1 year" : `${item.months} month${item.months > 1 ? "s" : ""}`)} &middot; &#8377;${Number(item.amount).toLocaleString("en-IN")} / ${Number(item.scans).toLocaleString("en-IN")} scans
+    <button type="button" class="billing-plan-option ${item.plan === "quarterly" ? "recommended" : ""}" data-one-time-plan="${escapeAttr(item.plan)}">
+      ${item.plan === "quarterly" ? `<span class="billing-recommended-label">Most popular</span>` : ""}
+      <span class="billing-plan-name">${escapeHtml(item.months === 12 ? "1 year" : `${item.months} month${item.months > 1 ? "s" : ""}`)}</span>
+      <strong>&#8377;${Number(item.amount).toLocaleString("en-IN")}</strong>
+      <small>${Number(item.scans).toLocaleString("en-IN")} scans &middot; no renewal</small>
     </button>
   `).join("");
   const node = el(`
@@ -3396,30 +3471,45 @@ function accountBillingView() {
       </div>
       <div class="account-block billing-block billing-block-primary">
         <h3>Plan &amp; billing</h3>
-        <p class="muted"><strong>${escapeHtml(statusLabel(usage.plan || "trial"))}</strong> plan &middot; ${Number(usage.used || 0)} of ${Number(usage.limit || 0)} scans used${topupBalance ? ` (includes ${topupBalance} top-up scans)` : ""}.</p>
+        <p class="muted"><strong>${escapeHtml(statusLabel(usage.plan || "trial"))}</strong> plan &middot; ${Number(usage.used || 0)} of ${Number(usage.limit || 0)} scans used${topupBalance ? ` &middot; ${topupBalance} extra scans remaining` : ""}.</p>
         <div class="usage-meter"><span style="width:${usagePercent}%"></span></div>
         <p class="muted">${planStatusText}</p>
         ${billing.configured ? `
-          <div class="billing-choice-group">
-            <div>
-              <h4>Pay once</h4>
-              <p class="muted">Default option. No recurring charge.</p>
-            </div>
-            <div class="plan-choices">${oneTimeButtons}</div>
+          <div class="billing-mode-tabs" role="tablist" aria-label="Billing options">
+            <button type="button" class="active" role="tab" aria-selected="true" data-account-billing-tab="one-time">Pay once</button>
+            <button type="button" role="tab" aria-selected="false" data-account-billing-tab="subscription">Subscribe</button>
           </div>
-          <div class="billing-choice-group">
+          <div class="billing-choice-group" data-account-billing-panel="one-time">
             <div>
-              <h4>Subscription</h4>
-              <p class="muted">Same packages with automatic renewal. Cancel anytime.</p>
+              <h4>Choose a one-time plan</h4>
+              <p class="muted">Pay once and use the scans during the selected validity period.</p>
             </div>
-            <div class="plan-choices">
-              <button type="button" class="secondary" data-subscribe="monthly" ${billing.availablePlans.includes("monthly") ? "" : "disabled"}>Monthly &middot; &#8377;499 / 150 scans</button>
-              <button type="button" class="secondary" data-subscribe="quarterly" ${billing.availablePlans.includes("quarterly") ? "" : "disabled"}>Quarterly &middot; &#8377;799 / 300 scans</button>
-              <button type="button" class="secondary" data-subscribe="annual" ${billing.availablePlans.includes("annual") ? "" : "disabled"}>Annual &middot; &#8377;1,499 / 1,500 scans</button>
+            <div class="plan-choices billing-plan-grid">${oneTimeButtons}</div>
+          </div>
+          <div class="billing-choice-group" data-account-billing-panel="subscription" hidden>
+            <div>
+              <h4>Choose a subscription</h4>
+              <p class="muted">Scans renew automatically. Cancel anytime.</p>
+            </div>
+            <div class="plan-choices billing-plan-grid">
+              <button type="button" class="billing-plan-option" data-subscribe="monthly" ${billing.availablePlans.includes("monthly") ? "" : "disabled"}><span class="billing-plan-name">Monthly</span><strong>&#8377;499</strong><small>150 scans every month</small></button>
+              <button type="button" class="billing-plan-option recommended" data-subscribe="quarterly" ${billing.availablePlans.includes("quarterly") ? "" : "disabled"}><span class="billing-recommended-label">Most popular</span><span class="billing-plan-name">Quarterly</span><strong>&#8377;799</strong><small>300 scans every 3 months</small></button>
+              <button type="button" class="billing-plan-option" data-subscribe="annual" ${billing.availablePlans.includes("annual") ? "" : "disabled"}><span class="billing-plan-name">Annual</span><strong>&#8377;1,499</strong><small>1,500 scans every year</small></button>
             </div>
           </div>
-          <div class="actions">
-            <button type="button" id="buyTopup">Add ${Number(billing.topupScans)} scans &middot; &#8377;${Number(billing.topupAmount)}</button>
+          <div class="credit-pack-card ${billing.canTopup ? "available" : "locked"}">
+            <div class="credit-pack-icon" aria-hidden="true">+</div>
+            <div class="credit-pack-copy">
+              <span class="eyebrow">Extra scan pack</span>
+              <h4>${Number(billing.topupScans)} additional scans</h4>
+              <p>${billing.canTopup ? "Add more scans without changing your current plan." : escapeHtml(billing.topupUnavailableReason || "Activate a paid plan to add extra scans.")}</p>
+              ${topupBalance ? `<span class="credit-balance">${topupBalance} purchased scans remaining</span>` : ""}
+            </div>
+            <div class="credit-pack-buy">
+              <strong>&#8377;${Number(billing.topupAmount).toLocaleString("en-IN")}</strong>
+              <span>one-time</span>
+              <button type="button" id="buyTopup">${billing.canTopup ? "Add scan credits" : "Choose a plan first"}</button>
+            </div>
           </div>
         ` : `<p class="muted">Online payments will be enabled shortly.</p>`}
       </div>
@@ -3454,9 +3544,10 @@ function accountBillingView() {
       </div>
     </section>
   `);
+  initAccountBillingTabs(node);
   node.querySelectorAll("[data-one-time-plan]").forEach((btn) => btn.addEventListener("click", () => startOneTimePlan(btn.dataset.oneTimePlan)));
   node.querySelectorAll("[data-subscribe]").forEach((btn) => btn.addEventListener("click", () => startSubscription(btn.dataset.subscribe)));
-  node.querySelector("#buyTopup")?.addEventListener("click", () => startTopup());
+  node.querySelector("#buyTopup")?.addEventListener("click", requestTopupPurchase);
   node.querySelector("#disconnectGoogle")?.addEventListener("click", () => {
     state.modal = {
       title: "Disconnect Google Sheets?",

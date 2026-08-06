@@ -1,5 +1,5 @@
-const CACHE_NAME = "smartscan-shell-v39";
-const SHELL_ASSETS = ["/", "/index.html", "/styles.css?v=20260806-3", "/app.js?v=20260806-3", "/manifest.webmanifest"];
+const CACHE_NAME = "smartscan-shell-v40";
+const SHELL_ASSETS = ["/", "/index.html", "/styles.css?v=20260806-4", "/app.js?v=20260806-4", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_ASSETS)));

@@ -1432,6 +1432,31 @@ function oneTimePlanExpired(organisation) {
   return Boolean(expiresAt && expiresAt <= Date.now());
 }
 
+function remainingTopupScans(organisation) {
+  const purchased = Math.max(0, Number(organisation?.topupScans || 0));
+  const plan = String(organisation?.plan || "trial").toLowerCase();
+  const baseLimit = Number(PLAN_LIMITS[plan] || PLAN_LIMITS.trial);
+  const usedBeyondPlan = Math.max(0, Number(organisation?.scansUsed || 0) - baseLimit);
+  return Math.max(0, purchased - usedBeyondPlan);
+}
+
+function canPurchaseTopup(organisation) {
+  const plan = String(organisation?.plan || "trial").toLowerCase();
+  if (plan === "trial") return false;
+  if (oneTimePlanExpired(organisation)) return false;
+  const mode = String(organisation?.billingMode || "");
+  const status = String(organisation?.subscriptionStatus || "").toLowerCase();
+  if (mode === "one_time") return status === "paid_once";
+  if (mode === "subscription" || organisation?.subscriptionId) return status === "active";
+  return ["active", "paid_once"].includes(status);
+}
+
+function topupUnavailableReason(organisation) {
+  if (String(organisation?.plan || "trial").toLowerCase() === "trial") return "Choose and activate a paid plan before adding extra scans.";
+  if (oneTimePlanExpired(organisation)) return "Renew your expired plan before adding extra scans.";
+  return "Your paid plan must be active before adding extra scans.";
+}
+
 function oneTimePlanOptions() {
   return Object.keys(PLAN_DURATIONS_MONTHS).map((plan) => ({
     plan,
@@ -1443,6 +1468,7 @@ function oneTimePlanOptions() {
 
 function billingSummary(organisation) {
   const expired = oneTimePlanExpired(organisation);
+  const topupAllowed = canPurchaseTopup(organisation);
   return {
     configured: billingConfigured(),
     plan: String(organisation?.plan || "trial"),
@@ -1453,7 +1479,9 @@ function billingSummary(organisation) {
     oneTimePlans: oneTimePlanOptions(),
     topupScans: TOPUP_SCANS,
     topupAmount: TOPUP_AMOUNT_PAISE / 100,
-    topupBalance: Number(organisation?.topupScans || 0)
+    topupBalance: expired ? 0 : remainingTopupScans(organisation),
+    canTopup: topupAllowed,
+    topupUnavailableReason: topupAllowed ? "" : topupUnavailableReason(organisation)
   };
 }
 
@@ -1518,10 +1546,12 @@ function planFromRazorpayPlanId(planId) {
 // recurring allowance.
 function applySubscriptionPlan(organisation, plan, { subscriptionId, currentPeriodEnd, status, resetUsage } = {}) {
   if (!organisation) return;
+  const unusedTopups = remainingTopupScans(organisation);
   organisation.plan = plan;
   organisation.billingMode = "subscription";
   organisation.subscriptionPlan = plan;
   if (resetUsage || !organisation.scanLimit) {
+    organisation.topupScans = unusedTopups;
     organisation.scansUsed = 0;
     organisation.scanLimit = Number(PLAN_LIMITS[plan] || PLAN_LIMITS.trial) + Number(organisation.topupScans || 0);
   }
@@ -1537,14 +1567,21 @@ function pendingOneTimeOrder(organisation, orderId) {
   return orders.find((order) => order.orderId === orderId) || null;
 }
 
+function pendingTopupOrder(organisation, orderId) {
+  const orders = Array.isArray(organisation?.pendingTopupOrders) ? organisation.pendingTopupOrders : [];
+  return orders.find((order) => order.orderId === orderId) || null;
+}
+
 function grantOneTimePlan(organisation, plan, { orderId, paymentId } = {}) {
   if (!organisation || !PLAN_DURATIONS_MONTHS[plan]) return false;
   organisation.grantedOneTimeOrders = Array.isArray(organisation.grantedOneTimeOrders) ? organisation.grantedOneTimeOrders : [];
   if (orderId && organisation.grantedOneTimeOrders.includes(orderId)) return false;
+  const unusedTopups = remainingTopupScans(organisation);
   organisation.plan = plan;
   organisation.billingMode = "one_time";
   organisation.subscriptionPlan = "";
   organisation.subscriptionStatus = "paid_once";
+  organisation.topupScans = unusedTopups;
   organisation.scansUsed = 0;
   organisation.scanLimit = Number(PLAN_LIMITS[plan] || PLAN_LIMITS.trial) + Number(organisation.topupScans || 0);
   organisation.currentPeriodEnd = addMonths(new Date(), PLAN_DURATIONS_MONTHS[plan]).toISOString();
@@ -2495,12 +2532,14 @@ async function handleApi(req, res, pathname) {
         const notes = Object.keys(paymentNotes).length ? paymentNotes : (orderEntity?.notes || {});
         const orderId = paymentEntity?.order_id || orderEntity?.id || "";
         const organisation = db.organisations.find((o) => o.id === notes.organisationId)
-          || db.organisations.find((o) => pendingOneTimeOrder(o, orderId));
+          || db.organisations.find((o) => pendingOneTimeOrder(o, orderId))
+          || db.organisations.find((o) => pendingTopupOrder(o, orderId));
         if (organisation && notes.type === "topup" && orderId) {
           organisation.grantedTopupOrders = Array.isArray(organisation.grantedTopupOrders) ? organisation.grantedTopupOrders : [];
           if (!organisation.grantedTopupOrders.includes(orderId)) {
             grantTopupEntitlement(organisation, Number(notes.scans) || TOPUP_SCANS);
             organisation.grantedTopupOrders.push(orderId);
+            organisation.pendingTopupOrders = (organisation.pendingTopupOrders || []).filter((order) => order.orderId !== orderId);
             audit(db, { organisationId: organisation.id }, "billing.topup_charged", "organisation", organisation.id, { orderId });
           }
         } else if (organisation && (notes.type === "one_time_plan" || pendingOneTimeOrder(organisation, orderId)) && orderId) {
@@ -2954,6 +2993,7 @@ async function handleApi(req, res, pathname) {
       if (!billingConfigured()) return error(res, 400, "Online payments are not set up yet. Please try again later.");
       const organisation = db.organisations.find((o) => o.id === user.organisationId);
       if (!organisation) return error(res, 404, "Workspace not found.");
+      if (!canPurchaseTopup(organisation)) return error(res, 400, topupUnavailableReason(organisation));
       const order = await razorpayApi("/orders", {
         method: "POST",
         body: {
@@ -2963,6 +3003,17 @@ async function handleApi(req, res, pathname) {
           notes: { organisationId: organisation.id, type: "topup", scans: String(TOPUP_SCANS) }
         }
       });
+      organisation.pendingTopupOrders = Array.isArray(organisation.pendingTopupOrders) ? organisation.pendingTopupOrders : [];
+      organisation.pendingTopupOrders = organisation.pendingTopupOrders
+        .filter((item) => new Date(item.createdAt || 0).getTime() > Date.now() - 24 * 60 * 60 * 1000)
+        .slice(-20);
+      organisation.pendingTopupOrders.push({
+        orderId: order.id,
+        amount: order.amount,
+        scans: TOPUP_SCANS,
+        createdAt: now()
+      });
+      organisation.updatedAt = now();
       audit(db, user, "billing.topup_order_created", "organisation", organisation.id, { orderId: order.id });
       await saveDb(db);
       return send(res, 200, { orderId: order.id, amount: order.amount, currency: order.currency, keyId: RAZORPAY_KEY_ID, scans: TOPUP_SCANS });
@@ -2978,13 +3029,17 @@ async function handleApi(req, res, pathname) {
       const organisation = db.organisations.find((o) => o.id === user.organisationId);
       if (!organisation) return error(res, 404, "Workspace not found.");
       organisation.grantedTopupOrders = Array.isArray(organisation.grantedTopupOrders) ? organisation.grantedTopupOrders : [];
-      if (!organisation.grantedTopupOrders.includes(orderId)) {
-        grantTopupEntitlement(organisation, TOPUP_SCANS);
-        organisation.grantedTopupOrders.push(orderId);
-        audit(db, user, "billing.topup_verified", "organisation", organisation.id, { orderId, paymentId });
+      if (organisation.grantedTopupOrders.includes(orderId)) {
+        return send(res, 200, { ok: true, duplicate: true, usage: planUsage(organisation), billing: billingSummary(organisation) });
       }
+      const pendingOrder = pendingTopupOrder(organisation, orderId);
+      if (!pendingOrder) return error(res, 400, "This credit order was not found for your workspace.");
+      grantTopupEntitlement(organisation, Number(pendingOrder.scans) || TOPUP_SCANS);
+      organisation.grantedTopupOrders.push(orderId);
+      organisation.pendingTopupOrders = organisation.pendingTopupOrders.filter((order) => order.orderId !== orderId);
+      audit(db, user, "billing.topup_verified", "organisation", organisation.id, { orderId, paymentId });
       await saveDb(db);
-      return send(res, 200, { ok: true, usage: planUsage(organisation) });
+      return send(res, 200, { ok: true, usage: planUsage(organisation), billing: billingSummary(organisation) });
     }
 
     if (req.method === "GET" && pathname === "/api/google/connect") {
@@ -5064,6 +5119,7 @@ module.exports = {
   buildCsv,
   buildVcf,
   buildXlsx,
+  canPurchaseTopup,
   contactToGooglePerson,
   createCollectionFromUpload,
   deriveOverallConfidence,
@@ -5073,10 +5129,12 @@ module.exports = {
   googleContactDisplayName,
   googleScopes,
   grantOneTimePlan,
+  grantTopupEntitlement,
   normalizeExtraction,
   normalizePhoneFields,
   parseDataUrl,
   planUsage,
+  remainingTopupScans,
   repairCollectionExhibitionAssignments,
   saveContactRecord,
   validateTenantIntegrity,
