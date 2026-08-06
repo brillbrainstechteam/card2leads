@@ -90,6 +90,7 @@ const EXPORT_COLUMNS = [
   "Exhibition Name",
   "Exhibition Date",
   "Remarks",
+  "Voice Note",
   "Tags",
   "Created Timestamp"
 ];
@@ -4462,16 +4463,26 @@ function exportRow(contact) {
     contact.exhibitionName,
     contact.exhibitionDate,
     exportRemarks(contact),
+    exportVoiceNote(contact),
     contact.tags,
     contact.createdAt
   ].map(safeSpreadsheetValue);
 }
 
+// Remarks already includes the voice comment (applyVoiceFields merges it in
+// so it's visible/editable in the app's Notes field), so this just returns
+// that combined text. The dedicated Voice Note column below additionally
+// surfaces the raw transcript on its own, so it's never missed or dependent
+// on the merge above.
 function exportRemarks(contact) {
-  const notes = String(contact.notes || "").trim();
+  return String(contact.notes || "").trim();
+}
+
+function exportVoiceNote(contact) {
   const transcript = String(contact.voiceTranscript || "").trim();
-  if (!transcript || notes.includes(transcript)) return notes || transcript;
-  return [notes, transcript].filter(Boolean).join("\n\n");
+  if (!transcript) return "";
+  const language = String(contact.voiceLanguage || "").trim();
+  return language ? `[${language}] ${transcript}` : transcript;
 }
 
 function selectedExportIds(url) {
@@ -5011,7 +5022,7 @@ function buildXlsx(rows) {
     "_rels/.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
     "xl/_rels/workbook.xml.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
     "xl/workbook.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Contacts" sheetId="1" r:id="rId1"/></sheets></workbook>`,
-    "xl/styles.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs></styleSheet>`,
+    "xl/styles.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf></cellXfs></styleSheet>`,
     "xl/worksheets/sheet1.xml": worksheetXml(rows)
   };
   return zipStore(files);
@@ -5022,7 +5033,8 @@ function worksheetXml(rows) {
     const cells = row.map((value, c) => {
       const ref = `${columnName(c + 1)}${r + 1}`;
       const escaped = escapeXml(value);
-      return `<c r="${ref}" t="inlineStr"${r === 0 ? ' s="1"' : ""}><is><t>${escaped}</t></is></c>`;
+      const style = r === 0 ? ' s="1"' : ' s="2"';
+      return `<c r="${ref}" t="inlineStr"${style}><is><t xml:space="preserve">${escaped}</t></is></c>`;
     }).join("");
     return `<row r="${r + 1}">${cells}</row>`;
   }).join("");
@@ -5040,7 +5052,12 @@ function columnName(index) {
 }
 
 function escapeXml(value) {
-  return String(value ?? "").replace(/[<>&'"]/g, (ch) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" }[ch]));
+  // Strip control characters XML 1.0 forbids outright (everything except
+  // tab/LF/CR) — a stray byte here would otherwise produce a corrupt
+  // worksheet that Excel silently repairs by dropping content, making
+  // exported fields (like a voice transcript) look like they never made it in.
+  const sanitized = String(value ?? "").replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+  return sanitized.replace(/[<>&'"]/g, (ch) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" }[ch]));
 }
 
 function zipStore(files) {
