@@ -34,10 +34,19 @@ const VOICE_STT_PROVIDER = String(process.env.VOICE_STT_PROVIDER || "auto").toLo
 const GOOGLE_STT_MODEL = process.env.GOOGLE_STT_MODEL || "latest_short";
 const GOOGLE_STT_LANGUAGE_CODE = process.env.GOOGLE_STT_LANGUAGE_CODE || "hi-IN";
 const GOOGLE_STT_ALTERNATIVE_LANGUAGE_CODES = process.env.GOOGLE_STT_ALTERNATIVE_LANGUAGE_CODES || "en-IN,en-US";
-const MAX_BATCH_FILES = 20;
+// Uploading a card no longer runs AI extraction inline (see the background
+// queue processor below), so this cap is just a sane ceiling on one upload
+// request, not a limit on how many cards a user can work through in a
+// session — they can upload in several batches and everything queues up.
+const MAX_BATCH_FILES = 200;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
-const MAX_BATCH_BYTES = 100 * 1024 * 1024;
+const MAX_BATCH_BYTES = 150 * 1024 * 1024;
 const EXTRACTION_CONCURRENCY = Math.min(5, Math.max(1, Number(process.env.EXTRACTION_CONCURRENCY || 3)));
+// How many queued cards the background processor pulls per cycle. Kept at 5
+// with extraction concurrency capped at 5 too, so at most 5 AI calls are ever
+// in flight at once from this loop — comfortably under any reasonable
+// provider rate limit even if a request-time extraction is also running.
+const QUEUE_BATCH_SIZE = 5;
 const PLAN_LIMITS = Object.freeze({
   trial: 20,
   monthly: 150,
@@ -982,6 +991,165 @@ async function mapWithConcurrency(items, concurrency, worker) {
   }
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, runWorker));
   return results;
+}
+
+// Background queue processor: cards uploaded via /api/uploads are saved with
+// status "queued" and no AI call. This loop drains the queue continuously,
+// QUEUE_BATCH_SIZE cards at a time (processed with the same extraction
+// concurrency cap used everywhere else), so a large upload doesn't block the
+// request and doesn't spike AI provider load. Each card only counts against
+// its organisation's plan usage once it's actually processed here, and a
+// card whose organisation has hit its plan limit is skipped (left queued)
+// rather than failed, so it resumes automatically once the plan resets or
+// is upgraded.
+let queueProcessorTimer = null;
+let queueProcessorRunning = false;
+
+function scheduleQueueProcessing(delayMs = 250) {
+  // A shorter request (e.g. a fresh upload) should preempt a longer idle
+  // backoff that's already pending, so newly queued cards start processing
+  // promptly instead of waiting out the current idle interval.
+  if (queueProcessorTimer && delayMs >= queueProcessorTimer.delayMs) return;
+  if (queueProcessorTimer) clearTimeout(queueProcessorTimer.handle);
+  const handle = setTimeout(() => {
+    queueProcessorTimer = null;
+    processQueueCycle();
+  }, delayMs);
+  queueProcessorTimer = { handle, delayMs };
+}
+
+async function processQueueCycle() {
+  if (queueProcessorRunning) return;
+  queueProcessorRunning = true;
+  let nextDelay = 20000;
+  try {
+    const snapshot = readDb();
+    const queuedCards = snapshot.cards
+      .filter((c) => c.status === "queued" && !c.deletedAt)
+      .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+    if (!queuedCards.length) return;
+
+    const orgUsageClaimed = new Map();
+    const toProcess = [];
+    for (const card of queuedCards) {
+      if (toProcess.length >= QUEUE_BATCH_SIZE) break;
+      const organisation = snapshot.organisations.find((o) => o.id === card.organisationId);
+      if (!organisation) continue;
+      const usage = planUsage(organisation);
+      const claimed = orgUsageClaimed.get(organisation.id) || 0;
+      if (claimed >= usage.remaining) continue;
+      orgUsageClaimed.set(organisation.id, claimed + 1);
+      const collection = snapshot.collections.find((c) => c.id === card.collectionId) || { exhibitionName: "", exhibitionDate: "" };
+      toProcess.push({ card, collection });
+    }
+    if (!toProcess.length) {
+      // Everything left in the queue belongs to an organisation that's
+      // already at its plan limit. Check back periodically in case a plan
+      // resets or a top-up is purchased, without hammering the DB.
+      nextDelay = 15000;
+      return;
+    }
+
+    const results = await mapWithConcurrency(toProcess, EXTRACTION_CONCURRENCY, async ({ card, collection }) => {
+      if (card.queuedImageWarning) {
+        return { cardId: card.id, extracted: makeManualReviewExtraction(card.originalFileName, collection, card.queuedImageWarning) };
+      }
+      try {
+        const imageBuffer = fs.readFileSync(card.storagePath);
+        const file = {
+          name: card.originalFileName,
+          type: card.fileType,
+          size: card.fileSize,
+          dataUrl: `data:${card.fileType};base64,${imageBuffer.toString("base64")}`
+        };
+        if (card.backStoragePath && fs.existsSync(card.backStoragePath)) {
+          const backBuffer = fs.readFileSync(card.backStoragePath);
+          file.backType = card.backFileType || "image/jpeg";
+          file.backDataUrl = `data:${file.backType};base64,${backBuffer.toString("base64")}`;
+        }
+        const extracted = await extractBusinessCard(file, collection);
+        return { cardId: card.id, extracted };
+      } catch (err) {
+        return { cardId: card.id, extracted: makeManualReviewExtraction(card.originalFileName, collection, `Automatic scanning failed: ${err.message}`) };
+      }
+    });
+
+    // Re-read the DB right before writing results, so this long-running
+    // cycle (AI calls can take several seconds) doesn't clobber changes made
+    // by other requests in the meantime — only the specific cards processed
+    // here are touched, applied against the freshest state available.
+    const db = readDb();
+    const cardsById = new Map(db.cards.map((c) => [c.id, c]));
+    const orgsById = new Map(db.organisations.map((o) => [o.id, o]));
+    const batchesById = new Map(db.uploadBatches.map((b) => [b.id, b]));
+    const touchedBatchIds = new Set();
+
+    for (const { cardId, extracted } of results) {
+      const card = cardsById.get(cardId);
+      if (!card || card.status !== "queued") continue;
+
+      // A voice note may already have been attached while this card sat in
+      // the queue (see applyVoiceFields) — preserve that instead of letting
+      // the freshly extracted record wipe it out.
+      const preservedFields = ["interest", "specialRequirement", "budget", "followUpDate",
+        "voiceTranscript", "voiceLanguage", "voiceNoteCreatedAt", "voiceNoteId", "voiceAudioUrl", "notes"];
+      const finalExtraction = { ...extracted };
+      if (card.extraction) {
+        for (const field of preservedFields) {
+          if (card.extraction[field]) finalExtraction[field] = card.extraction[field];
+        }
+      }
+
+      if (card.queuedDuplicateInBatchId) {
+        finalExtraction.warnings = finalExtraction.warnings || [];
+        finalExtraction.warnings.push("Duplicate image detected within this upload batch. Review before saving.");
+      } else if (card.queuedDuplicateImageId) {
+        finalExtraction.warnings = finalExtraction.warnings || [];
+        finalExtraction.warnings.push("This image appears to have been uploaded before. Review before saving.");
+      }
+
+      const status = finalExtraction.name && finalExtraction.mobileNumber && isValidMobile(finalExtraction.mobileNumber) && !card.queuedDuplicateImageId
+        ? "completed"
+        : "requires_review";
+
+      card.extraction = finalExtraction;
+      card.status = status;
+      card.updatedAt = now();
+      delete card.queuedImageWarning;
+      delete card.queuedDuplicateInBatchId;
+      delete card.queuedDuplicateImageId;
+
+      const organisation = orgsById.get(card.organisationId);
+      if (organisation) {
+        organisation.scansUsed = Number(organisation.scansUsed || 0) + 1;
+        organisation.scanLimit = Number(organisation.scanLimit || PLAN_LIMITS[organisation.plan] || PLAN_LIMITS.trial);
+        organisation.updatedAt = now();
+      }
+
+      const batch = batchesById.get(card.batchId);
+      if (batch) {
+        if (status === "completed") batch.completedFiles += 1;
+        if (status === "requires_review") batch.reviewRequiredCount += 1;
+        if (card.duplicateImageOf) batch.duplicateCount += 1;
+        touchedBatchIds.add(batch.id);
+      }
+    }
+
+    for (const batchId of touchedBatchIds) {
+      const batch = batchesById.get(batchId);
+      const stillQueued = db.cards.some((c) => c.batchId === batchId && c.status === "queued" && !c.deletedAt);
+      if (!stillQueued) batch.status = batch.failedFiles === batch.totalFiles ? "failed" : "completed";
+    }
+
+    await saveDb(db);
+    nextDelay = queuedCards.length > toProcess.length ? 600 : 3000;
+  } catch (err) {
+    console.error("[queue] processing cycle failed:", err.message);
+    nextDelay = 15000;
+  } finally {
+    queueProcessorRunning = false;
+    scheduleQueueProcessing(nextDelay);
+  }
 }
 
 function now() {
@@ -3332,13 +3500,14 @@ async function handleApi(req, res, pathname) {
         (sum, file) => sum + Math.max(0, Number(file.size || 0)) + Math.max(0, Number(file.backSize || 0)),
         0
       );
-      if (totalBytes > MAX_BATCH_BYTES) return error(res, 400, "The combined batch size cannot exceed 100 MB.");
-      const organisation = db.organisations.find((o) => o.id === user.organisationId);
-      const usage = planUsage(organisation);
-      if (files.length > usage.remaining) {
-        return error(res, 402, `This upload exceeds the ${usage.limit}-scan plan allowance. ${usage.remaining} scan(s) remain.`);
-      }
+      if (totalBytes > MAX_BATCH_BYTES) return error(res, 400, "The combined batch size cannot exceed 150 MB.");
 
+      // Uploading only stores the images and creates "queued" cards — no AI
+      // call happens here. The background queue processor (see
+      // scheduleQueueProcessing/processQueueCycle) picks them up afterwards,
+      // 5 at a time, and only then counts each one against the plan's scan
+      // allowance. This lets someone upload everything they collected in one
+      // go without hitting a synchronous batch-size wall.
       const collection = body.createNewCollection
         ? createCollectionFromUpload(db, user, body)
         : collectionForUser(db, user, body.collectionId);
@@ -3369,7 +3538,6 @@ async function handleApi(req, res, pathname) {
 
       const cards = [];
       const batchChecksums = new Map();
-      const extractionQueue = [];
       for (const file of files) {
         const type = String(file.type || "");
         const size = Number(file.size || 0);
@@ -3422,42 +3590,6 @@ async function handleApi(req, res, pathname) {
         const imageWarning = dimensions && Math.min(dimensions.width, dimensions.height) < 300
           ? `Image resolution is too low for reliable AI extraction (${dimensions.width}x${dimensions.height}). Please upload a sharper card image or enter details manually.`
           : "";
-        extractionQueue.push({
-          file,
-          cardId,
-          type,
-          size,
-          storagePath,
-          backStoragePath,
-          dimensions,
-          imageWarning,
-          checksum,
-          duplicateInBatchId,
-          duplicateImageId
-        });
-        batchChecksums.set(checksum, cardId);
-      }
-
-      const extractionResults = await mapWithConcurrency(extractionQueue, EXTRACTION_CONCURRENCY, async (task) => {
-        const extracted = task.imageWarning
-          ? makeManualReviewExtraction(task.file.name, collection, task.imageWarning)
-          : await extractBusinessCard(task.file, collection);
-        return { task, extracted };
-      });
-
-      for (const { task, extracted } of extractionResults) {
-        const {
-          file, cardId, type, size, storagePath, backStoragePath, dimensions,
-          checksum, duplicateInBatchId, duplicateImageId
-        } = task;
-        if (duplicateInBatchId) {
-          extracted.warnings = extracted.warnings || [];
-          extracted.warnings.push("Duplicate image detected within this upload batch. Review before saving.");
-        } else if (duplicateImageId) {
-          extracted.warnings = extracted.warnings || [];
-          extracted.warnings.push("This image appears to have been uploaded before. Review before saving.");
-        }
-        const status = extracted.name && extracted.mobileNumber && isValidMobile(extracted.mobileNumber) && !duplicateImageId ? "completed" : "requires_review";
         const card = {
           id: cardId,
           organisationId: user.organisationId,
@@ -3475,8 +3607,11 @@ async function handleApi(req, res, pathname) {
           backFileSize: Number(file.backSize || 0),
           width: dimensions?.width || null,
           height: dimensions?.height || null,
-          status,
-          extraction: extracted,
+          status: "queued",
+          extraction: null,
+          queuedImageWarning: imageWarning,
+          queuedDuplicateInBatchId: duplicateInBatchId || "",
+          queuedDuplicateImageId: duplicateImageId || "",
           duplicateImageOf: duplicateImageId || null,
           pairMode: backStoragePath ? "front-back" : "",
           frontFileName: file.name || "",
@@ -3485,20 +3620,14 @@ async function handleApi(req, res, pathname) {
           createdAt: now(),
           updatedAt: now()
         };
-        if (status === "completed") batch.completedFiles += 1;
-        if (status === "requires_review") batch.reviewRequiredCount += 1;
-        if (duplicateImageId) batch.duplicateCount += 1;
         db.cards.unshift(card);
         cards.push(publicCard(card));
+        batchChecksums.set(checksum, cardId);
       }
-      batch.status = batch.failedFiles === files.length ? "failed" : "completed";
-      if (organisation) {
-        organisation.scansUsed = usage.used + files.length;
-        organisation.scanLimit = usage.limit;
-        organisation.updatedAt = now();
-      }
+      batch.status = batch.failedFiles === files.length ? "failed" : "processing";
       audit(db, user, "cards.uploaded", "batch", batch.id, { files: files.length, collectionId: collection.id });
       await saveDb(db);
+      scheduleQueueProcessing();
       return send(res, 201, { batch, collection, cards });
     }
 
@@ -5008,6 +5137,7 @@ if (require.main === module) {
       const HOST = process.env.HOST || undefined;
       server.listen(PORT, HOST, () => {
         console.log(`Card2Leads running at http://${HOST || "localhost"}:${PORT}`);
+        scheduleQueueProcessing();
       });
     })
     .catch((err) => {

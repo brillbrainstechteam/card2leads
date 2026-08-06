@@ -268,6 +268,40 @@ function render() {
   if (state.view === "contacts") slot.appendChild(contactsWorkspaceView());
   if (state.view === "account") slot.appendChild(accountBillingView());
   if (state.modal) app.appendChild(modalView());
+  ensureQueuePolling();
+}
+
+// Cards uploaded now sit as "queued" until the server's background processor
+// scans them a few at a time (see server.js processQueueCycle). Poll gently
+// while any are still queued so Review updates on its own instead of the
+// user having to refresh, and stop as soon as none are left.
+let queuePollTimer = null;
+function ensureQueuePolling() {
+  const hasQueued = state.cards.some((card) => card.status === "queued");
+  if (!hasQueued) {
+    if (queuePollTimer) {
+      clearInterval(queuePollTimer);
+      queuePollTimer = null;
+    }
+    return;
+  }
+  if (queuePollTimer) return;
+  queuePollTimer = setInterval(async () => {
+    if (!state.user || !state.cards.some((card) => card.status === "queued")) {
+      clearInterval(queuePollTimer);
+      queuePollTimer = null;
+      return;
+    }
+    try {
+      const result = await api("/api/cards");
+      state.cards = result.cards;
+      const activeTag = document.activeElement?.tagName;
+      const isTyping = activeTag === "INPUT" || activeTag === "TEXTAREA" || activeTag === "SELECT";
+      if (state.view === "review" && !isTyping) render();
+    } catch {
+      // Transient network hiccup — the interval will just try again.
+    }
+  }, 4000);
 }
 
 function authView() {
@@ -951,7 +985,7 @@ function shell() {
         <section class="topbar">
           <div>
             <h1>${title}</h1>
-            <span class="muted">${state.view === "upload" ? "Up to 20 cards at once &middot; one card per photo" : escapeHtml(state.overview?.activeCollection?.name || "")}</span>
+            <span class="muted">${state.view === "upload" ? "Add as many cards as you like &middot; scanned automatically, a few at a time" : escapeHtml(state.overview?.activeCollection?.name || "")}</span>
           </div>
           <div class="topbar-actions">
             ${state.view === "account" ? "" : topbarUpgradeButtonHtml()}
@@ -1244,9 +1278,9 @@ function uploadView() {
             <circle cx="12" cy="12.5" r="3.2" />
           </svg>
         </div>
-        <strong>${state.selectedFiles.length ? `${state.selectedFiles.length} card${state.selectedFiles.length === 1 ? "" : "s"} added${state.selectedFiles.length < 20 ? " · add more or upload" : ""}` : "Drop card photos here or pick them below"}</strong>
+        <strong>${state.selectedFiles.length ? `${state.selectedFiles.length} card${state.selectedFiles.length === 1 ? "" : "s"} added${state.selectedFiles.length < 200 ? " · add more or upload" : ""}` : "Drop card photos here or pick them below"}</strong>
         <p class="muted"><strong>Front side of each card</strong> — one card per photo. Add the back later only if it has extra details.</p>
-        ${state.overview.usage ? `<p class="upload-allowance">${Number(state.overview.usage.remaining)} of ${Number(state.overview.usage.limit)} scans left on your plan</p>` : ""}
+        ${state.overview.usage ? `<p class="upload-allowance">${Number(state.overview.usage.remaining)} of ${Number(state.overview.usage.limit)} scans left this period &mdash; you can still upload more, extra cards will wait in the queue</p>` : ""}
         <div class="dropzone-actions">
           <label class="upload-picker">
             <span>Choose photos</span>
@@ -1508,9 +1542,9 @@ async function uploadFiles(node) {
   try {
     processingTitle.textContent = "Preparing card images";
     const files = await Promise.all(state.selectedFiles.map(readCardFileData));
-    processingTitle.textContent = `Reading ${cardCount} card${cardCount === 1 ? "" : "s"} and extracting details`;
+    processingTitle.textContent = `Uploading ${cardCount} card${cardCount === 1 ? "" : "s"}`;
     node.querySelectorAll(".file-status").forEach((status) => {
-      status.innerHTML = `<span class="inline-spinner" aria-hidden="true"></span> Reading card details`;
+      status.innerHTML = `<span class="inline-spinner" aria-hidden="true"></span> Uploading`;
     });
     const createNewCollection = !node.querySelector("#existingCollectionSelect");
     syncUploadDraft(node);
@@ -1527,7 +1561,10 @@ async function uploadFiles(node) {
       destinationName: destinationNameForUpload(node)
     };
     const result = await api("/api/uploads", { method: "POST", body });
-    recordExtractionTime(cardCount, Date.now() - startedAt);
+    // Not calling recordExtractionTime here anymore: uploading no longer runs
+    // AI extraction inline (see the background queue processor), so timing
+    // this request wouldn't measure extraction time and would corrupt the
+    // calibration used for the progress estimate above.
     if (processingBar) processingBar.style.width = "100%";
     state.selectedFiles.forEach((file) => {
       if (file.previewUrl) URL.revokeObjectURL(file.previewUrl);
@@ -1542,7 +1579,7 @@ async function uploadFiles(node) {
     state.draftCollectionName = "";
     state.draftExhibitionName = "";
     state.draftExhibitionDate = "";
-    state.message = { text: `${result.cards.length} card(s) uploaded. Review and save each contact to add it to the sheet/export.`, bad: false };
+    state.message = { text: `${result.cards.length} card(s) added. They're scanned automatically, a few at a time — you can add voice notes to any of them right away.`, bad: false };
     window.EasySaveNative?.haptic("success");
     navigateToView("review");
   } catch (err) {
@@ -1615,15 +1652,16 @@ function addSelectedFiles(fileList) {
       seen.add(key);
     }
   }
-  if (state.selectedFiles.length > 20) {
-    state.selectedFiles.slice(20).forEach((file) => {
+  if (state.selectedFiles.length > 200) {
+    state.selectedFiles.slice(200).forEach((file) => {
       if (file.previewUrl) URL.revokeObjectURL(file.previewUrl);
     });
-    state.selectedFiles = state.selectedFiles.slice(0, 20);
+    state.selectedFiles = state.selectedFiles.slice(0, 200);
+    state.message = { text: "Up to 200 cards can be added at once. Upload this batch, then add more.", bad: true };
   }
   // Photos are compressed in the browser before upload (see readCardFileData),
   // so the actual request is a fraction of the raw size. Keep a generous ceiling
-  // that comfortably fits 20 high-resolution phone photos (~25 MB each).
+  // that comfortably fits 200 high-resolution phone photos.
   let totalBytes = state.selectedFiles.reduce((sum, file) => sum + Number(file.size || 0) + Number(file.backSideFile?.size || 0), 0);
   while (totalBytes > 600 * 1024 * 1024 && state.selectedFiles.length) {
     const removed = state.selectedFiles.pop();
@@ -1728,6 +1766,9 @@ function reviewView() {
     });
     return emptyNode;
   }
+  const queuedCount = state.cards.filter((card) => card.status === "queued").length;
+  const remaining = Number(state.overview?.usage?.remaining ?? Infinity);
+  const limitReached = queuedCount > 0 && remaining <= 0;
   const node = el(`
     <section class="panel review-panel">
       <div class="section-heading review-heading">
@@ -1740,9 +1781,11 @@ function reviewView() {
           <button id="saveAllValid" ${validCount ? "" : "disabled"}>Save all valid contacts (${validCount})</button>
         </div>
       </div>
+      ${limitReached ? `<div class="notice bad">${queuedCount} card${queuedCount === 1 ? " is" : "s are"} waiting to be scanned, but you've reached your plan's scan limit. <button type="button" class="link-button" id="reviewLimitUpgrade">Upgrade or add scans</button> to continue, or they'll resume automatically once your plan resets.</div>` : ""}
       <div class="review-list"></div>
     </section>
   `);
+  node.querySelector("#reviewLimitUpgrade")?.addEventListener("click", () => navigateToView("account"));
   node.querySelector("#saveAllValid").addEventListener("click", saveAllValidContacts);
   node.querySelector("#voiceBatch").addEventListener("click", () => {
     const ids = state.cards.map((card) => card.id);
@@ -1789,7 +1832,56 @@ function reviewIssuesNotice(card) {
   return `<div class="notice bad"><ul class="notice-list">${issues.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}</ul></div>`;
 }
 
+function queuedCardReview(card) {
+  const node = el(`
+    <article class="card-row review-card queued-card">
+      <div class="review-card-media">
+        ${card.storageUrl ? `<img class="card-image" src="${card.storageUrl}" alt="Uploaded business card ${escapeAttr(card.originalFileName)}" />` : `<div class="card-image missing-image">Image unavailable</div>`}
+        <p><strong>${escapeHtml(card.originalFileName)}</strong></p>
+        ${card.pairMode === "front-back" ? `<p class="muted">Front and back saved as one contact</p>` : ""}
+        <div class="status-stack"><span class="status warn">waiting to be scanned</span></div>
+        ${voiceSummaryView(card.extraction)}
+      </div>
+      <div class="queued-card-body">
+        <div class="queued-card-spinner" aria-hidden="true"></div>
+        <p class="muted">This card is in the queue. It's scanned automatically, a few at a time &mdash; no action needed.</p>
+        <div class="actions review-card-actions">
+          <button type="button" class="secondary" data-voice-card><span class="button-mic-icon" aria-hidden="true"></span>Add voice note now</button>
+          <button type="button" class="danger" data-delete-card>Delete</button>
+        </div>
+      </div>
+    </article>
+  `);
+  node.querySelector("[data-voice-card]").addEventListener("click", () => {
+    showVoiceNoteModal("card", [card.id], card.originalFileName || "this card");
+  });
+  node.querySelector("[data-delete-card]").addEventListener("click", async () => {
+    state.modal = {
+      tone: "danger",
+      title: "Delete queued card?",
+      body: "This removes the card before it's scanned.",
+      detail: card.originalFileName,
+      cancelText: "Keep card",
+      confirmText: "Delete card",
+      confirmClass: "danger",
+      onConfirm: async () => {
+        try {
+          await api(`/api/cards/${card.id}`, { method: "DELETE" });
+          await refreshAll();
+          state.message = { text: "Card deleted.", bad: false };
+          render();
+        } catch (err) {
+          setMessage(err.message, true);
+        }
+      }
+    };
+    render();
+  });
+  return node;
+}
+
 function cardReview(card) {
+  if (card.status === "queued") return queuedCardReview(card);
   const fields = { ...card.extraction };
   const fieldConfidence = { ...(card.extraction?.fieldConfidence || {}) };
   normalizeReviewPhoneFields(fields, fieldConfidence);

@@ -958,6 +958,26 @@ label {
   min-height: 38px;
 }
 
+.queued-card-body {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  padding: 18px 0;
+}
+
+.queued-card-spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2.5px solid var(--line);
+  border-top-color: var(--purple);
+  animation: queued-spin 0.8s linear infinite;
+}
+
+@keyframes queued-spin {
+  to { transform: rotate(360deg); }
+}
+
 .span-2 {
   grid-column: span 2;
 }
