@@ -2099,21 +2099,29 @@ label {
 .feature-strip {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 14px;
 }
 
 .feature-strip article {
   display: grid;
-  gap: 6px;
-  padding: 14px;
-  border: 1px solid #d8e6e6;
-  border-radius: 10px;
-  background: #f3f8f8;
+  gap: 8px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 4px 16px rgba(32, 34, 42, 0.05);
+}
+
+.feature-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .feature-strip strong {
   font-size: 15px;
   font-weight: 650;
+  color: var(--ink);
 }
 
 .feature-strip p,
@@ -2125,14 +2133,28 @@ label {
 }
 
 .feature-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 8px;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
   display: grid;
   place-items: center;
-  color: #fff;
-  background: var(--purple);
-  font-weight: 650;
+  color: var(--purple);
+  background: var(--purple-soft);
+}
+
+.feature-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.feature-num {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--purple-soft);
+  color: var(--purple);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .public-section {
@@ -2161,6 +2183,12 @@ label {
 
 .features-copy h2 {
   margin-bottom: 0;
+}
+
+.features-copy h2 em {
+  display: block;
+  font-style: italic;
+  color: var(--purple);
 }
 
 .features-illustration {
