@@ -267,6 +267,14 @@ label {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
+}
+
+.topbar-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
 }
 
 .topbar-upgrade-btn:not(.secondary):not(.danger) {
@@ -3707,7 +3715,8 @@ strong {
 
   .topbar-actions button {
     min-height: 36px;
-    padding: 7px 10px;
+    min-width: max-content;
+    padding: 7px 12px;
     font-size: 12px;
   }
 
