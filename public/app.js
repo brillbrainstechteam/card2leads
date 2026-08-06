@@ -362,8 +362,7 @@ function authView() {
         </div>
         <div class="pricing-tabs" role="tablist" aria-label="Pricing options">
           <button type="button" class="pricing-tab active" role="tab" aria-selected="true" data-pricing-tab="one-time">Pay once</button>
-          <button type="button" class="pricing-tab" role="tab" aria-selected="false" data-pricing-tab="subscription">Subscription</button>
-          <span class="pricing-mode-caption" data-pricing-caption>Default option &middot; no recurring charge</span>
+          <button type="button" class="pricing-tab" role="tab" aria-selected="false" data-pricing-tab="subscription">Subscribe</button>
         </div>
         <div class="pricing-panel active" data-pricing-panel="one-time">
           <div class="pricing-grid">
@@ -505,11 +504,6 @@ function authView() {
 function initPublicPricingTabs(node) {
   const tabs = Array.from(node.querySelectorAll("[data-pricing-tab]"));
   const panels = Array.from(node.querySelectorAll("[data-pricing-panel]"));
-  const caption = node.querySelector("[data-pricing-caption]");
-  const captions = {
-    "one-time": "Default option · no recurring charge",
-    subscription: "Renews automatically · cancel anytime"
-  };
   tabs.forEach((tab) => {
     tab.addEventListener("click", () => {
       const selected = tab.dataset.pricingTab;
@@ -523,7 +517,6 @@ function initPublicPricingTabs(node) {
         panel.classList.toggle("active", active);
         panel.hidden = !active;
       });
-      if (caption) caption.textContent = captions[selected] || "";
     });
   });
 }
