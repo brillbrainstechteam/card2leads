@@ -2003,29 +2003,43 @@ label {
   color: var(--muted);
 }
 
-.pricing-mode-head {
+.pricing-tabs {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
 }
 
-.pricing-mode-pill {
+.pricing-tab {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   min-height: 34px;
-  padding: 7px 14px;
+  padding: 7px 18px;
+  border: 1px solid #d8e6e6;
   border-radius: 999px;
-  background: #fff6da;
-  color: #5f4708;
+  background: #f3f8f8;
+  color: #223558;
   font-size: 0.86rem;
   font-weight: 750;
   text-transform: uppercase;
 }
 
+.pricing-tab.active {
+  border-color: var(--yellow);
+  background: #fff6da;
+  color: #5f4708;
+  box-shadow: 0 6px 16px rgba(95, 71, 8, 0.08);
+}
+
 .pricing-mode-caption {
   color: var(--muted);
   font-size: 0.94rem;
+}
+
+.pricing-panel {
+  display: grid;
+  gap: 18px;
 }
 
 .pricing-grid {
@@ -2127,8 +2141,6 @@ label {
 .pricing-subscription-block {
   display: grid;
   gap: 18px;
-  padding-top: 12px;
-  border-top: 1px solid #e5e7ee;
 }
 
 .pricing-subscription-block > div:first-child {

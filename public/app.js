@@ -279,7 +279,7 @@ function authView() {
         </div>
         <div class="public-actions">
           <button type="button" class="secondary" data-auth-mode="login">Log in</button>
-          <button type="button" data-auth-mode="signup">Start free</button>
+          <button type="button" data-auth-mode="signup">Sign up</button>
         </div>
       </nav>
 
@@ -289,7 +289,7 @@ function authView() {
           <h1>Turn business cards into organised, ready-to-use contacts.</h1>
           <p class="hero-text">Card2Leads is a business-card scanning and contact-management application that converts individual or bulk card uploads into structured contact records. Review extracted details, add labels and voice notes, then export or sync approved contacts to Google Contacts and Google Sheets.</p>
           <div class="hero-actions">
-            <button type="button" data-auth-mode="signup">Start free</button>
+            <button type="button" data-auth-mode="signup">Sign up</button>
             <button type="button" class="secondary" data-auth-mode="login">Log in</button>
           </div>
           <p class="hero-fineprint">20 free scans. No payment details required.</p>
@@ -361,16 +361,18 @@ function authView() {
           </div>
           <p>Every plan includes AI-assisted card extraction, manual review, labels, voice inputs, Excel and CSV exports, VCF downloads, Google Sheets sync and Google Contacts sync. Plans differ only by the number of card scans included.</p>
         </div>
-        <div class="pricing-mode-head">
-          <span class="pricing-mode-pill active">Pay once</span>
+        <div class="pricing-tabs" role="tablist" aria-label="Pricing options">
+          <button type="button" class="pricing-tab active" role="tab" aria-selected="true" data-pricing-tab="one-time">Pay once</button>
+          <button type="button" class="pricing-tab" role="tab" aria-selected="false" data-pricing-tab="subscription">Subscription</button>
           <span class="pricing-mode-caption">Default option · no recurring charge</span>
         </div>
-        <div class="pricing-grid">
+        <div class="pricing-panel active" data-pricing-panel="one-time">
+          <div class="pricing-grid">
           <article class="price-card">
             <span class="price-label">Trial</span>
             <h3>Free</h3>
             <p>20 card scans to try extraction, review, labels, voice input and export features.</p>
-            <button type="button" class="secondary" data-auth-mode="signup">Start free</button>
+            <button type="button" class="secondary" data-auth-mode="signup">Sign up</button>
           </article>
           <article class="price-card">
             <span class="price-label">1 month</span>
@@ -394,7 +396,9 @@ function authView() {
             <button type="button" class="secondary" data-auth-mode="signup" data-plan="annual" data-billing-mode="one_time">Buy 1 year</button>
           </article>
         </div>
-        <div class="pricing-subscription-block" aria-label="Recurring subscription plans">
+        </div>
+        <div class="pricing-panel" data-pricing-panel="subscription" hidden>
+          <div class="pricing-subscription-block" aria-label="Recurring subscription plans">
           <div>
             <p class="section-kicker">Subscription option</p>
             <h3>Prefer automatic renewal?</h3>
@@ -423,6 +427,7 @@ function authView() {
               <button type="button" class="secondary" data-auth-mode="signup" data-plan="annual" data-billing-mode="subscription">Subscribe yearly</button>
             </article>
           </div>
+        </div>
         </div>
         <aside class="pricing-note" aria-label="Additional scan top-up">
           <span class="pricing-note-icon" aria-hidden="true">+</span>
@@ -473,7 +478,7 @@ function authView() {
           <p>Start with 20 free card scans. No payment details required.</p>
         </div>
         <div class="public-cta-actions">
-          <button type="button" data-auth-mode="signup">Start free</button>
+          <button type="button" data-auth-mode="signup">Sign up</button>
           <button type="button" class="secondary" data-auth-mode="login">Log in</button>
         </div>
       </section>
@@ -493,8 +498,29 @@ function authView() {
       </footer>
     </main>
   `);
+  initPublicPricingTabs(node);
   node.querySelectorAll("[data-auth-mode]").forEach((btn) => btn.addEventListener("click", () => openAuth(btn.dataset.authMode, btn.dataset.plan, btn.dataset.billingMode)));
   return node;
+}
+
+function initPublicPricingTabs(node) {
+  const tabs = Array.from(node.querySelectorAll("[data-pricing-tab]"));
+  const panels = Array.from(node.querySelectorAll("[data-pricing-panel]"));
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const selected = tab.dataset.pricingTab;
+      tabs.forEach((candidate) => {
+        const active = candidate.dataset.pricingTab === selected;
+        candidate.classList.toggle("active", active);
+        candidate.setAttribute("aria-selected", active ? "true" : "false");
+      });
+      panels.forEach((panel) => {
+        const active = panel.dataset.pricingPanel === selected;
+        panel.classList.toggle("active", active);
+        panel.hidden = !active;
+      });
+    });
+  });
 }
 
 function authScreen() {
