@@ -425,7 +425,7 @@ function authView() {
 
       <section class="public-section public-feature-grid" id="exports">
         <article class="public-panel">
-          <img class="panel-illustration" src="/illustrations-final/excel_save.png?v=final-20260729" alt="Contacts saved to a spreadsheet" />
+          <img class="panel-illustration" src="/illustrations-final/excel_save.png?v=final-20260807" alt="Contacts saved to a spreadsheet" />
           <div>
             <p class="section-kicker">Structured exports</p>
             <h2>Clean contact data, ready to use.</h2>
@@ -433,7 +433,7 @@ function authView() {
           </div>
         </article>
         <article class="public-panel">
-          <img class="panel-illustration" src="/illustrations-final/voice%20input%20illustration_right_section.png?v=final-20260729" alt="Voice note captured for a contact" />
+          <img class="panel-illustration" src="/illustrations-final/voice%20input%20illustration_right_section.png?v=final-20260807" alt="Voice note captured for a contact" />
           <div>
             <p class="section-kicker">Voice-based context</p>
             <h2>Capture the details that cards cannot.</h2>
