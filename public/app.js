@@ -1937,7 +1937,7 @@ function inputField(field, value, multiline = false, confidence = undefined) {
     officeNumber: 'type="tel" inputmode="tel" autocomplete="off"',
     emailAddress: 'type="email" inputmode="email" autocomplete="off" autocapitalize="none" spellcheck="false"',
     secondaryEmail: 'type="email" inputmode="email" autocomplete="off" autocapitalize="none" spellcheck="false"',
-    website: 'type="url" inputmode="url" autocomplete="off" autocapitalize="none" spellcheck="false"',
+    website: 'type="text" inputmode="url" autocomplete="off" autocapitalize="none" spellcheck="false"',
     exhibitionDate: 'type="date"'
   };
   const input = multiline
