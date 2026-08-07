@@ -1108,9 +1108,11 @@ async function processQueueCycle() {
         finalExtraction.warnings.push("This image appears to have been uploaded before. Review before saving.");
       }
 
-      const status = finalExtraction.name && finalExtraction.mobileNumber && isValidMobile(finalExtraction.mobileNumber) && !card.queuedDuplicateImageId
-        ? "completed"
-        : "requires_review";
+      // Every extracted card is saved automatically now, no matter how blank
+      // or malformed the fields are — validateContact() only ever produces a
+      // "needs review" flag, it never blocks. A card only stays requires_review
+      // if the save itself throws (a storage error), never for incomplete data.
+      let status = "completed";
 
       card.extraction = finalExtraction;
       card.status = status;
@@ -1118,6 +1120,29 @@ async function processQueueCycle() {
       delete card.queuedImageWarning;
       delete card.queuedDuplicateInBatchId;
       delete card.queuedDuplicateImageId;
+
+      {
+        // Contacts are owned by whoever uploaded the batch; the queue runs
+        // detached from any request, so there's no session user to fall back on.
+        const uploader = db.users.find((u) => u.id === batchesById.get(card.batchId)?.uploadedBy);
+        try {
+          const saved = uploader
+            ? saveContactRecord(db, uploader, card, finalExtraction, { mergeDuplicate: true })
+            : { ok: false, message: "Could not identify who uploaded this card, so it needs to be saved manually." };
+          if (saved.ok) {
+            status = "saved";
+          } else {
+            status = "requires_review";
+            card.status = "requires_review";
+            finalExtraction.warnings = [...(finalExtraction.warnings || []), saved.message];
+          }
+        } catch (err) {
+          status = "requires_review";
+          card.status = "requires_review";
+          finalExtraction.warnings = [...(finalExtraction.warnings || []), `Automatic save failed: ${err.message}`];
+          console.error("[queue] auto-save failed:", err.message);
+        }
+      }
 
       const organisation = orgsById.get(card.organisationId);
       if (organisation) {
@@ -1128,7 +1153,7 @@ async function processQueueCycle() {
 
       const batch = batchesById.get(card.batchId);
       if (batch) {
-        if (status === "completed") batch.completedFiles += 1;
+        if (status === "completed" || status === "saved") batch.completedFiles += 1;
         if (status === "requires_review") batch.reviewRequiredCount += 1;
         if (card.duplicateImageOf) batch.duplicateCount += 1;
         touchedBatchIds.add(batch.id);
@@ -3573,6 +3598,34 @@ async function handleApi(req, res, pathname) {
         const duplicateInBatchId = batchChecksums.get(checksum);
         const duplicateImage = db.cards.find((c) => c.organisationId === user.organisationId && c.checksum === checksum);
         const duplicateImageId = duplicateInBatchId || duplicateImage?.id || "";
+        // An identical image never needs a second AI extraction call — skip it
+        // outright instead of queueing and paying for it, so cost only scales
+        // with genuinely new cards.
+        if (duplicateImageId) {
+          const skippedCard = {
+            id: id("crd"),
+            organisationId: user.organisationId,
+            collectionId: collection.id,
+            batchId: batch.id,
+            originalFileName: file.name,
+            storagePath: "",
+            storageUrl: "",
+            checksum,
+            fileType: type,
+            fileSize: size,
+            status: "skipped_duplicate",
+            extraction: { warnings: ["Skipped: identical image already uploaded."], confidence: 0 },
+            duplicateImageOf: duplicateImageId,
+            createdAt: now(),
+            updatedAt: now()
+          };
+          batch.duplicateCount += 1;
+          batch.completedFiles += 1;
+          db.cards.unshift(skippedCard);
+          cards.push(publicCard(skippedCard));
+          batchChecksums.set(checksum, skippedCard.id);
+          continue;
+        }
         const cardId = id("crd");
         const ext = type.split("/")[1].replace("jpeg", "jpg");
         const storagePath = path.join(STORAGE_DIR, "cards", `${cardId}.${ext}`);
@@ -3624,7 +3677,14 @@ async function handleApi(req, res, pathname) {
         cards.push(publicCard(card));
         batchChecksums.set(checksum, cardId);
       }
-      batch.status = batch.failedFiles === files.length ? "failed" : "processing";
+      // A batch made entirely of duplicate images is never touched by the queue
+      // loop (nothing in it ever reaches "queued"), so it must be finalized
+      // here or it would otherwise sit at "processing" forever.
+      batch.status = batch.failedFiles === files.length
+        ? "failed"
+        : (batch.failedFiles + batch.duplicateCount) === files.length
+          ? "completed"
+          : "processing";
       audit(db, user, "cards.uploaded", "batch", batch.id, { files: files.length, collectionId: collection.id });
       await saveDb(db);
       scheduleQueueProcessing();
@@ -4389,34 +4449,36 @@ function publicVoiceNote(note) {
   };
 }
 
+// Every card must be saved no matter how messy the extraction is — validation
+// only ever produces a list of reasons for a quiet "needs review" flag, it
+// never blocks the save itself. A duplicate-cost, hard-to-review card is far
+// worse for this product than a saved row with a blank field.
 function validateContact(fields) {
   const normalizedFields = normalizePhoneFields(fields);
   const name = String(normalizedFields.name || "").trim();
   const mobileNumber = String(normalizedFields.mobileNumber || "").trim();
-  if (!name && !mobileNumber) {
-    return { ok: false, code: "missing_name_mobile", message: "Name and mobile number are required before this contact can be saved." };
-  }
-  if (!name) return { ok: false, code: "missing_name", message: "Name is required. Please enter the contact's name before saving." };
-  if (!mobileNumber) return { ok: false, code: "missing_mobile", message: "Mobile number is required. Please enter a valid mobile number before saving." };
-  if (!isValidMobile(mobileNumber)) return { ok: false, code: "invalid_mobile", message: "Mobile number is required. Please enter a valid mobile number before saving." };
+  const reasons = [];
+  if (!name) reasons.push("Name is missing.");
+  if (!mobileNumber) reasons.push("Mobile number is missing.");
+  else if (!isValidMobile(mobileNumber)) reasons.push("Mobile number looks invalid.");
   if (normalizedFields.secondaryMobileNumber && !splitPhoneValues(normalizedFields.secondaryMobileNumber).every(isValidMobile)) {
-    return { ok: false, code: "invalid_secondaryMobileNumber", message: "Secondary mobile number looks invalid. Please correct it or leave it blank." };
+    reasons.push("Secondary mobile number looks invalid.");
   }
   if (normalizedFields.officeNumber && !isValidOfficePhone(normalizedFields.officeNumber)) {
-    return { ok: false, code: "invalid_officeNumber", message: "Office number looks invalid. Please correct it or leave it blank." };
+    reasons.push("Office number looks invalid.");
   }
   for (const field of ["emailAddress", "secondaryEmail"]) {
     if (normalizedFields[field] && !isValidEmail(normalizedFields[field])) {
-      return { ok: false, code: `invalid_${field}`, message: `${fieldLabelsForServer(field)} looks invalid. Please correct it or leave it blank.` };
+      reasons.push(`${fieldLabelsForServer(field)} looks invalid.`);
     }
   }
   if (normalizedFields.website && !isLikelyWebsite(normalizedFields.website)) {
-    return { ok: false, code: "invalid_website", message: "Website looks invalid. Use a domain like example.com or a full https URL." };
+    reasons.push("Website looks invalid.");
   }
   if (normalizedFields.linkedInUrl && !isLikelyLinkedIn(normalizedFields.linkedInUrl)) {
-    return { ok: false, code: "invalid_linkedin", message: "LinkedIn URL looks invalid. Please correct it or leave it blank." };
+    reasons.push("LinkedIn URL looks invalid.");
   }
-  return { ok: true };
+  return { ok: true, reasons };
 }
 
 function cleanContactFields(fields) {
@@ -4485,16 +4547,15 @@ function fieldLabelsForServer(field) {
 }
 
 async function saveContactFromFields(res, db, user, card, fields) {
-  const validation = validateContact(fields);
-  if (!validation.ok) return error(res, 400, validation.message, validation);
-
   const cleaned = cleanContactFields(fields);
   const normalizedMobileNumber = normalizeMobile(cleaned.mobileNumber);
-  const duplicate = db.contacts.find((c) =>
-    c.organisationId === user.organisationId &&
-    !c.deletedAt &&
-    c.normalizedMobileNumber === normalizedMobileNumber
-  );
+  const duplicate = normalizedMobileNumber
+    ? db.contacts.find((c) =>
+        c.organisationId === user.organisationId &&
+        !c.deletedAt &&
+        c.normalizedMobileNumber === normalizedMobileNumber
+      )
+    : null;
   if (duplicate && !fields.duplicateAction) {
     return send(res, 409, {
       error: "A contact with this mobile number already exists.",
@@ -4531,14 +4592,18 @@ async function saveContactFromFields(res, db, user, card, fields) {
 
 function saveContactRecord(db, user, card, fields, options = {}) {
   const validation = validateContact(fields);
-  if (!validation.ok) return validation;
   const cleaned = cleanContactFields(fields);
   const normalizedMobileNumber = normalizeMobile(cleaned.mobileNumber);
-  const duplicate = db.contacts.find((c) =>
-    c.organisationId === user.organisationId &&
-    !c.deletedAt &&
-    c.normalizedMobileNumber === normalizedMobileNumber
-  );
+  const duplicate = normalizedMobileNumber
+    ? db.contacts.find((c) =>
+        c.organisationId === user.organisationId &&
+        !c.deletedAt &&
+        c.normalizedMobileNumber === normalizedMobileNumber
+      )
+    : null;
+  if (duplicate && options.mergeDuplicate) {
+    return mergeContactRecord(db, user, card, duplicate, cleaned);
+  }
   if (duplicate && !options.allowDuplicate) {
     return { ok: false, code: "duplicate", message: "A saved contact already has this mobile number. Review this card manually." };
   }
@@ -4558,6 +4623,11 @@ function saveContactRecord(db, user, card, fields, options = {}) {
     deletedAt: null,
     reviewStatus: "Reviewed",
     duplicateStatus: duplicate ? "kept_both" : "none",
+    // Advisory only — nothing above this point ever blocks the save. A quiet
+    // flag plus the reasons behind it, so incomplete rows can be found later
+    // without hiding them or refusing to save them in the first place.
+    needsReview: validation.reasons.length > 0,
+    reviewReasons: validation.reasons.join(" "),
     googleSheetsSyncStatus: collection.destinationType === "google" ? "pending" : "not_configured",
     extractionConfidence: card.extraction?.confidence || 0,
     cardImageReference: card.storageUrl,
@@ -4574,6 +4644,38 @@ function saveContactRecord(db, user, card, fields, options = {}) {
   card.updatedAt = now();
   audit(db, user, "contact.saved", "contact", contact.id, { collectionId: collection.id, cardId: card.id });
   return { ok: true, contact };
+}
+
+// Fill-blanks-only merge for a card matching an already-saved contact. An
+// existing value is never overwritten, so a second (possibly poorer) scan can
+// add detail the first one missed but can never degrade or erase what's there.
+// Notes are the exception: they're appended, so earlier remarks survive.
+function mergeContactRecord(db, user, card, existing, cleaned) {
+  const filled = [];
+  for (const field of OPTIONAL_FIELDS) {
+    if (field === "notes") continue;
+    const incoming = String(cleaned[field] ?? "").trim();
+    if (!incoming || String(existing[field] ?? "").trim()) continue;
+    existing[field] = incoming;
+    filled.push(field);
+  }
+  const incomingNotes = String(cleaned.notes || "").trim();
+  const existingNotes = String(existing.notes || "").trim();
+  if (incomingNotes && !existingNotes.includes(incomingNotes)) {
+    existing.notes = [existingNotes, incomingNotes].filter(Boolean).join("\n\n");
+    filled.push("notes");
+  }
+  if (filled.length) {
+    existing.updatedAt = now();
+    existing.updatedBy = user.id;
+    // Re-queue for Sheets, otherwise the newly filled columns never reach it.
+    if (existing.googleSheetsSyncStatus === "synced") existing.googleSheetsSyncStatus = "pending";
+  }
+  existing.duplicateStatus = "merged";
+  card.status = "saved";
+  card.updatedAt = now();
+  audit(db, user, "contact.merged_duplicate", "contact", existing.id, { cardId: card.id, filledFields: filled });
+  return { ok: true, contact: existing, merged: true, filledFields: filled };
 }
 
 function exportRow(contact) {

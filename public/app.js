@@ -340,7 +340,7 @@ function authView() {
       <section class="public-hero" id="top">
         <div class="hero-copy">
           <p class="section-kicker">Business card capture, simplified</p>
-          <h1>Turn business cards into organised, ready-to-use contacts.</h1>
+          <h1>Turn business cards into organised, <em>ready-to-use contacts.</em></h1>
           <p class="hero-text">Card2Leads is a business-card scanning and contact-management application that converts individual or bulk card uploads into structured contact records. Review extracted details, add labels and voice notes, then export or sync approved contacts to Google Contacts and Google Sheets.</p>
           <div class="hero-actions">
             <button type="button" data-auth-mode="signup">Sign up</button>
@@ -1349,9 +1349,15 @@ function uploadView() {
   const cameraInput = node.querySelector("#cameraInput");
   cameraInput.addEventListener("change", async () => {
     syncUploadDraft(node);
+    const beforeCount = state.selectedFiles.length;
     addSelectedFiles(cameraInput.files);
+    const addedFile = state.selectedFiles.length > beforeCount ? state.selectedFiles[state.selectedFiles.length - 1] : null;
     if (cameraInput.files?.length) window.EasySaveNative?.haptic("success");
     render();
+    // Only the live camera capture gets this — a bulk file-picker upload
+    // (fileInput above) already lets people attach a back image themselves,
+    // and prompting per-file there would be noise, not help.
+    if (addedFile) promptForBackSide(addedFile, node.querySelector("#backSideInput"));
   });
   const backSideInput = node.querySelector("#backSideInput");
   backSideInput.addEventListener("change", () => {
@@ -1689,6 +1695,28 @@ function addSelectedFiles(fileList) {
     if (removed.previewUrl) URL.revokeObjectURL(removed.previewUrl);
     state.message = { text: "This batch is very large. The last photo was removed — try uploading in two goes.", bad: true };
   }
+}
+
+function promptForBackSide(fileEntry, backSideInputEl) {
+  state.modal = {
+    tone: "info",
+    title: "Scan the back too?",
+    body: "If this card has extra details on the back — another number, address or QR code — scan it now. Otherwise skip and keep going.",
+    actions: [
+      {
+        label: "Scan back",
+        className: "primary",
+        onClick: () => {
+          const index = state.selectedFiles.indexOf(fileEntry);
+          if (index === -1 || !backSideInputEl) return;
+          state.backSideTargetIndex = index;
+          backSideInputEl.click();
+        }
+      },
+      { label: "Skip", className: "secondary", onClick: () => {} }
+    ]
+  };
+  render();
 }
 
 function destinationNameForUpload(node) {
@@ -2756,6 +2784,7 @@ function contactsView() {
       <div class="contact-card-info">
         <div class="contact-card-head">
           <strong>${escapeHtml(contact.name)}</strong>
+          ${contact.needsReview ? `<span class="review-dot" title="${escapeAttr(contact.reviewReasons || "Needs a quick review")}" aria-label="Needs review"></span>` : ""}
           <span class="contact-card-phone phone-value">${escapeHtml(contact.mobileNumber)}</span>
         </div>
         <div class="contact-card-sub">

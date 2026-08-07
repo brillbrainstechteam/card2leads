@@ -1810,13 +1810,19 @@ label {
   line-height: 1.08;
   font-weight: 600;
   letter-spacing: 0;
-  color: #171922;
+  color: #060f3f;
+}
+
+.hero-copy h1 em {
+  display: block;
+  font-style: italic;
+  color: var(--purple);
 }
 
 .hero-text {
   max-width: 660px;
   margin: 0;
-  color: #555b6f;
+  color: var(--muted);
   font-size: 18px;
   line-height: 1.65;
 }
@@ -2172,7 +2178,7 @@ label {
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(320px, 0.8fr);
   gap: 34px;
-  align-items: center;
+  align-items: start;
   overflow: hidden;
 }
 
@@ -2209,80 +2215,88 @@ label {
   padding: 0;
   position: relative;
   display: grid;
-  gap: 22px;
+  gap: 4px;
 }
 
 .workflow-timeline::before {
   content: "";
   position: absolute;
-  left: 19px;
-  top: 8px;
-  bottom: 8px;
-  width: 2px;
-  border-radius: 2px;
-  background: linear-gradient(180deg, #dca62f 0%, #8f63aa 55%, #2f9b68 100%);
+  left: 20px;
+  top: 10px;
+  bottom: 10px;
+  width: 1px;
+  background: rgba(34, 53, 88, 0.12);
 }
 
 .wf-item {
   position: relative;
   display: grid;
-  grid-template-columns: 40px 1fr;
-  gap: 15px;
+  grid-template-columns: 41px 1fr;
+  gap: 16px;
   align-items: flex-start;
+  padding: 12px 10px;
+  border-radius: 12px;
+  transition: background-color 0.15s ease;
+}
+
+.wf-item:hover {
+  background: rgba(34, 53, 88, 0.035);
 }
 
 .wf-node {
-  width: 40px;
-  height: 40px;
+  width: 41px;
+  height: 41px;
   border-radius: 50%;
   display: grid;
   place-items: center;
-  color: #fff;
-  background: var(--accent);
-  box-shadow: 0 0 0 4px #fff, 0 6px 14px rgba(34, 53, 88, 0.2);
+  color: var(--accent);
+  background: #fff;
+  border: 1.5px solid rgba(34, 53, 88, 0.16);
   z-index: 1;
 }
 
 .wf-item-final .wf-node {
+  color: #fff;
   background: var(--ok);
-  box-shadow: 0 0 0 4px #fff, 0 6px 14px rgba(47, 155, 104, 0.22);
+  border-color: var(--ok);
 }
 
 .wf-node svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
 }
 
 .wf-body {
-  padding-top: 1px;
+  padding-top: 2px;
 }
 
 .wf-step {
   display: block;
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-weight: 600;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: #b98b2e;
+  color: var(--muted);
 }
 
 .wf-item-final .wf-step {
-  color: #3a8f68;
+  color: var(--ok);
 }
 
 .wf-body strong {
   display: block;
-  font-size: 15px;
+  font-size: 15.5px;
   font-weight: 650;
   color: var(--ink);
-  margin-top: 1px;
+  margin-top: 2px;
 }
 
 .wf-body p {
   margin: 3px 0 0;
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--muted);
+  max-width: 46ch;
 }
 
 .split-section {
@@ -2356,18 +2370,36 @@ label {
 
 .public-panel {
   min-height: 300px;
-  padding: 22px;
+  padding: 26px;
   display: grid;
-  align-content: space-between;
-  gap: 14px;
+  align-content: start;
+  gap: 20px;
   overflow: hidden;
+  border-radius: 16px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.public-panel:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 20px 44px rgba(32, 34, 42, 0.1);
 }
 
 .panel-illustration {
   width: 100%;
-  max-height: 120px;
+  height: 170px;
   object-fit: contain;
   justify-self: center;
+  padding: 18px;
+  border-radius: 14px;
+  background: rgba(237, 190, 19, 0.08);
+}
+
+.public-panel:nth-of-type(2) .panel-illustration {
+  background: var(--purple-soft);
+}
+
+.public-panel h2 {
+  font-size: clamp(22px, 2.2vw, 27px);
 }
 
 .demo-panel {
@@ -6106,6 +6138,15 @@ strong {
 .contact-card-tag {
   color: var(--purple);
   font-weight: 500;
+}
+
+.review-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
 }
 
 .contact-card-assign {

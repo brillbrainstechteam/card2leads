@@ -355,6 +355,75 @@ test("new exhibition uploads cannot inherit the previous exhibition", () => {
   assert.equal(saved.contact.exhibitionName, "GJEPC");
 });
 
+test("a card with missing or malformed fields is still saved, just flagged for review", () => {
+  const db = {
+    collections: [{ id: "col_1", organisationId: "org_1", name: "IIJS 2026", exhibitionName: "IIJS 2026", status: "active", destinationType: "excel" }],
+    contacts: [],
+    cards: [],
+    auditLogs: []
+  };
+  const user = { id: "usr_1", organisationId: "org_1", name: "Preeti" };
+  const card = { id: "card_1", organisationId: "org_1", collectionId: "col_1", extraction: { confidence: 40 }, storageUrl: "", status: "queued" };
+
+  const saved = saveContactRecord(db, user, card, {
+    name: "",
+    mobileNumber: "",
+    emailAddress: "not-an-email"
+  });
+
+  assert.equal(saved.ok, true, "saving must never be blocked, no matter how incomplete the data is");
+  assert.equal(db.contacts.length, 1);
+  assert.equal(saved.contact.needsReview, true);
+  assert.ok(saved.contact.reviewReasons.includes("Name is missing."));
+  assert.ok(saved.contact.reviewReasons.includes("Mobile number is missing."));
+  assert.equal(card.status, "saved");
+});
+
+test("a re-scanned duplicate fills blanks and appends notes without overwriting", () => {
+  const db = {
+    collections: [{ id: "col_1", organisationId: "org_1", name: "IIJS 2026", exhibitionName: "IIJS 2026", status: "active", destinationType: "excel" }],
+    contacts: [],
+    cards: [],
+    auditLogs: []
+  };
+  const user = { id: "usr_1", organisationId: "org_1", name: "Preeti" };
+  const firstCard = { id: "card_1", organisationId: "org_1", collectionId: "col_1", extraction: { confidence: 90 }, storageUrl: "", status: "queued" };
+  const secondCard = { id: "card_2", organisationId: "org_1", collectionId: "col_1", extraction: { confidence: 70 }, storageUrl: "", status: "queued" };
+  db.cards.push(firstCard, secondCard);
+
+  const first = saveContactRecord(db, user, firstCard, {
+    name: "Riya Shah",
+    mobileNumber: "+91 98765 43210",
+    companyName: "ABC Jewels",
+    notes: "Met at booth 12"
+  });
+  assert.equal(first.ok, true);
+
+  const second = saveContactRecord(db, user, secondCard, {
+    name: "Riya Shah",
+    mobileNumber: "+91 98765 43210",
+    companyName: "ABC Jewels Pvt Ltd",
+    designation: "Buyer",
+    notes: "Wants the bridal catalogue"
+  }, { mergeDuplicate: true });
+
+  assert.equal(second.ok, true);
+  assert.equal(second.merged, true);
+  assert.equal(db.contacts.length, 1, "merging must not create a second contact");
+  assert.equal(second.contact.companyName, "ABC Jewels", "an existing value is never overwritten");
+  assert.equal(second.contact.designation, "Buyer", "a blank field is filled from the new scan");
+  assert.equal(second.contact.notes, "Met at booth 12\n\nWants the bridal catalogue", "notes are appended");
+  assert.equal(secondCard.status, "saved");
+
+  // Re-merging identical content must not duplicate the appended note.
+  saveContactRecord(db, user, secondCard, {
+    name: "Riya Shah",
+    mobileNumber: "+91 98765 43210",
+    notes: "Wants the bridal catalogue"
+  }, { mergeDuplicate: true });
+  assert.equal(db.contacts[0].notes, "Met at booth 12\n\nWants the bridal catalogue");
+});
+
 test("stored contacts are repaired to their contact-list exhibition", () => {
   const db = {
     collections: [
@@ -474,10 +543,18 @@ test("password rules require length and character classes", () => {
   assert.equal(validatePasswordStrength("StrongPass#10"), "");
 });
 
-test("contact validation requires name and a valid mobile number", () => {
-  assert.equal(validateContact({ name: "Riya Shah", mobileNumber: "+91 98765 43210" }).ok, true);
-  assert.equal(validateContact({ name: "", mobileNumber: "+91 98765 43210" }).code, "missing_name");
-  assert.equal(validateContact({ name: "Riya Shah", mobileNumber: "123" }).code, "invalid_mobile");
+test("contact validation never blocks a save, only flags reasons for review", () => {
+  const clean = validateContact({ name: "Riya Shah", mobileNumber: "+91 98765 43210" });
+  assert.equal(clean.ok, true);
+  assert.deepEqual(clean.reasons, []);
+
+  const missingName = validateContact({ name: "", mobileNumber: "+91 98765 43210" });
+  assert.equal(missingName.ok, true);
+  assert.ok(missingName.reasons.includes("Name is missing."));
+
+  const invalidMobile = validateContact({ name: "Riya Shah", mobileNumber: "123" });
+  assert.equal(invalidMobile.ok, true);
+  assert.ok(invalidMobile.reasons.includes("Mobile number looks invalid."));
 });
 
 test("slash-separated mobile numbers are stored in primary and secondary fields", () => {
