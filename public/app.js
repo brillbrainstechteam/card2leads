@@ -123,9 +123,10 @@ const WORKFLOW_ICONS = {
   google: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/></svg>`
 };
 
-// Icons for the public landing page's four feature cards.
+// Icons for the public landing page's feature cards.
 const FEATURE_ICONS = {
   camera: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6H8l1-1.6h6L16 6h1.5A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-8Z"/><circle cx="12" cy="12.5" r="3.2"/></svg>`,
+  sparkle: `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2.5c.5 3.6 1.2 5.9 2.2 6.9s3.3 1.7 6.9 2.2c-3.6.5-5.9 1.2-6.9 2.2s-1.7 3.3-2.2 6.9c-.5-3.6-1.2-5.9-2.2-6.9S6.5 12.1 2.9 11.6c3.6-.5 5.9-1.2 6.9-2.2s1.7-3.3 2.2-6.9Z"/></svg>`,
   review: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3.5" width="12" height="17" rx="2"/><path d="M9.5 3.5V3a1.5 1.5 0 0 1 1.5-1.5h2A1.5 1.5 0 0 1 14.5 3v.5"/><path d="M9 12l2 2 4-4.5"/></svg>`,
   mic: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21M9 21h6"/></svg>`,
   export: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17.5a4 4 0 0 1-.5-7.97 5 5 0 0 1 9.79-1.4A4.5 4.5 0 0 1 17.5 17.5H7Z"/><path d="M12 11v6.5M9.5 14l2.5-2.5 2.5 2.5"/></svg>`
@@ -355,40 +356,42 @@ function authView() {
         <div class="features-copy">
           <p class="section-kicker">Features</p>
           <h2>Capture, organise and use every business contact in <em>one simple flow.</em></h2>
+          <p class="features-subtext">From card scan to synced contacts — clean, accurate and always up to date.</p>
           <div class="feature-strip" aria-label="Card2Leads highlights">
             <article>
-              <div class="feature-card-top">
-                <span class="feature-icon">${FEATURE_ICONS.camera}</span>
-                <span class="feature-num">01</span>
-              </div>
-              <strong>Scan or upload cards</strong>
-              <p>Capture a card using your phone camera or upload individual and bulk card images from desktop or mobile.</p>
+              <span class="feature-icon">${FEATURE_ICONS.camera}</span>
+              <strong>Capture cards</strong>
+              <p>Scan with your camera or upload single or bulk card images.</p>
             </article>
             <article>
-              <div class="feature-card-top">
-                <span class="feature-icon">${FEATURE_ICONS.review}</span>
-                <span class="feature-num">02</span>
-              </div>
-              <strong>Review before saving</strong>
-              <p>Check extracted names, phone numbers, emails, companies and designations before approving each contact.</p>
+              <span class="feature-icon">${FEATURE_ICONS.sparkle}</span>
+              <strong>AI extract</strong>
+              <p>Our AI reads and organises names, phones, emails, companies and more with high accuracy.</p>
             </article>
             <article>
-              <div class="feature-card-top">
-                <span class="feature-icon">${FEATURE_ICONS.mic}</span>
-                <span class="feature-num">03</span>
-              </div>
-              <strong>Add voice input and notes</strong>
-              <p>Add individual or bulk voice inputs in Hindi, English or Hinglish and keep the transcription with the relevant contacts.</p>
+              <span class="feature-icon">${FEATURE_ICONS.review}</span>
+              <strong>Review &amp; clean</strong>
+              <p>Verify details, fix errors and remove duplicates before saving.</p>
             </article>
             <article>
-              <div class="feature-card-top">
-                <span class="feature-icon">${FEATURE_ICONS.export}</span>
-                <span class="feature-num">04</span>
-              </div>
-              <strong>Export or sync your contacts</strong>
-              <p>Download approved records as Excel, CSV or VCF files, or choose to sync them to Google Contacts and Google Sheets.</p>
+              <span class="feature-icon">${WORKFLOW_ICONS.assign}</span>
+              <strong>Assign &amp; route</strong>
+              <p>Assign owners and route contacts to the right team members.</p>
+            </article>
+            <article>
+              <span class="feature-icon">${WORKFLOW_ICONS.search}</span>
+              <strong>Search &amp; filter</strong>
+              <p>Find any contact instantly by name, company, city, event or owner.</p>
+            </article>
+            <article>
+              <span class="feature-icon">${FEATURE_ICONS.export}</span>
+              <strong>Export &amp; sync</strong>
+              <p>Export as Excel, CSV, VCF or sync with Google Contacts.</p>
             </article>
           </div>
+        </div>
+        <div class="features-mid-illustration">
+          <img src="/illustrations-final/second-section-middle.png?v=final-20260808" alt="AI reading a scanned business card and syncing the contact" />
         </div>
         <div class="workflow-flow" aria-label="How Card2Leads works, step by step">
           <ol class="workflow-timeline">
