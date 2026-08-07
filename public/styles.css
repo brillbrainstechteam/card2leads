@@ -1857,11 +1857,20 @@ label {
 
 .feature-strip {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: repeat(2, 1fr);
-  grid-auto-flow: column;
   gap: 14px;
-  grid-column: 1 / 3;
+}
+
+.feature-strip-left {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+}
+
+.feature-strip-mid {
+  grid-column: 2;
+  grid-row: 2;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, 1fr);
+  align-self: start;
 }
 
 .feature-strip article {
@@ -1939,18 +1948,25 @@ label {
 
 .features-section {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(200px, 0.85fr) minmax(280px, 0.95fr);
+  grid-template-columns: minmax(0, 0.85fr) minmax(240px, 1.1fr) minmax(280px, 0.95fr);
   grid-template-rows: auto auto;
-  gap: 22px 40px;
+  gap: 22px 28px;
   align-items: start;
   overflow: hidden;
+  padding-right: 14px;
+}
+
+.features-left-col {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  grid-column: 1;
+  grid-row: 1 / 3;
 }
 
 .features-copy {
   display: grid;
   gap: 14px;
-  grid-column: 1;
-  grid-row: 1;
 }
 
 .features-copy h2 {
@@ -4021,7 +4037,7 @@ strong {
     grid-template-columns: 1fr;
   }
 
-  .features-copy,
+  .features-left-col,
   .features-mid-illustration,
   .feature-strip,
   .workflow-flow {
@@ -4034,10 +4050,16 @@ strong {
     justify-self: center;
   }
 
-  .feature-strip {
+  .feature-strip,
+  .feature-strip-left,
+  .feature-strip-mid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-rows: none;
     grid-auto-flow: row;
+  }
+
+  .features-section {
+    padding-right: 34px;
   }
 
   .public-hero {
@@ -5380,7 +5402,9 @@ strong {
     grid-template-columns: 1fr;
   }
 
-  .feature-strip {
+  .feature-strip,
+  .feature-strip-left,
+  .feature-strip-mid {
     grid-template-columns: 1fr;
     grid-template-rows: none;
     grid-auto-flow: row;
