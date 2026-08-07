@@ -1804,6 +1804,7 @@ label {
 .hero-copy {
   display: grid;
   gap: 18px;
+  padding-left: 28px;
 }
 
 .hero-copy h1 {
