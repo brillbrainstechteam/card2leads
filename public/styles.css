@@ -1943,8 +1943,9 @@ label {
 
 .features-mid-illustration {
   display: grid;
-  place-items: center;
-  align-self: stretch;
+  place-items: start end;
+  align-self: start;
+  justify-self: end;
 }
 
 .features-mid-illustration img {
@@ -1971,7 +1972,10 @@ label {
 .workflow-timeline::before {
   content: "";
   position: absolute;
-  left: 20px;
+  /* .wf-item has 10px left padding, and the node is 41px wide — this must
+     land exactly on the node's horizontal center (10 + 41/2) or the line
+     visibly cuts through the icons off-center instead of through their middle. */
+  left: 30.5px;
   top: 10px;
   bottom: 10px;
   width: 1px;
@@ -2041,13 +2045,6 @@ label {
   margin-top: 2px;
 }
 
-.wf-body p {
-  margin: 3px 0 0;
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--muted);
-  max-width: 46ch;
-}
 
 .split-section {
   display: grid;
