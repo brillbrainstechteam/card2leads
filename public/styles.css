@@ -1861,7 +1861,7 @@ label {
 }
 
 .feature-strip-left {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: repeat(2, 1fr);
 }
 
@@ -1869,7 +1869,8 @@ label {
   grid-column: 2;
   grid-row: 2;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: 1fr;
+  grid-template-rows: repeat(2, 1fr);
+  grid-auto-flow: column;
   align-self: start;
 }
 
@@ -1950,7 +1951,10 @@ label {
 
 .features-section {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(240px, 1.1fr) minmax(240px, 0.7fr);
+  /* Ratios chosen so one left card and each of the two middle cards land on
+     the same width: col2 holds two cards plus their gap, so it needs slightly
+     over twice col1's share. */
+  grid-template-columns: minmax(0, 0.767fr) minmax(240px, 1.57fr) minmax(240px, 1fr);
   grid-template-rows: auto auto;
   gap: 22px 16px;
   align-items: start;
