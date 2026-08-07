@@ -368,7 +368,7 @@ function authView() {
             <article>
               <span class="feature-icon">${FEATURE_ICONS.sparkle}</span>
               <strong>AI extract</strong>
-              <p>Our AI reads and organises names, phones, emails, companies and more with high accuracy.</p>
+              <p>AI reads and organises names, phones, emails and companies.</p>
             </article>
           </div>
         </div>
@@ -384,12 +384,12 @@ function authView() {
           <article>
             <span class="feature-icon">${WORKFLOW_ICONS.assign}</span>
             <strong>Assign &amp; route</strong>
-            <p>Assign owners and route contacts to the right team members.</p>
+            <p>Assign owners and route contacts to your team.</p>
           </article>
           <article>
             <span class="feature-icon">${WORKFLOW_ICONS.search}</span>
             <strong>Search &amp; filter</strong>
-            <p>Find any contact instantly by name, company, city, event or owner.</p>
+            <p>Find any contact by name, company, city or event.</p>
           </article>
           <article>
             <span class="feature-icon">${FEATURE_ICONS.export}</span>

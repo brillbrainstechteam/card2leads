@@ -1861,8 +1861,8 @@ label {
 }
 
 .feature-strip-left {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: 1fr;
 }
 
 .feature-strip-mid {
@@ -1878,18 +1878,19 @@ label {
   grid-template-columns: auto 1fr;
   grid-template-areas: "icon title" "desc desc";
   align-items: center;
-  gap: 4px 10px;
-  padding: 14px 16px;
+  gap: 3px 8px;
+  padding: 11px 13px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 11px;
   background: #fff;
   box-shadow: 0 4px 16px rgba(32, 34, 42, 0.05);
 }
 
 .feature-strip article .feature-icon {
   grid-area: icon;
-  width: 32px;
-  height: 32px;
+  width: 27px;
+  height: 27px;
+  border-radius: 8px;
 }
 
 .feature-strip article strong {
@@ -1898,11 +1899,12 @@ label {
 
 .feature-strip article p {
   grid-area: desc;
-  margin-top: 2px;
+  margin-top: 1px;
+  font-size: 12.5px;
 }
 
 .feature-strip strong {
-  font-size: 15px;
+  font-size: 13.5px;
   font-weight: 650;
   color: var(--ink);
 }
@@ -1931,8 +1933,8 @@ label {
 }
 
 .feature-strip article .feature-icon svg {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
 }
 
 .public-section {
@@ -1948,7 +1950,7 @@ label {
 
 .features-section {
   display: grid;
-  grid-template-columns: minmax(0, 0.85fr) minmax(240px, 1.1fr) minmax(240px, 0.85fr);
+  grid-template-columns: minmax(0, 1.1fr) minmax(240px, 1.1fr) minmax(240px, 0.7fr);
   grid-template-rows: auto auto;
   gap: 22px 16px;
   align-items: start;
