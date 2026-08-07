@@ -1719,9 +1719,7 @@ label {
   width: 100%;
   margin: 0 auto;
   padding: 0;
-  background:
-    radial-gradient(circle at 78% 18%, rgba(143, 99, 170, 0.09), transparent 46%),
-    linear-gradient(180deg, #f5f3fb 0%, #ffffff 640px);
+  background: #ffffff;
 }
 
 .public-nav {
@@ -1798,6 +1796,9 @@ label {
   align-items: center;
   gap: 20px;
   padding: 58px 0 26px;
+  background:
+    radial-gradient(circle at 84% 24%, rgba(143, 99, 170, 0.12), transparent 50%),
+    linear-gradient(90deg, #ffffff 0%, #ffffff 40%, #f7f4fc 68%, #f2ecfa 100%);
 }
 
 .hero-copy {
