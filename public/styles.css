@@ -1765,12 +1765,6 @@ label {
   gap: 12px;
 }
 
-.hero-fineprint {
-  margin: 10px 0 0;
-  font-size: 13px;
-  color: var(--muted);
-}
-
 .public-links {
   flex: 1;
   justify-content: flex-start;
@@ -1795,7 +1789,7 @@ label {
   grid-template-columns: minmax(0, 0.92fr) minmax(460px, 1.12fr);
   align-items: center;
   gap: 20px;
-  padding: 58px 0 26px;
+  padding: 34px 0 26px;
   background:
     radial-gradient(circle at 84% 24%, rgba(143, 99, 170, 0.12), transparent 50%),
     linear-gradient(90deg, #ffffff 0%, #ffffff 40%, #f7f4fc 68%, #f2ecfa 100%);
@@ -1807,11 +1801,15 @@ label {
   padding-left: 28px;
 }
 
+.public-hero .section-kicker {
+  margin-bottom: 0;
+}
+
 .hero-copy h1 {
   max-width: 700px;
   margin: 0;
-  font-size: clamp(36px, 4.15vw, 58px);
-  line-height: 1.08;
+  font-size: clamp(32px, 3.4vw, 46px);
+  line-height: 1.12;
   font-weight: 600;
   letter-spacing: 0;
   color: #060f3f;

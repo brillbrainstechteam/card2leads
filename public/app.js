@@ -343,10 +343,8 @@ function authView() {
           <h1>Turn business cards into organised, <em>ready-to-use contacts.</em></h1>
           <p class="hero-text">Card2Leads is a business-card scanning and contact-management application that converts individual or bulk card uploads into structured contact records. Review extracted details, add labels and voice notes, then export or sync approved contacts to Google Contacts and Google Sheets.</p>
           <div class="hero-actions">
-            <button type="button" data-auth-mode="signup">Sign up</button>
-            <button type="button" class="secondary" data-auth-mode="login">Log in</button>
+            <button type="button" data-auth-mode="signup">Get Started</button>
           </div>
-          <p class="hero-fineprint">20 free scans. No payment details required.</p>
         </div>
         <div class="hero-visual" aria-label="Card scanning preview">
           <img class="hero-illustration" src="/illustrations-final/hero_illustration.png?v=final-20260808" alt="Scanning a business card, extracting its details and syncing organised contacts" />
