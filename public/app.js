@@ -357,7 +357,6 @@ function authView() {
           <div class="features-copy">
             <p class="section-kicker">Features</p>
             <h2>Capture, organise and use every business contact in <em>one simple flow.</em></h2>
-            <p class="features-subtext">From card scan to synced contacts — clean, accurate and always up to date.</p>
           </div>
           <div class="feature-strip feature-strip-left" aria-label="Card2Leads highlights">
             <article>
@@ -370,22 +369,22 @@ function authView() {
               <strong>AI extract</strong>
               <p>AI reads and organises names, phones, emails and companies.</p>
             </article>
+            <article>
+              <span class="feature-icon">${FEATURE_ICONS.review}</span>
+              <strong>Review &amp; clean</strong>
+              <p>Verify details, fix errors and remove duplicates before saving.</p>
+            </article>
+            <article>
+              <span class="feature-icon">${WORKFLOW_ICONS.assign}</span>
+              <strong>Assign &amp; route</strong>
+              <p>Assign owners and route contacts to your team.</p>
+            </article>
           </div>
         </div>
         <div class="features-mid-illustration">
           <img src="/illustrations-final/second-section-middle.png?v=final-20260808" alt="AI reading a scanned business card and syncing the contact" />
         </div>
         <div class="feature-strip feature-strip-mid">
-          <article>
-            <span class="feature-icon">${FEATURE_ICONS.review}</span>
-            <strong>Review &amp; clean</strong>
-            <p>Verify details, fix errors and remove duplicates before saving.</p>
-          </article>
-          <article>
-            <span class="feature-icon">${WORKFLOW_ICONS.assign}</span>
-            <strong>Assign &amp; route</strong>
-            <p>Assign owners and route contacts to your team.</p>
-          </article>
           <article>
             <span class="feature-icon">${WORKFLOW_ICONS.search}</span>
             <strong>Search &amp; filter</strong>

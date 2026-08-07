@@ -1862,14 +1862,14 @@ label {
 
 .feature-strip-left {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: 1fr;
+  grid-template-rows: repeat(2, 1fr);
 }
 
 .feature-strip-mid {
   grid-column: 2;
   grid-row: 2;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, 1fr);
+  grid-template-rows: 1fr;
   align-self: start;
 }
 
@@ -1979,13 +1979,6 @@ label {
   display: block;
   font-style: italic;
   color: var(--purple);
-}
-
-.features-subtext {
-  margin: 0 0 4px;
-  color: var(--muted);
-  font-size: 15px;
-  line-height: 1.55;
 }
 
 .features-mid-illustration {
