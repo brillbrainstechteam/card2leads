@@ -349,24 +349,7 @@ function authView() {
           <p class="hero-fineprint">20 free scans. No payment details required.</p>
         </div>
         <div class="hero-visual" aria-label="Card scanning preview">
-          <div class="hero-flow-steps" aria-hidden="true">
-            <div class="hero-flow-step capture"><i>1</i><span>Capture cards</span></div>
-            <div class="hero-flow-step extract"><i>2</i><span>Read details</span></div>
-            <div class="hero-flow-step ready"><i>3</i><span>Contacts ready</span></div>
-          </div>
-          <div class="hero-artwork">
-            <img class="auth-illustration" src="/illustrations-final/main%20page_illustration_v2.png?v=final-20260805-v3" alt="Business cards converted into ready-to-use contacts" />
-            <span class="hero-scan-beam" aria-hidden="true"></span>
-            <span class="data-particle particle-one" aria-hidden="true"></span>
-            <span class="data-particle particle-two" aria-hidden="true"></span>
-            <span class="data-particle particle-three" aria-hidden="true"></span>
-          </div>
-          <div class="mini-sheet" aria-hidden="true">
-            <div class="mini-sheet-head"><b>Name</b><b>Mobile</b><b>Interest</b></div>
-            <div class="mini-sheet-row row-one"><strong>Riya Shah</strong><strong>+91 98765...</strong><strong>Bridal sets</strong></div>
-            <div class="mini-sheet-row row-two"><strong>SP Jewellers</strong><strong>+91 99887...</strong><strong>Follow up</strong></div>
-            <div class="mini-sheet-ready"><i>&#10003;</i><em>Contacts organised and ready</em></div>
-          </div>
+          <img class="hero-illustration" src="/illustrations-final/hero_illustration.png?v=final-20260808" alt="Scanning a business card, extracting its details and syncing organised contacts" />
         </div>
       </section>
 
