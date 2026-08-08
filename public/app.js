@@ -992,8 +992,8 @@ function shell() {
           </div>
           <div class="topbar-actions">
             ${state.view === "account" ? "" : topbarUpgradeButtonHtml()}
-            <span class="session-pill">${escapeHtml(state.user.name)}</span>
-            <button id="logoutBtn" class="secondary">Log out</button>
+            <span class="session-pill"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M10 8a3 3 0 100-6 3 3 0 000 6zM3.465 14.493a1.23 1.23 0 00.41 1.412A9.957 9.957 0 0010 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 00-13.074.003z"/></svg> ${escapeHtml(state.user.name)}</span>
+            <button id="logoutBtn" class="secondary slim"><svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M3 4.25A2.25 2.25 0 015.25 2h5.5A2.25 2.25 0 0113 4.25v2a.75.75 0 01-1.5 0v-2a.75.75 0 00-.75-.75h-5.5a.75.75 0 00-.75.75v11.5c0 .414.336.75.75.75h5.5a.75.75 0 00.75-.75v-2a.75.75 0 011.5 0v2A2.25 2.25 0 0110.75 18h-5.5A2.25 2.25 0 013 15.75V4.25z" clip-rule="evenodd"/><path fill-rule="evenodd" d="M6 10a.75.75 0 01.75-.75h9.546l-1.048-1.047a.75.75 0 111.06-1.06l2.353 2.353a.748.748 0 010 1.06l-2.353 2.354a.75.75 0 11-1.06-1.06l1.048-1.05H6.75A.75.75 0 016 10z" clip-rule="evenodd"/></svg> Log out</button>
           </div>
         </section>
         <div id="viewSlot" class="grid"></div>
@@ -1009,16 +1009,23 @@ function topbarUpgradeButtonHtml() {
   const isPaid = plan !== "trial";
   const needsAttention = ["halted", "cancelled", "paused"].includes(String(billing.status || ""));
   const label = needsAttention ? "Fix billing" : isPaid ? "Manage plan" : "Upgrade";
-  return `<button type="button" id="topbarUpgradeBtn" class="topbar-upgrade-btn ${isPaid && !needsAttention ? "secondary" : ""} ${needsAttention ? "danger" : ""}">${escapeHtml(label)}</button>`;
+  const starIcon = '<svg viewBox="0 0 20 20" fill="currentColor" width="15" height="15"><path fill-rule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clip-rule="evenodd"/></svg>';
+  return `<button type="button" id="topbarUpgradeBtn" class="topbar-upgrade-btn ${isPaid && !needsAttention ? "secondary" : ""} ${needsAttention ? "danger" : ""}">${starIcon} ${escapeHtml(label)}</button>`;
 }
 
 function navButton(view, label) {
   const mobileLabels = { upload: "Scan", review: "Review", contacts: "Contacts", account: "Account" };
-  const icons = { upload: "&#9635;", review: "&#10003;", contacts: "&#9776;", account: "&#9675;" };
+  const svgIcons = {
+    upload: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 3.129a.75.75 0 001.09-1.03l-4.25-4.5a.75.75 0 00-1.09 0l-4.25 4.5a.75.75 0 101.09 1.03L9.25 4.636v8.614z"/><path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"/></svg>',
+    review: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/><path fill-rule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg>',
+    contacts: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M7 8a3 3 0 100-6 3 3 0 000 6zM14.5 9a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-5.385-1.572zM14.5 16h-.106c.07-.297.088-.611.048-.933a7.47 7.47 0 00-1.588-3.755 4.502 4.502 0 015.874 2.636.818.818 0 01-.36.98A7.465 7.465 0 0114.5 16z"/></svg>',
+    account: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M7.84 1.804A1 1 0 018.82 1h2.36a1 1 0 01.98.804l.331 1.652a6.993 6.993 0 011.929 1.115l1.598-.54a1 1 0 011.186.447l1.18 2.044a1 1 0 01-.205 1.251l-1.267 1.113a7.047 7.047 0 010 2.228l1.267 1.113a1 1 0 01.206 1.25l-1.18 2.045a1 1 0 01-1.187.447l-1.598-.54a6.993 6.993 0 01-1.929 1.115l-.33 1.652a1 1 0 01-.98.804H8.82a1 1 0 01-.98-.804l-.331-1.652a6.993 6.993 0 01-1.929-1.115l-1.598.54a1 1 0 01-1.186-.447l-1.18-2.044a1 1 0 01.205-1.251l1.267-1.114a7.05 7.05 0 010-2.227L1.821 7.773a1 1 0 01-.206-1.25l1.18-2.045a1 1 0 011.187-.447l1.598.54A6.993 6.993 0 017.51 3.456l.33-1.652zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>'
+  };
   const count = view === "review" ? state.cards.length : view === "contacts" ? state.contacts.length : 0;
   return `<button class="${state.view === view ? "active" : ""}" data-view="${view}" aria-label="${escapeAttr(label)}">
+    <span class="nav-icon" aria-hidden="true">${svgIcons[view]}</span>
     <span class="nav-full">${label}</span>
-    <span class="nav-mobile-icon" aria-hidden="true">${icons[view]}</span>
+    <span class="nav-mobile-icon" aria-hidden="true">${svgIcons[view]}</span>
     <span class="nav-short">${mobileLabels[view]}</span>
     ${count ? `<span class="nav-count">${count}</span>` : ""}
   </button>`;
@@ -1250,12 +1257,12 @@ function uploadView() {
     <section class="panel upload-panel">
       ${!createNewSelected ? `<div class="destination-selector">
         <label class="destination-field">
-          <span class="destination-kicker">Saving cards to</span>
+          <span class="destination-kicker">Saving to</span>
           <select id="existingCollectionSelect" aria-label="Choose the exhibition for this upload">
             ${collections.filter((collection) => collection.status !== "deleted").map((collection) => `<option value="${escapeAttr(collection.id)}" ${collection.id === selectedExistingId ? "selected" : ""}>${escapeHtml(collection.exhibitionName || collection.name)}</option>`).join("")}
           </select>
         </label>
-        <button type="button" class="secondary" id="startNewExhibition">New exhibition</button>
+        <button type="button" class="secondary slim" id="startNewExhibition">+ New exhibition</button>
       </div>` : `<div id="uploadSettings" class="new-exhibition-settings">
         <div class="new-exhibition-heading">
           <div>
@@ -1276,20 +1283,25 @@ function uploadView() {
       </div>`}
       <div class="dropzone" id="dropzone">
         <div class="dropzone-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6H8l1-1.6h6L16 6h1.5A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-8Z" />
-            <circle cx="12" cy="12.5" r="3.2" />
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 16V8m0 0l-3 3m3-3l3 3" />
+            <path d="M4 17v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1" />
           </svg>
         </div>
-        <strong>${state.selectedFiles.length ? `${state.selectedFiles.length} card${state.selectedFiles.length === 1 ? "" : "s"} added${state.selectedFiles.length < 200 ? " · add more or upload" : ""}` : "Drop card photos here or pick them below"}</strong>
-        <p class="muted"><strong>Front side of each card</strong> — one card per photo. Add the back later only if it has extra details.</p>
-        ${state.overview.usage ? `<p class="upload-allowance">${Number(state.overview.usage.remaining)} of ${Number(state.overview.usage.limit)} scans left this period &mdash; you can still upload more, extra cards will wait in the queue</p>` : ""}
+        <div class="dropzone-text">
+          <strong>${state.selectedFiles.length ? `${state.selectedFiles.length} card${state.selectedFiles.length === 1 ? "" : "s"} ready` : "Upload business cards"}</strong>
+          <p>${state.selectedFiles.length ? "Add more cards or hit upload to start processing" : "Drag & drop photos here, or choose from your device"}</p>
+        </div>
+        <p class="dropzone-hint">One card per photo &bull; Front side first &bull; JPG, PNG or WEBP</p>
+        ${state.overview.usage ? `<div class="upload-allowance"><svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" /></svg> ${Number(state.overview.usage.remaining)} scans remaining this period</div>` : ""}
         <div class="dropzone-actions">
           <label class="upload-picker">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18" aria-hidden="true"><path fill-rule="evenodd" d="M10 3a.75.75 0 01.75.75v5.5h5.5a.75.75 0 010 1.5h-5.5v5.5a.75.75 0 01-1.5 0v-5.5h-5.5a.75.75 0 010-1.5h5.5v-5.5A.75.75 0 0110 3z" clip-rule="evenodd" /></svg>
             <span>Choose photos</span>
             <input class="hidden-file" id="fileInput" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/*" multiple />
           </label>
           <label class="upload-picker camera">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6H8l1-1.6h6L16 6h1.5A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-8Z" /><circle cx="12" cy="12.5" r="3.2" /></svg>
             <span>Take a photo</span>
             <input class="hidden-file" id="cameraInput" type="file" accept="image/*" capture="environment" />
           </label>
@@ -1299,6 +1311,10 @@ function uploadView() {
         <div class="${state.showUploadOptions ? "upload-options" : "hidden"}">
           <strong>Does the back have more details?</strong>
           <p class="muted">One side is usually enough. Add the back only if it has another phone number, address, or QR code. Both sides are saved as one contact.</p>
+        </div>
+        <div class="dropzone-footer">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true"><path fill-rule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clip-rule="evenodd" /></svg>
+          Images are processed securely and aren't shared.
         </div>
       </div>
       <div id="fileList" class="file-list"></div>
