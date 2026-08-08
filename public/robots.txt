@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /private_storage/
+
+Sitemap: https://card2leads.brillbrainsconsultants.com/sitemap.xml
