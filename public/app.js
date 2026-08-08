@@ -353,42 +353,38 @@ function authView() {
       </section>
 
       <section class="public-section features-section" id="features">
-        <div class="features-left-col">
-          <div class="features-copy">
-            <p class="section-kicker">Features</p>
-            <h2>Capture, organise and use every business contact in <em>one simple flow.</em></h2>
-          </div>
-          <div class="feature-strip feature-strip-left" aria-label="Card2Leads highlights">
-            <article>
-              <span class="feature-icon">${FEATURE_ICONS.camera}</span>
-              <strong>Capture cards</strong>
-              <p>Scan with your camera or upload single or bulk card images.</p>
-            </article>
-            <article>
-              <span class="feature-icon">${FEATURE_ICONS.review}</span>
-              <strong>Review &amp; clean</strong>
-              <p>Verify details, fix errors and remove duplicates before saving.</p>
-            </article>
-          </div>
+        <div class="features-copy">
+          <p class="section-kicker">Features</p>
+          <h2>Capture, organise and use every business contact in <em>one simple flow.</em></h2>
         </div>
         <div class="features-mid-illustration">
           <img src="/illustrations-final/second-section-middle.png?v=final-20260808" alt="AI reading a scanned business card and syncing the contact" />
         </div>
-        <div class="feature-strip feature-strip-mid">
+        <div class="feature-strip" aria-label="Card2Leads highlights">
+          <article>
+            <span class="feature-icon">${FEATURE_ICONS.camera}</span>
+            <strong>Capture cards</strong>
+            <p>Scan with your camera or upload single or bulk card images.</p>
+          </article>
           <article>
             <span class="feature-icon">${FEATURE_ICONS.sparkle}</span>
             <strong>AI extract</strong>
             <p>AI reads and organises names, phones, emails and companies.</p>
           </article>
           <article>
-            <span class="feature-icon">${WORKFLOW_ICONS.assign}</span>
-            <strong>Assign &amp; route</strong>
-            <p>Assign owners and route contacts to your team.</p>
-          </article>
-          <article>
             <span class="feature-icon">${WORKFLOW_ICONS.search}</span>
             <strong>Search &amp; filter</strong>
             <p>Find any contact by name, company, city or event.</p>
+          </article>
+          <article>
+            <span class="feature-icon">${FEATURE_ICONS.review}</span>
+            <strong>Review &amp; clean</strong>
+            <p>Verify details, fix errors and remove duplicates before saving.</p>
+          </article>
+          <article>
+            <span class="feature-icon">${WORKFLOW_ICONS.assign}</span>
+            <strong>Assign &amp; route</strong>
+            <p>Assign owners and route contacts to your team.</p>
           </article>
           <article>
             <span class="feature-icon">${FEATURE_ICONS.export}</span>
