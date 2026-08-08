@@ -2,25 +2,28 @@
   color-scheme: light;
   --bg: #f3f5f7;
   --panel: #ffffff;
-  --panel-alt: #fdfbf6;
+  --panel-alt: #f7f8fb;
   --ink: #20222a;
   --muted: #6f7180;
   --line: #dfe5ea;
   --accent: #223558;
   --accent-strong: #1a2a48;
-  --accent-soft: #f2eaf8;
+  --accent-soft: #eeeafe;
   --accent-cool: #58bdd0;
   --sidebar: #1b2942;
   --sidebar-strong: #131f36;
-  --purple: #8f63aa;
-  --purple-soft: #f0e7f7;
+  --purple: #6d4aec;
+  --purple-strong: #5b37d8;
+  --purple-soft: #eeeafe;
+  --purple-softer: #f6f3ff;
+  --surface-muted: #f4f6fa;
   --gold: #edbe13;
   --yellow: #edbe13;
   --yellow-soft: #fdf6e8;
   --warn: #c08316;
   --danger: #b42318;
   --ok: #2f9b68;
-  --focus: #8f63aa;
+  --focus: #6d4aec;
   --shadow: 0 10px 26px rgba(32, 34, 42, 0.07);
   font-family: "Inter", "Segoe UI", Roboto, Arial, sans-serif;
 }
@@ -191,17 +194,25 @@ label {
 .nav button {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   background: transparent;
   color: rgba(255, 255, 255, 0.82);
   text-align: left;
-  padding: 8px 10px;
+  padding: 0 10px;
+  min-height: 42px;
   box-shadow: none;
-  border-radius: 8px;
+  border-radius: 9px;
   font-size: 13px;
   font-weight: 500;
-  line-height: 1.3;
+  line-height: 1.25;
   transition: background 0.15s, color 0.15s;
+}
+
+.nav .nav-full {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nav-icon {
@@ -275,6 +286,17 @@ label {
   border: 0;
   border-bottom: 1px solid var(--line);
   background: transparent;
+}
+
+.topbar-chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--purple-soft);
+  color: var(--purple-strong);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .topbar h1,
@@ -1555,7 +1577,7 @@ label {
 
 .notice {
   border-left: 4px solid var(--accent);
-  background: #f2eaf8;
+  background: var(--purple-soft);
   padding: 12px;
   border-radius: 6px;
 }
@@ -3512,27 +3534,524 @@ label {
   color: #fff;
 }
 
+/* ---- Contacts & Exports module ---- */
+.contacts-panel {
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.contacts-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 236px;
+  gap: 16px;
+  align-items: start;
+}
+
+
+.contacts-primary {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* Workflow cards */
+.contacts-workflow-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.workflow-card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  min-width: 0;
+  /* Cards sit in narrow grid tracks; keep any long label or wide control
+     (e.g. the export menu) clipped to the card instead of spilling out. */
+  overflow: hidden;
+}
+
+.workflow-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workflow-card-top strong {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--ink);
+  line-height: 1.25;
+}
+
+.workflow-step {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--purple);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+
+.workflow-card-body {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.workflow-icon {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+}
+
+.workflow-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.icon-violet {
+  background: var(--purple-soft);
+  color: var(--purple);
+}
+
+.icon-blue {
+  background: #e3edfd;
+  color: #2f6fd0;
+}
+
+.icon-green {
+  background: #dff5e8;
+  color: #1f8a56;
+}
+
+.icon-plain {
+  background: #fff;
+  border: 1px solid var(--line);
+}
+
+.workflow-desc {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.workflow-desc span:not(.workflow-chip) {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.workflow-chip {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: var(--purple-soft);
+  color: var(--purple-strong);
+  font-size: 11.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-chip.file {
+  background: var(--surface-muted);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.workflow-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 11px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.workflow-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.workflow-btn.primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.workflow-btn.ghost {
+  background: #fff;
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.workflow-btn.ghost:hover:not(:disabled) {
+  border-color: var(--purple);
+  color: var(--purple-strong);
+}
+
+.workflow-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+select.workflow-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  text-align: left;
+  justify-content: flex-start;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236f7180' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+}
+
+.workflow-note {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.workflow-action-slot,
+.workflow-action-slot .export-sync-menu {
+  width: 100%;
+}
+
+.workflow-action-slot .export-sync-menu summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 11px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  background: var(--accent);
+  border-color: var(--accent);
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The popover is absolutely positioned, so it must escape the card's
+   overflow clipping — anchor it to the card and let it render above. */
+.workflow-card:has(.export-sync-menu[open]) {
+  overflow: visible;
+}
+
+.workflow-action-slot .export-sync-popover {
+  right: 0;
+  left: auto;
+  min-width: 210px;
+}
+
+/* Stats bar */
+.contacts-stats-bar {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.contacts-stat {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 13px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  min-width: 0;
+}
+
+.contacts-stat-icon {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+}
+
+.contacts-stat-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.contacts-stat-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.contacts-stat-num {
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+.contacts-stat-label {
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Right sidebar */
+.contacts-side {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.side-panel {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.side-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 14px;
+}
+
+.side-panel-head strong {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.side-panel-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--purple-soft);
+  color: var(--purple);
+  display: grid;
+  place-items: center;
+}
+
+.side-panel-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.team-list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.team-list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.team-avatar {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--purple-soft);
+  color: var(--purple-strong);
+  font-size: 12px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+
+.team-list-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.team-list-text strong {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-list-text span {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.side-panel-empty {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.side-panel-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.side-panel-btn:hover {
+  border-color: var(--purple);
+  color: var(--purple-strong);
+}
+
+.side-panel-note {
+  margin: 10px 0 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.tip-card {
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--purple-softer);
+  border: 1px solid #e4dcff;
+}
+
+.tip-card.blue {
+  background: #eff5fe;
+  border-color: #d8e6fa;
+}
+
+.tip-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+
+.tip-head strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.tip-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: #fff;
+  color: var(--purple);
+  display: grid;
+  place-items: center;
+}
+
+.tip-card.blue .tip-icon {
+  color: #2f6fd0;
+}
+
+.tip-card p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* Contacts main area */
+.contacts-main-area {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 18px 20px;
+  min-width: 0;
+}
+
+/* Keep all four workflow cards on one row until they'd get too narrow to
+   read. Below this they fall back to a 2x2 grid. */
+@media (max-width: 1180px) {
+  .contacts-workflow-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Drop the right-hand panel below the main column early enough that the
+   fixed-width contact rows below still have room to stay aligned. */
+@media (max-width: 1400px) {
+  .contacts-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .contacts-side {
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    align-content: stretch;
+  }
+}
+
 .contacts-toolbar {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 18px;
+  gap: 16px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--line);
 }
 
-.contacts-toolbar .actions {
-  justify-content: flex-end;
-  flex-wrap: wrap;
+.contacts-toolbar h2 {
+  margin: 0;
+  font-size: 17px;
+  white-space: nowrap;
 }
 
-.contacts-toolbar-actions,
+.contacts-toolbar .search-field input {
+  min-height: 36px;
+  font-size: 13px;
+}
+
+.contacts-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .contacts-export-actions {
   display: flex;
   align-items: center;
-}
-
-.contacts-export-actions {
   gap: 7px;
 }
 
@@ -3546,8 +4065,18 @@ label {
   align-items: center;
 }
 
+.search-field-icon {
+  position: absolute;
+  left: 10px;
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
 .search-field input {
   padding-right: 30px;
+  padding-left: 32px;
 }
 
 .search-clear {
@@ -4086,7 +4615,7 @@ th {
 
 .google-connection-panel {
   border-color: #cfe1df;
-  background: #fdfbf6;
+  background: var(--panel-alt);
 }
 
 .google-connection-panel h2,
@@ -4129,7 +4658,7 @@ th {
 
 .sheet-link.secondary:hover {
   border-color: #9db8b5;
-  background: #fdfbf6;
+  background: var(--panel-alt);
 }
 
 .sheets-table {
@@ -4175,7 +4704,7 @@ th {
 }
 
 .storage-type.file {
-  background: #f0e7f7;
+  background: var(--purple-soft);
   color: #704b87;
 }
 
@@ -4570,7 +5099,7 @@ strong {
   .nav button.active {
     color: #176b64;
     background: #e3f2f0;
-    box-shadow: inset 0 2px 0 #8f63aa;
+    box-shadow: inset 0 2px 0 var(--purple);
   }
 
   .nav button.active:hover {
@@ -4578,7 +5107,8 @@ strong {
     background: #e3f2f0;
   }
 
-  .nav-full {
+  .nav-full,
+  .nav-icon {
     display: none;
   }
 
@@ -4765,30 +5295,28 @@ strong {
     width: 100%;
   }
 
-  .contacts-toolbar,
   .sheets-heading,
   .google-connection-panel {
     align-items: stretch;
   }
 
   .contacts-toolbar {
-    display: grid;
-    gap: 14px;
+    flex-wrap: wrap;
   }
 
-  .contacts-toolbar-copy .muted {
-    display: block;
-    margin-top: 4px;
-    line-height: 1.45;
+  .contacts-toolbar-actions {
+    width: 100%;
   }
 
-  .contacts-toolbar .actions,
+  .contacts-toolbar-actions .search-field {
+    flex: 1;
+  }
+
   .sheets-heading .actions,
   .google-connection-panel .actions {
     width: 100%;
   }
 
-  .contacts-toolbar .actions > *,
   .sheets-heading .actions > *,
   .google-connection-panel .actions > * {
     flex: 1;
@@ -5017,16 +5545,15 @@ strong {
     font-size: 12px;
   }
 
-  .contacts-toolbar .actions {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 10px;
+  .contacts-toolbar-actions {
+    flex-wrap: wrap;
   }
 
-  .contacts-toolbar .actions input {
+  .contacts-toolbar-actions input {
     width: 100%;
     min-height: 46px;
   }
+
 
   .contacts-export-actions {
     display: grid;
@@ -6076,48 +6603,51 @@ strong {
 .contacts-filters {
   display: flex;
   align-items: flex-end;
-  gap: 14px;
+  gap: 10px;
   flex-wrap: wrap;
-  margin: 4px 0 2px;
+  margin: 12px 0 2px;
 }
 
 .filter-field {
   display: grid;
   gap: 4px;
+  flex: 1 1 150px;
+  min-width: 0;
 }
 
 .filter-field span {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-size: 12px;
   color: var(--muted);
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .filter-field select {
-  min-height: 40px;
-  min-width: 180px;
-  padding: 7px 12px;
+  min-height: 34px;
+  min-width: 0;
+  width: 100%;
+  padding: 6px 10px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: 8px;
   background: #fff;
   color: var(--ink);
-  font-size: 14px;
+  font-size: 12.5px;
   cursor: pointer;
 }
 
 #clearContactFilters {
-  margin-bottom: 8px;
+  flex: 0 0 auto;
+  margin-bottom: 7px;
+  font-size: 12.5px;
 }
 
 /* Contacts list (redesigned) */
 .contacts-selectbar {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   flex-wrap: wrap;
-  padding: 2px 2px 12px;
-  margin-top: 4px;
+  padding: 12px 2px 10px;
+  margin-top: 0;
   border-bottom: 1px solid var(--line);
 }
 
@@ -6146,27 +6676,57 @@ strong {
 
 .contact-list {
   list-style: none;
-  margin: 12px 0 0;
+  margin: 0;
   padding: 0;
-  display: grid;
-  gap: 10px;
 }
 
+/* Every row is its own grid container, so `auto` tracks would size to each
+   row's own content and columns would not line up down the list. Give the
+   trailing columns explicit widths so all rows share one alignment. */
 .contact-card {
   display: grid;
-  grid-template-columns: auto minmax(0, 1.7fr) minmax(150px, 0.8fr) auto;
+  grid-template-columns: 18px 36px minmax(130px, 1fr) 92px 240px 250px;
   align-items: center;
-  gap: 16px;
-  padding: 14px 16px;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  gap: 12px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--line);
+  transition: background 0.12s ease;
+}
+
+.contact-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.contact-meta > .contact-col:first-child {
+  width: 110px;
+}
+
+.contact-meta > .contact-col:last-child {
+  width: 118px;
+}
+
+.contact-card:last-child {
+  border-bottom: none;
 }
 
 .contact-card:hover {
-  border-color: #d9cfe6;
-  box-shadow: 0 6px 18px rgba(32, 34, 42, 0.06);
+  background: #faf8f5;
+}
+
+.contact-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--purple-soft);
+  color: var(--purple-strong);
+  font-size: 12px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
 }
 
 .contact-card-check {
@@ -6182,32 +6742,149 @@ strong {
 
 .contact-card-head {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
 }
 
 .contact-card-head strong {
-  font-size: 15px;
+  font-size: 13.5px;
+  line-height: 19px;
+  font-weight: 650;
   color: var(--ink);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.contact-card-phone {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.contact-card-sub {
+.contact-card-info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
+  min-width: 0;
+}
+
+/* Always occupies a line, empty or not, so every row is the same height */
+.contact-card-line {
+  min-height: 16px;
+  font-size: 12px;
+  line-height: 16px;
   color: var(--muted);
-  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .contact-card-tag {
-  color: var(--purple);
+  justify-self: start;
+  padding: 3px 8px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+/* Per-row labelled columns */
+.contact-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.contact-col-label {
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Reserved even when blank so synced and unsynced rows match in height */
+.contact-col-sub {
+  min-height: 14px;
+  font-size: 10.5px;
+  line-height: 14px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sync-badge svg {
+  flex-shrink: 0;
+}
+
+.sync-badge.ok {
+  background: #e4f7ec;
+  color: #17794a;
+}
+
+.sync-badge.idle {
+  background: #fdf0e3;
+  color: #b3651a;
+}
+
+.sync-badge.bad {
+  background: #fdeaea;
+  color: var(--danger);
+}
+
+/* Row action buttons */
+.row-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 12px;
   font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+
+.row-btn svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.row-btn:hover {
+  border-color: var(--purple);
+  color: var(--purple-strong);
+}
+
+.row-btn:hover svg {
+  color: var(--purple);
+}
+
+.row-btn.danger {
+  color: var(--danger);
+}
+
+.row-btn.danger svg {
+  color: var(--danger);
+}
+
+.row-btn.danger:hover {
+  background: #fdeaea;
+  border-color: #f3c4c0;
+  color: var(--danger);
 }
 
 .review-dot {
@@ -6219,24 +6896,23 @@ strong {
   flex-shrink: 0;
 }
 
-.contact-card-assign {
-  display: grid;
-  gap: 4px;
-}
-
-.contact-card-assign-label {
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-  font-weight: 700;
+.contact-col .assign-select {
+  width: 100%;
+  font-size: 12px;
+  padding: 5px 7px;
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
 }
 
 .contact-card-actions {
   display: flex;
-  gap: 8px;
+  gap: 4px;
   justify-content: flex-end;
-  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .contact-empty {
@@ -6261,8 +6937,8 @@ strong {
   width: 60px;
   height: 60px;
   border-radius: 16px;
-  background: var(--surface-muted, #f6f2ea);
-  color: var(--accent);
+  background: var(--purple-soft);
+  color: var(--purple);
   margin-bottom: 4px;
 }
 
@@ -6287,9 +6963,31 @@ strong {
   margin-top: 8px;
 }
 
-.contact-card-actions .danger,
 .selectbar-actions .danger {
   font-size: 13px;
+}
+
+/* Below this the fixed contact-row columns no longer fit the available
+   width, so wrap the sync/assign/action groups onto a second line instead
+   of letting the row overflow horizontally. */
+@media (max-width: 1130px) {
+  .contact-card {
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    row-gap: 10px;
+    padding: 14px 4px;
+  }
+  .contact-card-tag {
+    grid-column: 4;
+    justify-self: end;
+  }
+  .contact-meta,
+  .contact-card-actions {
+    grid-column: 3 / -1;
+  }
+  .contact-card-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
 }
 
 @media (max-width: 880px) {
@@ -6299,16 +6997,116 @@ strong {
   .account-profile-plan {
     width: 100%;
   }
+  .contacts-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .contacts-workflow-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .contacts-stats-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .contacts-main-area {
+    padding: 14px;
+  }
   .contact-card {
-    grid-template-columns: auto 1fr;
-    row-gap: 12px;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    row-gap: 10px;
+    padding: 14px 4px;
   }
-  .contact-card-assign,
+  .contact-card-tag {
+    grid-column: 4;
+    justify-self: end;
+  }
+  .contact-meta,
   .contact-card-actions {
-    grid-column: 2;
-    justify-content: flex-start;
+    grid-column: 3 / -1;
   }
-  .contact-card-assign .assign-select {
-    max-width: 100%;
+  .contact-card-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+/* ---- Contacts & Exports: narrow phones (must stay last to beat the 880px block) ---- */
+@media (max-width: 640px) {
+  .contacts-workflow-cards,
+  .contacts-stats-bar,
+  .contacts-side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .contacts-main-area {
+    padding: 14px 12px;
+  }
+
+  .workflow-card,
+  .contacts-stat {
+    padding: 14px;
+  }
+
+  .contact-card {
+    grid-template-columns: auto auto minmax(0, 1fr);
+    row-gap: 10px;
+    padding: 15px 2px;
+  }
+
+  .contact-avatar {
+    width: 36px;
+    height: 36px;
+  }
+
+  .contact-card {
+    grid-template-columns: auto auto minmax(0, 1fr);
+  }
+
+  .contact-card-tag,
+  .contact-meta,
+  .contact-card-actions {
+    grid-column: 2 / -1;
+  }
+
+  .contact-card-tag {
+    justify-self: start;
+  }
+
+  .contact-meta {
+    gap: 12px;
+  }
+
+  .contact-meta > .contact-col:first-child,
+  .contact-meta > .contact-col:last-child {
+    width: auto;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .contact-card-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .row-btn {
+    justify-content: center;
+    padding: 8px 6px;
+    min-width: 0;
+  }
+
+  .contacts-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .contacts-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .filter-field select {
+    min-width: 0;
+    width: 100%;
   }
 }

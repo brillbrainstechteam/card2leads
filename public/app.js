@@ -990,7 +990,13 @@ function shell() {
         <section class="topbar">
           <div>
             <h1>${title}</h1>
-            <span class="muted">${state.view === "upload" ? "Add as many cards as you like &middot; scanned automatically, a few at a time" : state.view === "review" ? "Cards are scanned automatically here, then moved to Contacts &amp; Exports once ready." : escapeHtml(state.overview?.activeCollection?.name || "")}</span>
+            <span class="muted">${state.view === "upload"
+              ? "Add as many cards as you like &middot; scanned automatically, a few at a time"
+              : state.view === "review"
+                ? "Cards are scanned automatically here, then moved to Contacts &amp; Exports once ready."
+                : state.view === "contacts"
+                  ? `Manage contacts, assign them to your team, sync to Google, and export files easily.${state.overview?.activeCollection?.name ? ` <span class="topbar-chip">${escapeHtml(state.overview.activeCollection.name)}</span>` : ""}`
+                  : escapeHtml(state.overview?.activeCollection?.name || "")}</span>
           </div>
           <div class="topbar-actions">
             ${state.view === "account" ? "" : topbarUpgradeButtonHtml()}
@@ -2648,6 +2654,13 @@ function setupVoiceRecorder(node, targetType, targetIds, targetLabel) {
     }
   });
 
+  if (!state.modal) {
+    // The modal was dismissed before this deferred onRender ran; clean up now.
+    stopActiveRecording();
+    releaseMicrophone();
+    revokePreview();
+    return;
+  }
   state.modal.onClose = () => {
     disposed = true;
     document.removeEventListener("easysave:native-pause", pauseForNativeLifecycle);
@@ -2713,7 +2726,7 @@ function contactsView() {
       : "";
   const exportMenu = activeCollectionId ? `
     <details class="export-sync-menu">
-      <summary>Export &amp; sync</summary>
+      <summary><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download files</summary>
       <div class="export-sync-popover">
         <span class="export-sync-heading">Download</span>
         <a href="${exportHref("xlsx", activeCollectionId, [], true)}">Download Excel</a>
@@ -2735,122 +2748,250 @@ function contactsView() {
       </div>
     </details>
   ` : "";
+  const assignedCount = state.contacts.filter((c) => c.assignedToId).length;
+  const contactInitials = (name) => {
+    // Use the first two word-initials, ignoring punctuation-only tokens like ".SR".
+    const words = String(name || "").replace(/[^\p{L}\p{N}\s]/gu, " ").trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return "?";
+    return words.slice(0, 2).map((w) => w[0].toUpperCase()).join("");
+  };
+  const syncedCount = state.contacts.filter((c) => c.googleContactsSyncStatus === "synced").length;
+  const exhibitionLabel = activeCollection?.exhibitionName || activeCollection?.name || exhibitionNames[0] || "";
+  const firstMemberName = state.teamMembers[0]?.name || "Team_member";
+  const googleGlyph = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="#4285F4" d="M23 12.27c0-.79-.07-1.54-.2-2.27H12v4.51h6.16a5.27 5.27 0 0 1-2.28 3.46v2.88h3.7C21.7 18.89 23 15.9 23 12.27z"/><path fill="#34A853" d="M12 23.5c3.08 0 5.66-1.02 7.55-2.77l-3.7-2.87c-1.02.69-2.33 1.1-3.85 1.1-2.96 0-5.47-2-6.37-4.69H1.8v2.95A11.42 11.42 0 0 0 12 23.5z"/><path fill="#FBBC05" d="M5.63 14.27a6.85 6.85 0 0 1 0-4.38V6.94H1.8a11.44 11.44 0 0 0 0 10.28l3.83-2.95z"/><path fill="#EA4335" d="M12 5.32c1.67 0 3.17.58 4.35 1.71l3.26-3.26C17.65 1.9 15.07.8 12 .8A11.42 11.42 0 0 0 1.8 6.94l3.83 2.95c.9-2.69 3.41-4.57 6.37-4.57z"/></svg>`;
   const node = el(`
-    <section class="panel">
-      <div class="contacts-toolbar">
-        <div class="contacts-toolbar-copy"><h2>Saved contacts</h2><span class="muted">Search, filter, assign, add voice notes, or export.</span></div>
-        <div class="actions contacts-toolbar-actions">
-          <div class="search-field">
-            <input id="searchBox" aria-label="Search contacts" placeholder="Search name, number, or company" value="${escapeAttr(state.contactSearchQuery)}" />
-            ${state.contactSearchQuery ? `<button type="button" class="search-clear" id="clearSearchBox" aria-label="Clear search">&times;</button>` : ""}
+    <section class="panel contacts-panel">
+      <div class="contacts-layout">
+        <div class="contacts-primary">
+      <div class="contacts-workflow-cards">
+        <div class="workflow-card">
+          <div class="workflow-card-top"><span class="workflow-step">1</span><strong>Sync to Google</strong></div>
+          <div class="workflow-card-body">
+            <span class="workflow-icon icon-blue" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+            <div class="workflow-desc">
+              <span>Contacts saved in Google with label:</span>
+              ${exhibitionLabel ? `<span class="workflow-chip">${escapeHtml(exhibitionLabel)}</span>` : ""}
+            </div>
           </div>
-          <button type="button" class="secondary" id="manageTeamButton">${state.teamMembers.length ? `Team members (${state.teamMembers.length})` : "+ Add a team member"}</button>
-          ${exportMenu}
+          ${!google.configured
+            ? `<span class="workflow-note">Google is not configured yet.</span>`
+            : !google.contactsConnected
+              ? `<a class="workflow-btn primary" href="/api/google/connect?feature=contacts">${googleGlyph} Connect Google</a>`
+              : `<button type="button" class="workflow-btn primary" id="workflowSyncContacts" ${!selectedIds.length || state.googleContactsSyncing ? "disabled" : ""}>${googleGlyph} ${state.googleContactsSyncing ? "Syncing…" : selectedIds.length ? `Sync ${selectedIds.length} contact${selectedIds.length === 1 ? "" : "s"}` : "Select contacts"}</button>`}
+        </div>
+        <div class="workflow-card">
+          <div class="workflow-card-top"><span class="workflow-step">2</span><strong>Assign to Team</strong></div>
+          <div class="workflow-card-body">
+            <span class="workflow-icon icon-violet" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+            <div class="workflow-desc"><span>Give contacts to your team members.</span></div>
+          </div>
+          <div class="workflow-assign-wrap">
+            <select class="workflow-btn ghost" id="workflowAssignSelect" ${!selectedIds.length || !state.teamMembers.length ? "disabled" : ""} aria-label="Assign selected contacts to a team member">
+              <option value="">${!state.teamMembers.length ? "Add a team member first" : !selectedIds.length ? "Select contacts first" : `Assign ${selectedIds.length} selected`}</option>
+              ${state.teamMembers.map((m) => `<option value="${m.id}">${escapeHtml(m.name)}</option>`).join("")}
+            </select>
+          </div>
+        </div>
+        <div class="workflow-card">
+          <div class="workflow-card-top"><span class="workflow-step">3</span><strong>Download by Team Member</strong></div>
+          <div class="workflow-card-body">
+            <span class="workflow-icon icon-violet" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
+            <div class="workflow-desc">
+              <span>File name shows team member name.</span>
+              <span class="workflow-chip file">${escapeHtml(String(firstMemberName).replace(/\s+/g, "_"))}_contacts.xlsx</span>
+            </div>
+          </div>
+          ${exportMenu ? `<span class="workflow-action-slot" id="workflowExportSlot"></span>` : `<span class="workflow-note">Create an exhibition to enable exports.</span>`}
+        </div>
+        <div class="workflow-card">
+          <div class="workflow-card-top"><span class="workflow-step">4</span><strong>Add Team Member</strong></div>
+          <div class="workflow-card-body">
+            <span class="workflow-icon icon-violet" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg></span>
+            <div class="workflow-desc"><span>Create team list for assignment.</span></div>
+          </div>
+          <button type="button" class="workflow-btn ghost" id="workflowAddTeam">Add team member</button>
         </div>
       </div>
-      ${state.contactSearchQuery ? `<p class="search-active-note">Showing results for "${escapeHtml(state.contactSearchQuery)}" &middot; <button type="button" class="link-button" id="clearSearchLink">Clear search</button></p>` : ""}
-      ${!state.contacts.length && !state.contactSearchQuery ? `
-      <div class="contacts-empty">
-        <div class="contacts-empty-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="5" width="18" height="14" rx="2.5" />
-            <circle cx="9" cy="11" r="2.2" />
-            <path d="M5.5 16c.6-1.7 2-2.6 3.5-2.6s2.9.9 3.5 2.6M15 9.5h3.5M15 13h3" />
-          </svg>
+      <div class="contacts-stats-bar">
+        <div class="contacts-stat">
+          <span class="contacts-stat-icon icon-blue" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg></span>
+          <div class="contacts-stat-text"><span class="contacts-stat-num">${state.contacts.length}</span><span class="contacts-stat-label">Saved contacts</span></div>
         </div>
-        <h3>No contacts yet</h3>
-        <p>Upload your business cards and Card2Leads turns them into saved contacts here.</p>
-        <button type="button" id="contactsEmptyUpload">Upload cards</button>
-      </div>` : !state.contacts.length ? `
-      <div class="contacts-empty">
-        <div class="contacts-empty-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="11" cy="11" r="7" />
-            <path d="M21 21l-4.3-4.3" />
-          </svg>
+        <div class="contacts-stat">
+          <span class="contacts-stat-icon icon-plain" aria-hidden="true">${googleGlyph}</span>
+          <div class="contacts-stat-text"><span class="contacts-stat-num">${syncedCount}</span><span class="contacts-stat-label">Synced to Google</span></div>
         </div>
-        <h3>No matches for "${escapeHtml(state.contactSearchQuery)}"</h3>
-        <p>Try a different name, number, company, or team member — or clear the search to see all contacts.</p>
-        <button type="button" id="contactsEmptyClearSearch">Clear search</button>
-      </div>` : `
-      <div class="contacts-filters">
-        <label class="filter-field">
-          <span>Exhibition</span>
-          <select id="filterExhibition">
-            <option value="">All exhibitions</option>
-            ${exhibitionNames.map((name) => `<option value="${escapeAttr(name)}"${filters.exhibition === name ? " selected" : ""}>${escapeHtml(name)}</option>`).join("")}
-          </select>
-        </label>
-        <label class="filter-field">
-          <span>Assigned to</span>
-          <select id="filterAssignee">
-            <option value="">Everyone</option>
-            <option value="__unassigned"${filters.assignee === "__unassigned" ? " selected" : ""}>Unassigned</option>
-            ${state.teamMembers.map((m) => `<option value="${m.id}"${filters.assignee === m.id ? " selected" : ""}>${escapeHtml(m.name)}</option>`).join("")}
-          </select>
-        </label>
-        <label class="filter-field">
-          <span>City</span>
-          <select id="filterCity">
-            <option value="">All cities</option>
-            ${cityNames.map((name) => `<option value="${escapeAttr(name)}"${filters.city === name ? " selected" : ""}>${escapeHtml(name)}</option>`).join("")}
-          </select>
-        </label>
-        <label class="filter-field">
-          <span>State</span>
-          <select id="filterState">
-            <option value="">All states</option>
-            ${stateNames.map((name) => `<option value="${escapeAttr(name)}"${filters.state === name ? " selected" : ""}>${escapeHtml(name)}</option>`).join("")}
-          </select>
-        </label>
-        ${filtersActive ? `<button type="button" class="link-button" id="clearContactFilters">Clear filters</button>` : ""}
-      </div>
-      <div class="contacts-selectbar">
-        <label class="selectall-label"><input id="selectAllContacts" type="checkbox" ${allVisibleSelected ? "checked" : ""} /> <span>${selectedIds.length ? `${selectedIds.length} selected` : "Select all"}</span></label>
-        <span class="muted contacts-count">${visibleContacts.length} contact${visibleContacts.length === 1 ? "" : "s"}${filtersActive ? ` of ${state.contacts.length}` : ""}</span>
-        <div class="selectbar-actions ${selectedIds.length ? "" : "hidden"}">
-          <button class="secondary compact-action" id="bulkVoiceContacts"><span class="button-mic-icon" aria-hidden="true"></span>Voice note</button>
-          ${activeCollectionId ? `<a href="${exportHref("xlsx", activeCollectionId, selectedIds)}"><button type="button" class="secondary compact-action">Excel</button></a><a href="${exportHref("csv", activeCollectionId, selectedIds)}"><button type="button" class="secondary compact-action">CSV</button></a><a href="${exportHref("vcf", activeCollectionId, selectedIds)}"><button type="button" class="secondary compact-action">VCF</button></a>` : ""}
-          <button class="danger compact-action" id="bulkDeleteContacts">Delete</button>
+        <div class="contacts-stat">
+          <span class="contacts-stat-icon icon-green" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+          <div class="contacts-stat-text"><span class="contacts-stat-num">${assignedCount}</span><span class="contacts-stat-label">Assigned</span></div>
+        </div>
+        <div class="contacts-stat">
+          <span class="contacts-stat-icon icon-violet" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg></span>
+          <div class="contacts-stat-text"><span class="contacts-stat-num">${state.teamMembers.length}</span><span class="contacts-stat-label">Team members</span></div>
         </div>
       </div>
-      <ul class="contact-list"></ul>
-      ${visibleContacts.length ? "" : `<p class="contact-empty">No contacts match these filters.</p>`}`}
+      <div class="contacts-main-area">
+        <div class="contacts-toolbar">
+          <h2>Saved contacts</h2>
+          <div class="contacts-toolbar-actions">
+            <div class="search-field">
+              <svg class="search-field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              <input id="searchBox" aria-label="Search contacts" placeholder="Search name, number, or company" value="${escapeAttr(state.contactSearchQuery)}" />
+              ${state.contactSearchQuery ? `<button type="button" class="search-clear" id="clearSearchBox" aria-label="Clear search">&times;</button>` : ""}
+            </div>
+          </div>
+        </div>
+        ${state.contactSearchQuery ? `<p class="search-active-note">Showing results for "${escapeHtml(state.contactSearchQuery)}" &middot; <button type="button" class="link-button" id="clearSearchLink">Clear search</button></p>` : ""}
+        ${!state.contacts.length && !state.contactSearchQuery ? `
+        <div class="contacts-empty">
+          <div class="contacts-empty-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="5" width="18" height="14" rx="2.5" />
+              <circle cx="9" cy="11" r="2.2" />
+              <path d="M5.5 16c.6-1.7 2-2.6 3.5-2.6s2.9.9 3.5 2.6M15 9.5h3.5M15 13h3" />
+            </svg>
+          </div>
+          <h3>No contacts yet</h3>
+          <p>Upload your business cards and Card2Leads turns them into saved contacts here.</p>
+          <button type="button" id="contactsEmptyUpload">Upload cards</button>
+        </div>` : !state.contacts.length ? `
+        <div class="contacts-empty">
+          <div class="contacts-empty-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="7" />
+              <path d="M21 21l-4.3-4.3" />
+            </svg>
+          </div>
+          <h3>No matches for "${escapeHtml(state.contactSearchQuery)}"</h3>
+          <p>Try a different name, number, company, or team member — or clear the search to see all contacts.</p>
+          <button type="button" id="contactsEmptyClearSearch">Clear search</button>
+        </div>` : `
+        <div class="contacts-filters">
+          <label class="filter-field">
+            <span>Exhibition</span>
+            <select id="filterExhibition">
+              <option value="">All exhibitions</option>
+              ${exhibitionNames.map((name) => `<option value="${escapeAttr(name)}"${filters.exhibition === name ? " selected" : ""}>${escapeHtml(name)}</option>`).join("")}
+            </select>
+          </label>
+          <label class="filter-field">
+            <span>Assigned to</span>
+            <select id="filterAssignee">
+              <option value="">Everyone</option>
+              <option value="__unassigned"${filters.assignee === "__unassigned" ? " selected" : ""}>Unassigned</option>
+              ${state.teamMembers.map((m) => `<option value="${m.id}"${filters.assignee === m.id ? " selected" : ""}>${escapeHtml(m.name)}</option>`).join("")}
+            </select>
+          </label>
+          <label class="filter-field">
+            <span>City</span>
+            <select id="filterCity">
+              <option value="">All cities</option>
+              ${cityNames.map((name) => `<option value="${escapeAttr(name)}"${filters.city === name ? " selected" : ""}>${escapeHtml(name)}</option>`).join("")}
+            </select>
+          </label>
+          <label class="filter-field">
+            <span>State</span>
+            <select id="filterState">
+              <option value="">All states</option>
+              ${stateNames.map((name) => `<option value="${escapeAttr(name)}"${filters.state === name ? " selected" : ""}>${escapeHtml(name)}</option>`).join("")}
+            </select>
+          </label>
+          ${filtersActive ? `<button type="button" class="link-button" id="clearContactFilters">Clear filters</button>` : ""}
+        </div>
+        <div class="contacts-selectbar">
+          <label class="selectall-label"><input id="selectAllContacts" type="checkbox" ${allVisibleSelected ? "checked" : ""} /> <span>${selectedIds.length ? `${selectedIds.length} selected` : "Select all"}</span></label>
+          <span class="muted contacts-count">${visibleContacts.length} contact${visibleContacts.length === 1 ? "" : "s"}${filtersActive ? ` of ${state.contacts.length}` : ""}</span>
+          <div class="selectbar-actions ${selectedIds.length ? "" : "hidden"}">
+            <button class="secondary compact-action" id="bulkVoiceContacts"><span class="button-mic-icon" aria-hidden="true"></span>Voice note</button>
+            ${activeCollectionId ? `<a href="${exportHref("xlsx", activeCollectionId, selectedIds)}"><button type="button" class="secondary compact-action">Excel</button></a><a href="${exportHref("csv", activeCollectionId, selectedIds)}"><button type="button" class="secondary compact-action">CSV</button></a><a href="${exportHref("vcf", activeCollectionId, selectedIds)}"><button type="button" class="secondary compact-action">VCF</button></a>` : ""}
+            <button class="danger compact-action" id="bulkDeleteContacts">Delete</button>
+          </div>
+        </div>
+        <ul class="contact-list"></ul>
+        ${visibleContacts.length ? "" : `<p class="contact-empty">No contacts match these filters.</p>`}`}
+      </div>
+        </div>
+        <aside class="contacts-side">
+          <div class="side-panel">
+            <div class="side-panel-head">
+              <span class="side-panel-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg></span>
+              <strong>Team members</strong>
+            </div>
+            ${state.teamMembers.length ? `<ul class="team-list">
+              ${state.teamMembers.map((m) => `<li class="team-list-item"><span class="team-avatar">${escapeHtml(contactInitials(m.name))}</span><div class="team-list-text"><strong>${escapeHtml(m.name)}</strong>${m.role ? `<span>${escapeHtml(m.role)}</span>` : ""}</div></li>`).join("")}
+            </ul>` : `<p class="side-panel-empty">No team members yet. Add one to start assigning contacts.</p>`}
+            <button type="button" class="side-panel-btn" id="sideAddTeam"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>Add team member</button>
+            <p class="side-panel-note">Use team members for assignment and download.</p>
+          </div>
+          <div class="tip-card">
+            <div class="tip-head"><span class="tip-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></span><strong>Tip</strong></div>
+            <p>Sync contacts to Google to save them on your phone. Contacts will be labelled with the exhibition name and year.</p>
+          </div>
+          <div class="tip-card blue">
+            <div class="tip-head"><span class="tip-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span><strong>Export tip</strong></div>
+            <p>When you export by team member, the file name includes the team member name.</p>
+          </div>
+        </aside>
+      </div>
     </section>
   `);
+  const exportSlot = node.querySelector("#workflowExportSlot");
+  if (exportSlot && exportMenu) {
+    const wrapper = document.createElement("span");
+    wrapper.innerHTML = exportMenu;
+    exportSlot.replaceWith(wrapper.firstElementChild);
+  }
   const tbody = node.querySelector(".contact-list");
-  tbody.innerHTML = visibleContacts.map((contact) => `
+  if (tbody) tbody.innerHTML = visibleContacts.map((contact) => {
+    const initials = contactInitials(contact.name);
+    const synced = contact.googleContactsSyncStatus === "synced";
+    const syncFailed = contact.googleContactsSyncStatus === "failed";
+    const sameAsName = String(contact.companyName || "").trim().toLowerCase() === String(contact.name || "").trim().toLowerCase();
+    const companyLine = [sameAsName ? "" : contact.companyName, contact.designation].filter(Boolean).join(" · ");
+    const placeLine = [[contact.city, contact.state].filter(Boolean).join(", "), contact.mobileNumber].filter(Boolean).join(" · ");
+    return `
     <li class="contact-card">
       <label class="contact-card-check"><input aria-label="Select ${escapeAttr(contact.name)}" type="checkbox" data-select-contact="${contact.id}" ${state.selectedContactIds.has(contact.id) ? "checked" : ""} /></label>
+      <div class="contact-avatar" aria-hidden="true">${escapeHtml(initials)}</div>
       <div class="contact-card-info">
         <div class="contact-card-head">
-          <strong>${escapeHtml(contact.name)}</strong>
+          <strong title="${escapeAttr(contact.name)}">${escapeHtml(contact.name)}</strong>
           ${contact.needsReview ? `<span class="review-dot" title="${escapeAttr(contact.reviewReasons || "Needs a quick review")}" aria-label="Needs review"></span>` : ""}
-          <span class="contact-card-phone phone-value">${escapeHtml(contact.mobileNumber)}</span>
         </div>
-        <div class="contact-card-sub">
-          ${contact.companyName ? `<span>${escapeHtml(contact.companyName)}${contact.designation ? ` · ${escapeHtml(contact.designation)}` : ""}</span>` : ""}
-          ${contact.city || contact.state ? `<span>${[contact.city, contact.state].filter(Boolean).map(escapeHtml).join(", ")}</span>` : ""}
-          ${contact.exhibitionName ? `<span class="contact-card-tag">${escapeHtml(contact.exhibitionName)}${contact.exhibitionDate ? ` · ${escapeHtml(displayDate(contact.exhibitionDate))}` : ""}</span>` : ""}
-        </div>
+        <span class="contact-card-line" title="${escapeAttr(companyLine)}">${escapeHtml(companyLine)}</span>
+        <span class="contact-card-line" title="${escapeAttr(placeLine)}">${escapeHtml(placeLine)}</span>
       </div>
-      <label class="contact-card-assign">
-        <span class="contact-card-assign-label">Assigned to</span>
+      ${contact.exhibitionName ? `<span class="contact-card-tag">${escapeHtml(contact.exhibitionName)}</span>` : `<span></span>`}
+      <div class="contact-meta">
+      <div class="contact-col">
+        <span class="contact-col-label">Google sync status</span>
+        <span class="sync-badge ${synced ? "ok" : syncFailed ? "bad" : "idle"}">
+          ${synced
+            ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><polyline points="20 6 9 17 4 12"/></svg>Google synced`
+            : syncFailed
+              ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>Sync failed`
+              : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/></svg>Not synced`}
+        </span>
+        <span class="contact-col-sub">${synced && contact.googleContactsSyncedAt ? `Synced on ${escapeHtml(displayDate(contact.googleContactsSyncedAt))}` : ""}</span>
+      </div>
+      <div class="contact-col">
+        <span class="contact-col-label">Team member</span>
         <select class="assign-select" data-assign="${contact.id}" aria-label="Assign ${escapeAttr(contact.name)} to a team member">
           <option value="">Unassigned</option>
           ${state.teamMembers.map((m) => `<option value="${m.id}"${contact.assignedToId === m.id ? " selected" : ""}>${escapeHtml(m.name)}</option>`).join("")}
           ${contact.assignedToId && !state.teamMembers.some((m) => m.id === contact.assignedToId) ? `<option value="${contact.assignedToId}" selected>${escapeHtml(contact.assignedToName || "Assigned")}</option>` : ""}
           <option value="__add">+ Add a team member…</option>
         </select>
-      </label>
-      <div class="contact-card-actions">
-        <button class="secondary compact-action" data-voice-contact="${contact.id}" data-contact-name="${escapeAttr(contact.name)}" title="Add or replace voice note"><span class="button-mic-icon" aria-hidden="true"></span>Voice note</button>
-        <button class="secondary compact-action" data-edit="${contact.id}" title="Edit contact">Edit</button>
-        <button class="danger compact-action" data-delete="${contact.id}" data-contact-name="${escapeAttr(contact.name)}" title="Delete contact">Delete</button>
       </div>
-    </li>
-  `).join("");
-  node.querySelector("#selectAllContacts").addEventListener("change", (event) => {
+      </div>
+      <div class="contact-card-actions">
+        <button class="row-btn" data-voice-contact="${contact.id}" data-contact-name="${escapeAttr(contact.name)}" title="Add or replace voice note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>Voice note</button>
+        <button class="row-btn" data-edit="${contact.id}" title="Edit contact"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Edit</button>
+        <button class="row-btn danger" data-delete="${contact.id}" data-contact-name="${escapeAttr(contact.name)}" title="Delete contact"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>Delete</button>
+      </div>
+    </li>`;
+  }).join("");
+  node.querySelector("#selectAllContacts")?.addEventListener("change", (event) => {
     if (event.target.checked) visibleContacts.forEach((contact) => state.selectedContactIds.add(contact.id));
     else visibleContacts.forEach((contact) => state.selectedContactIds.delete(contact.id));
     render();
@@ -2875,16 +3016,16 @@ function contactsView() {
     state.contactFilters = { exhibition: "", assignee: "", city: "", state: "" };
     render();
   });
-  tbody.querySelectorAll("[data-select-contact]").forEach((checkbox) => checkbox.addEventListener("change", () => {
+  tbody && tbody.querySelectorAll("[data-select-contact]").forEach((checkbox) => checkbox.addEventListener("change", () => {
     if (checkbox.checked) state.selectedContactIds.add(checkbox.dataset.selectContact);
     else state.selectedContactIds.delete(checkbox.dataset.selectContact);
     render();
   }));
-  tbody.querySelectorAll("[data-edit]").forEach((btn) => btn.addEventListener("click", () => {
+  tbody && tbody.querySelectorAll("[data-edit]").forEach((btn) => btn.addEventListener("click", () => {
     const contact = state.contacts.find((item) => item.id === btn.dataset.edit);
     if (contact) showEditContactModal(contact);
   }));
-  tbody.querySelectorAll("[data-assign]").forEach((select) => select.addEventListener("change", () => {
+  tbody && tbody.querySelectorAll("[data-assign]").forEach((select) => select.addEventListener("change", () => {
     if (select.value === "__add") {
       render();
       showManageTeamModal();
@@ -2893,11 +3034,34 @@ function contactsView() {
     assignContact(select.dataset.assign, select.value);
   }));
   node.querySelector("#manageTeamButton")?.addEventListener("click", showManageTeamModal);
+  node.querySelector("#workflowAddTeam")?.addEventListener("click", showManageTeamModal);
+  node.querySelector("#sideAddTeam")?.addEventListener("click", showManageTeamModal);
+  node.querySelector("#workflowSyncContacts")?.addEventListener("click", async (event) => {
+    await prepareGoogleContactsSync(event.currentTarget, selectedIds, activeCollectionId, activeCollection);
+  });
+  node.querySelector("#workflowAssignSelect")?.addEventListener("change", async (event) => {
+    const memberId = event.target.value;
+    if (!memberId || !selectedIds.length) return;
+    event.target.disabled = true;
+    try {
+      for (const id of selectedIds) {
+        const result = await api(`/api/contacts/${id}/assign`, { method: "POST", body: { memberId } });
+        const index = state.contacts.findIndex((item) => item.id === id);
+        if (index >= 0 && result.contact) state.contacts[index] = result.contact;
+      }
+      const memberName = state.teamMembers.find((m) => m.id === memberId)?.name || "team member";
+      state.message = { text: `${selectedIds.length} contact(s) assigned to ${memberName}.`, bad: false };
+    } catch (err) {
+      state.message = { text: err.message, bad: true };
+      await refreshAll();
+    }
+    render();
+  });
   node.querySelector("#contactsEmptyUpload")?.addEventListener("click", () => navigateToView("upload"));
-  tbody.querySelectorAll("[data-voice-contact]").forEach((btn) => btn.addEventListener("click", () => {
+  tbody && tbody.querySelectorAll("[data-voice-contact]").forEach((btn) => btn.addEventListener("click", () => {
     showVoiceNoteModal("contact", [btn.dataset.voiceContact], btn.dataset.contactName || "this contact");
   }));
-  tbody.querySelectorAll("[data-delete]").forEach((btn) => btn.addEventListener("click", () => {
+  tbody && tbody.querySelectorAll("[data-delete]").forEach((btn) => btn.addEventListener("click", () => {
     state.modal = {
       tone: "danger",
       title: "Delete contact?",
