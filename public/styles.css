@@ -1019,28 +1019,152 @@ label {
 }
 
 .review-panel {
-  gap: 18px;
+  gap: 16px;
   padding: 20px;
 }
 
-.review-heading {
+.review-stats-bar {
+  display: flex;
   align-items: center;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--line);
+  gap: 20px;
+  padding: 14px 18px;
+  border: 1px solid #e2e8ec;
+  border-radius: 10px;
+  background: #fafbfc;
 }
 
-.review-heading > div:first-child {
-  max-width: 720px;
-}
-
-.review-heading-actions {
-  flex: 0 0 auto;
+.review-stat {
+  display: flex;
   align-items: center;
-  justify-content: flex-end;
+  gap: 6px;
+  font-size: 13px;
+  color: #6b7d8a;
 }
 
-.review-heading-actions button {
-  min-height: 40px;
+.review-stat svg {
+  color: var(--purple);
+  flex-shrink: 0;
+}
+
+.review-stat.ready svg {
+  color: #3d9e6b;
+}
+
+.review-stat strong {
+  font-size: 18px;
+  color: var(--ink);
+}
+
+.review-stat-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.review-limit-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.review-limit-notice p {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.review-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  color: #8a9aaa;
+}
+
+.review-footer svg {
+  flex-shrink: 0;
+  color: #a3b8b2;
+}
+
+.queued-card-compact {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+}
+
+.queued-row-num {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: #f0f3f5;
+  color: #6b7d8a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.queued-thumb {
+  width: 56px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+  background: #f1f4f3;
+}
+
+.queued-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.queued-card-info strong {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queued-card-info .status {
+  font-size: 11px;
+}
+
+.queued-card-spinner-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.queued-card-spinner-wrap p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.queued-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.queued-card-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
 }
 
 .review-card {

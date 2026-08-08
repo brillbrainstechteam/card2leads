@@ -306,7 +306,8 @@ function ensureQueuePolling() {
       state.cards = result.cards;
       const activeTag = document.activeElement?.tagName;
       const isTyping = activeTag === "INPUT" || activeTag === "TEXTAREA" || activeTag === "SELECT";
-      if (state.view === "review" && !isTyping) render();
+      const isRecording = document.querySelector(".voice-recorder.recording") || document.querySelector(".voice-recorder.recorded");
+      if (state.view === "review" && !isTyping && !isRecording) render();
     } catch {
       // Transient network hiccup — the interval will just try again.
     }
@@ -968,7 +969,7 @@ async function logout() {
 function shell() {
   const title = {
     upload: "Upload Cards",
-    review: "Review Extractions",
+    review: "Queue & Review",
     contacts: "Contacts & Exports",
     account: "Account"
   }[state.view];
@@ -978,7 +979,7 @@ function shell() {
         <div class="brand"><strong>Card2Leads</strong><span>${escapeHtml(state.organisation?.name || "Workspace")}</span></div>
         <nav class="nav">
           ${navButton("upload", "Upload")}
-          ${navButton("review", `Review (${state.cards.length})`)}
+          ${navButton("review", `Queue & Review (${state.cards.length})`)}
           ${navButton("contacts", `Contacts & Exports (${state.contacts.length})`)}
           ${navButton("account", "Account")}
         </nav>
@@ -988,7 +989,7 @@ function shell() {
         <section class="topbar">
           <div>
             <h1>${title}</h1>
-            <span class="muted">${state.view === "upload" ? "Add as many cards as you like &middot; scanned automatically, a few at a time" : escapeHtml(state.overview?.activeCollection?.name || "")}</span>
+            <span class="muted">${state.view === "upload" ? "Add as many cards as you like &middot; scanned automatically, a few at a time" : state.view === "review" ? "Cards are scanned automatically here, then moved to Contacts &amp; Exports once ready." : escapeHtml(state.overview?.activeCollection?.name || "")}</span>
           </div>
           <div class="topbar-actions">
             ${state.view === "account" ? "" : topbarUpgradeButtonHtml()}
@@ -1014,7 +1015,7 @@ function topbarUpgradeButtonHtml() {
 }
 
 function navButton(view, label) {
-  const mobileLabels = { upload: "Scan", review: "Review", contacts: "Contacts", account: "Account" };
+  const mobileLabels = { upload: "Scan", review: "Queue", contacts: "Contacts", account: "Account" };
   const svgIcons = {
     upload: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 3.129a.75.75 0 001.09-1.03l-4.25-4.5a.75.75 0 00-1.09 0l-4.25 4.5a.75.75 0 101.09 1.03L9.25 4.636v8.614z"/><path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"/></svg>',
     review: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/><path fill-rule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg>',
@@ -1814,32 +1815,55 @@ function reviewView() {
     return emptyNode;
   }
   const queuedCount = state.cards.filter((card) => card.status === "queued").length;
+  const readyCount = state.cards.filter((card) => card.status === "completed").length;
   const remaining = Number(state.overview?.usage?.remaining ?? Infinity);
   const limitReached = queuedCount > 0 && remaining <= 0;
+  const collectionName = escapeHtml(state.overview?.activeCollection?.exhibitionName || state.overview?.activeCollection?.name || "");
   const node = el(`
     <section class="panel review-panel">
-      <div class="section-heading review-heading">
-        <div>
-          <h2>Cards awaiting review</h2>
-          <p class="muted">Tab through fields, press Ctrl+Enter to save the focused card, or save all valid contacts in one action.</p>
+      <div class="review-stats-bar">
+        <div class="review-stat">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clip-rule="evenodd"/></svg>
+          <strong>${queuedCount}</strong> <span>In queue</span>
         </div>
-        <div class="actions review-heading-actions">
-          <button type="button" class="secondary" id="voiceBatch" ${state.cards.length ? "" : "disabled"}><span class="button-mic-icon" aria-hidden="true"></span>Add voice note to batch</button>
-          <button id="saveAllValid" ${validCount ? "" : "disabled"}>Save all valid contacts (${validCount})</button>
+        <div class="review-stat ready">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd"/></svg>
+          <strong>${readyCount}</strong> <span>Ready to save</span>
+        </div>
+        <div class="review-stat-actions">
+          <button id="saveAllValid" class="secondary slim" ${validCount ? "" : "disabled"}>
+            <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M15.98 1.804a1 1 0 00-1.96 0l-.24 1.192a1 1 0 01-.784.785l-1.192.238a1 1 0 000 1.962l1.192.238a1 1 0 01.785.785l.238 1.192a1 1 0 001.962 0l.238-1.192a1 1 0 01.785-.785l1.192-.238a1 1 0 000-1.962l-1.192-.238a1 1 0 01-.785-.785l-.238-1.192zM6.949 5.684a1 1 0 00-1.898 0l-.683 2.051a1 1 0 01-.633.633l-2.052.683a1 1 0 000 1.898l2.052.684a1 1 0 01.633.632l.683 2.052a1 1 0 001.898 0l.683-2.052a1 1 0 01.633-.632l2.052-.684a1 1 0 000-1.898l-2.052-.683a1 1 0 01-.633-.633L6.95 5.684zM13.949 13.684a1 1 0 00-1.898 0l-.184.551a1 1 0 01-.632.633l-.551.183a1 1 0 000 1.898l.551.183a1 1 0 01.633.633l.183.551a1 1 0 001.898 0l.184-.551a1 1 0 01.632-.633l.551-.183a1 1 0 000-1.898l-.551-.184a1 1 0 01-.633-.632l-.183-.551z"/></svg>
+            Save ready contacts (${validCount})
+          </button>
+          <button type="button" class="secondary slim" id="voiceBatch" ${state.cards.length ? "" : "disabled"}>
+            <span class="button-mic-icon" aria-hidden="true"></span> Add voice note to batch
+          </button>
         </div>
       </div>
-      ${limitReached ? `<div class="notice bad">${queuedCount} card${queuedCount === 1 ? " is" : "s are"} waiting to be scanned, but you've reached your plan's scan limit. <button type="button" class="link-button" id="reviewLimitUpgrade">Upgrade or add scans</button> to continue, or they'll resume automatically once your plan resets.</div>` : ""}
+      ${limitReached ? `<div class="notice bad review-limit-notice">
+        <div>
+          <strong>You've reached your plan's scan limit.</strong>
+          <p>Queued cards will resume automatically once your plan resets. <button type="button" class="link-button" id="reviewLimitUpgrade">Upgrade or add scans</button> to continue processing now.</p>
+        </div>
+        <button type="button" class="secondary slim" id="reviewLimitUpgradeBtn">Upgrade now</button>
+      </div>` : ""}
       <div class="review-list"></div>
+      <div class="review-footer">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M15.988 3.012A2.25 2.25 0 0018 5.25v6.5A2.25 2.25 0 0015.75 14H13.5l-3.72 3.72a.75.75 0 01-1.28-.53v-3.19H5.25A2.25 2.25 0 013 11.75v-6.5A2.25 2.25 0 015.25 3h10.5c.085 0 .17.004.238.012z" clip-rule="evenodd"/></svg>
+        Cards move to <button type="button" class="link-button" id="reviewGoContacts">Contacts &amp; Exports</button> automatically after processing.
+      </div>
     </section>
   `);
   node.querySelector("#reviewLimitUpgrade")?.addEventListener("click", () => navigateToView("account"));
+  node.querySelector("#reviewLimitUpgradeBtn")?.addEventListener("click", () => navigateToView("account"));
+  node.querySelector("#reviewGoContacts")?.addEventListener("click", () => navigateToView("contacts"));
   node.querySelector("#saveAllValid").addEventListener("click", saveAllValidContacts);
   node.querySelector("#voiceBatch").addEventListener("click", () => {
     const ids = state.cards.map((card) => card.id);
     showVoiceNoteModal("batch", ids, `${ids.length} review card(s)`);
   });
   const list = node.querySelector(".review-list");
-  state.cards.forEach((card) => list.appendChild(cardReview(card)));
+  state.cards.forEach((card, index) => list.appendChild(cardReview(card, index + 1)));
   return node;
 }
 
@@ -1879,23 +1903,22 @@ function reviewIssuesNotice(card) {
   return `<div class="notice bad"><ul class="notice-list">${issues.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}</ul></div>`;
 }
 
-function queuedCardReview(card) {
+function queuedCardReview(card, rowNum) {
   const node = el(`
-    <article class="card-row review-card queued-card">
-      <div class="review-card-media">
-        ${card.storageUrl ? `<img class="card-image" src="${card.storageUrl}" alt="Uploaded business card ${escapeAttr(card.originalFileName)}" />` : `<div class="card-image missing-image">Image unavailable</div>`}
-        <p><strong>${escapeHtml(card.originalFileName)}</strong></p>
-        ${card.pairMode === "front-back" ? `<p class="muted">Front and back saved as one contact</p>` : ""}
-        <div class="status-stack"><span class="status warn">waiting to be scanned</span></div>
-        ${voiceSummaryView(card.extraction)}
+    <article class="card-row review-card queued-card queued-card-compact">
+      <span class="queued-row-num">${rowNum || ""}</span>
+      ${card.storageUrl ? `<img class="queued-thumb" src="${card.storageUrl}" alt="Card ${escapeAttr(card.originalFileName)}" />` : `<span class="queued-thumb missing-image"></span>`}
+      <div class="queued-card-info">
+        <strong>${escapeHtml(card.originalFileName)}</strong>
+        <span class="status warn">Waiting to scan</span>
       </div>
-      <div class="queued-card-body">
+      <div class="queued-card-spinner-wrap">
         <div class="queued-card-spinner" aria-hidden="true"></div>
-        <p class="muted">This card is in the queue. It's scanned automatically, a few at a time &mdash; no action needed.</p>
-        <div class="actions review-card-actions">
-          <button type="button" class="secondary" data-voice-card><span class="button-mic-icon" aria-hidden="true"></span>Add voice note now</button>
-          <button type="button" class="danger" data-delete-card>Delete</button>
-        </div>
+        <p class="muted">This card is in the queue.<br/>It will be scanned automatically.</p>
+      </div>
+      <div class="queued-card-actions">
+        <button type="button" class="secondary slim" data-voice-card><span class="button-mic-icon" aria-hidden="true"></span> Add voice note</button>
+        <button type="button" class="danger slim" data-delete-card><svg viewBox="0 0 20 20" fill="currentColor" width="13" height="13"><path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.519.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clip-rule="evenodd"/></svg> Remove</button>
       </div>
     </article>
   `);
@@ -1927,8 +1950,8 @@ function queuedCardReview(card) {
   return node;
 }
 
-function cardReview(card) {
-  if (card.status === "queued") return queuedCardReview(card);
+function cardReview(card, rowNum) {
+  if (card.status === "queued") return queuedCardReview(card, rowNum);
   const fields = { ...card.extraction };
   const fieldConfidence = { ...(card.extraction?.fieldConfidence || {}) };
   normalizeReviewPhoneFields(fields, fieldConfidence);
