@@ -199,9 +199,9 @@ label {
   color: rgba(255, 255, 255, 0.82);
   text-align: left;
   padding: 0 10px;
-  min-height: 42px;
+  min-height: 34px;
   box-shadow: none;
-  border-radius: 9px;
+  border-radius: 8px;
   font-size: 13px;
   font-weight: 500;
   line-height: 1.25;
@@ -219,8 +219,8 @@ label {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.08);
   flex-shrink: 0;
@@ -3544,7 +3544,7 @@ label {
 
 .contacts-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 236px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
@@ -3739,6 +3739,7 @@ select.workflow-btn {
 
 .workflow-action-slot,
 .workflow-action-slot .export-sync-menu {
+  display: block;
   width: 100%;
 }
 
@@ -3757,7 +3758,11 @@ select.workflow-btn {
   border-color: var(--accent);
   box-sizing: border-box;
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+/* Keep the icon and the caret from being squeezed by the nowrap label. */
+.workflow-action-slot .export-sync-menu summary svg {
+  flex-shrink: 0;
 }
 
 /* The popover is absolutely positioned, so it must escape the card's
@@ -4008,18 +4013,6 @@ select.workflow-btn {
 @media (max-width: 1180px) {
   .contacts-workflow-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-/* Drop the right-hand panel below the main column early enough that the
-   fixed-width contact rows below still have room to stay aligned. */
-@media (max-width: 1400px) {
-  .contacts-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .contacts-side {
-    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-    align-content: stretch;
   }
 }
 

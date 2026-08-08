@@ -4071,21 +4071,11 @@ async function handleApi(req, res, pathname) {
     if (req.method === "GET" && pathname === "/api/export.xlsx") {
       if (!rateLimit(req, res, "export-xlsx", 60, 60 * 60 * 1000)) return;
       const url = new URL(req.url, `http://${req.headers.host}`);
-      const collectionId = url.searchParams.get("collectionId");
-      const selectedIds = selectedExportIds(url);
-      const exportAll = url.searchParams.get("all") === "true";
-      const collection = collectionForUser(db, user, collectionId);
-      const contacts = db.contacts.filter((c) =>
-        c.organisationId === user.organisationId &&
-        !c.deletedAt &&
-        (exportAll || (selectedIds.size ? selectedIds.has(c.id) : c.collectionId === collection.id))
-      );
+      const { collection, contacts, baseName, exportAll } = exportSelection(db, user, url);
       const rows = [EXPORT_COLUMNS, ...contacts.map((c) => exportRow(c, user))];
       const xlsx = buildXlsx(rows);
-      const fileName = exportAll
-        ? `All_Contacts_${new Date().toISOString().slice(0, 10)}.xlsx`
-        : `${slug(collection.name)}_${collection.exhibitionDate || new Date().toISOString().slice(0, 10)}_Contacts.xlsx`;
-      audit(db, user, "excel.downloaded", "collection", collection.id, { contacts: contacts.length, all: exportAll });
+      const fileName = `${baseName}.xlsx`;
+      audit(db, user, "excel.downloaded", "collection", collection?.id || "", { contacts: contacts.length, all: exportAll });
       await saveDb(db);
       return send(res, 200, xlsx, {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -4096,21 +4086,11 @@ async function handleApi(req, res, pathname) {
     if (req.method === "GET" && pathname === "/api/export.csv") {
       if (!rateLimit(req, res, "export-csv", 60, 60 * 60 * 1000)) return;
       const url = new URL(req.url, `http://${req.headers.host}`);
-      const collectionId = url.searchParams.get("collectionId");
-      const selectedIds = selectedExportIds(url);
-      const exportAll = url.searchParams.get("all") === "true";
-      const collection = collectionForUser(db, user, collectionId);
-      const contacts = db.contacts.filter((c) =>
-        c.organisationId === user.organisationId &&
-        !c.deletedAt &&
-        (exportAll || (selectedIds.size ? selectedIds.has(c.id) : c.collectionId === collection.id))
-      );
+      const { collection, contacts, baseName, exportAll } = exportSelection(db, user, url);
       const rows = [EXPORT_COLUMNS, ...contacts.map((c) => exportRow(c, user))];
       const csv = buildCsv(rows);
-      const fileName = exportAll
-        ? `All_Contacts_${new Date().toISOString().slice(0, 10)}.csv`
-        : `${slug(collection.name)}_${collection.exhibitionDate || new Date().toISOString().slice(0, 10)}_Contacts.csv`;
-      audit(db, user, "csv.downloaded", "collection", collection.id, { contacts: contacts.length, all: exportAll });
+      const fileName = `${baseName}.csv`;
+      audit(db, user, "csv.downloaded", "collection", collection?.id || "", { contacts: contacts.length, all: exportAll });
       await saveDb(db);
       return send(res, 200, csv, {
         "Content-Type": "text/csv; charset=utf-8",
@@ -4121,31 +4101,10 @@ async function handleApi(req, res, pathname) {
     if (req.method === "GET" && pathname === "/api/export.vcf") {
       if (!rateLimit(req, res, "export-vcf", 60, 60 * 60 * 1000)) return;
       const url = new URL(req.url, `http://${req.headers.host}`);
-      const collectionId = url.searchParams.get("collectionId");
-      const selectedIds = selectedExportIds(url);
-      const exportAll = url.searchParams.get("all") === "true";
-      const assigneeId = url.searchParams.get("assigneeId") || "";
-      const collection = collectionForUser(db, user, collectionId);
-      if (!collection) return error(res, 404, "Collection not found.");
-      let contacts = db.contacts.filter((c) =>
-        c.organisationId === user.organisationId &&
-        !c.deletedAt &&
-        (exportAll || (selectedIds.size ? selectedIds.has(c.id) : c.collectionId === collection.id))
-      );
-      let assigneeLabel = "";
-      if (assigneeId === "__unassigned") {
-        contacts = contacts.filter((c) => !c.assignedToId);
-        assigneeLabel = "Unassigned";
-      } else if (assigneeId) {
-        contacts = contacts.filter((c) => c.assignedToId === assigneeId);
-        assigneeLabel = contacts[0]?.assignedToName || teamMembers(db.organisations.find((o) => o.id === user.organisationId)).find((m) => m.id === assigneeId)?.name || "";
-      }
+      const { collection, contacts, baseName, exportAll, assigneeId } = exportSelection(db, user, url);
       const vcf = buildVcf(contacts);
-      const baseName = exportAll
-        ? `All_Contacts_${new Date().toISOString().slice(0, 10)}`
-        : `${slug(collection.name)}_${collection.exhibitionDate || new Date().toISOString().slice(0, 10)}_Contacts`;
-      const fileName = `${baseName}${assigneeLabel ? `_${slug(assigneeLabel)}` : ""}.vcf`;
-      audit(db, user, "vcf.downloaded", "collection", collection.id, { contacts: contacts.length, all: exportAll, assigneeId });
+      const fileName = `${baseName}.vcf`;
+      audit(db, user, "vcf.downloaded", "collection", collection?.id || "", { contacts: contacts.length, all: exportAll, assigneeId });
       await saveDb(db);
       return send(res, 200, vcf, {
         "Content-Type": "text/vcard; charset=utf-8",
@@ -4721,6 +4680,74 @@ function exportVoiceNote(contact) {
   if (!transcript) return "";
   const language = String(contact.voiceLanguage || "").trim();
   return language ? `[${language}] ${transcript}` : transcript;
+}
+
+// Shared selection logic for every export format, so Excel, CSV and VCF all
+// return exactly the same set of contacts for a given set of query params.
+// Previously each endpoint filtered differently (Excel/CSV honoured only
+// `all`, VCF only `assigneeId`), so a download could silently disagree with
+// what the user had filtered on screen.
+function exportSelection(db, user, url) {
+  const params = url.searchParams;
+  const collectionId = params.get("collectionId");
+  const selectedIds = selectedExportIds(url);
+  const exportAll = params.get("all") === "true";
+  const assigneeId = params.get("assigneeId") || "";
+  const exhibition = params.get("exhibition") || "";
+  const city = params.get("city") || "";
+  const stateName = params.get("state") || "";
+  const search = String(params.get("q") || "").toLowerCase();
+  const collection = collectionForUser(db, user, collectionId);
+
+  let contacts = db.contacts.filter((c) =>
+    c.organisationId === user.organisationId &&
+    !c.deletedAt &&
+    (selectedIds.size
+      ? selectedIds.has(c.id)
+      : (exportAll || (collection && c.collectionId === collection.id)))
+  );
+
+  const nameParts = [];
+
+  let assigneeLabel = "";
+  if (assigneeId === "__unassigned") {
+    contacts = contacts.filter((c) => !c.assignedToId);
+    assigneeLabel = "Unassigned";
+  } else if (assigneeId) {
+    const organisation = db.organisations.find((o) => o.id === user.organisationId);
+    assigneeLabel = teamMembers(organisation).find((m) => m.id === assigneeId)?.name
+      || contacts.find((c) => c.assignedToId === assigneeId)?.assignedToName
+      || "";
+    contacts = contacts.filter((c) => c.assignedToId === assigneeId);
+  }
+  if (assigneeLabel) nameParts.push(assigneeLabel);
+
+  if (exhibition) {
+    contacts = contacts.filter((c) => (c.exhibitionName || "") === exhibition);
+    nameParts.push(exhibition);
+  } else if (collection && !exportAll && !selectedIds.size) {
+    nameParts.push(collection.name);
+  }
+  if (city) {
+    contacts = contacts.filter((c) => (c.city || "") === city);
+    nameParts.push(city);
+  }
+  if (stateName) {
+    contacts = contacts.filter((c) => (c.state || "") === stateName);
+    nameParts.push(stateName);
+  }
+  if (search) {
+    contacts = contacts.filter((c) =>
+      [c.name, c.mobileNumber, c.companyName, c.emailAddress, c.city, c.state, c.tags, c.notes, c.assignedToName, c.exhibitionName]
+        .some((v) => String(v || "").toLowerCase().includes(search)));
+  }
+
+  if (selectedIds.size) nameParts.unshift("Selected");
+  if (!nameParts.length) nameParts.push("All");
+
+  const stamp = new Date().toISOString().slice(0, 10);
+  const baseName = `${nameParts.map(slug).filter(Boolean).join("_")}_contacts_${stamp}`;
+  return { collection, contacts, baseName, exportAll, assigneeId };
 }
 
 function selectedExportIds(url) {

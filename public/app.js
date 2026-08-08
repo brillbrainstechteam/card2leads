@@ -1039,11 +1039,21 @@ function navButton(view, label) {
   </button>`;
 }
 
-function exportHref(format, collectionId, ids = [], all = false, assigneeId = "") {
+// Builds an export URL. Pass `useFilters` to make the download match exactly
+// what the Contacts screen is currently showing (assignee, exhibition, city,
+// state and search); omit it for a deliberate "everything" download.
+function exportHref(format, collectionId, ids = [], all = false, useFilters = false) {
   const params = new URLSearchParams({ collectionId, csrf: state.csrfToken || "" });
   if (ids.length) params.set("ids", ids.join(","));
   if (all) params.set("all", "true");
-  if (format === "vcf" && assigneeId) params.set("assigneeId", assigneeId);
+  if (useFilters) {
+    const f = state.contactFilters || {};
+    if (f.assignee) params.set("assigneeId", f.assignee);
+    if (f.exhibition) params.set("exhibition", f.exhibition);
+    if (f.city) params.set("city", f.city);
+    if (f.state) params.set("state", f.state);
+    if (state.contactSearchQuery) params.set("q", state.contactSearchQuery);
+  }
   return `/api/export.${format}?${params.toString()}`;
 }
 
@@ -2724,14 +2734,22 @@ function contactsView() {
     : filters.assignee
       ? (state.teamMembers.find((m) => m.id === filters.assignee)?.name || "")
       : "";
+  // Downloads follow the on-screen filters when any are set, and the menu then
+  // also offers an explicit unfiltered option so both flows are reachable.
+  const downloadFilterActive = filtersActive || Boolean(state.contactSearchQuery);
   const exportMenu = activeCollectionId ? `
     <details class="export-sync-menu">
       <summary><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download files</summary>
       <div class="export-sync-popover">
-        <span class="export-sync-heading">Download</span>
-        <a href="${exportHref("xlsx", activeCollectionId, [], true)}">Download Excel</a>
-        <a href="${exportHref("csv", activeCollectionId, [], true)}">Download CSV</a>
-        <a href="${exportHref("vcf", activeCollectionId, [], false, filters.assignee)}">Download exhibition VCF${assigneeFilterLabel ? ` (${escapeHtml(assigneeFilterLabel)})` : ""}</a>
+        <span class="export-sync-heading">${downloadFilterActive ? `Matching your filters (${visibleContacts.length})` : `Download (${state.contacts.length})`}</span>
+        <a href="${exportHref("xlsx", activeCollectionId, [], true, downloadFilterActive)}">Excel spreadsheet</a>
+        <a href="${exportHref("csv", activeCollectionId, [], true, downloadFilterActive)}">CSV file</a>
+        <a href="${exportHref("vcf", activeCollectionId, [], true, downloadFilterActive)}">VCF (phone contacts)</a>
+        ${downloadFilterActive ? `
+        <span class="export-sync-heading">All contacts (${state.contacts.length})</span>
+        <a href="${exportHref("xlsx", activeCollectionId, [], true, false)}">Excel spreadsheet</a>
+        <a href="${exportHref("csv", activeCollectionId, [], true, false)}">CSV file</a>
+        <a href="${exportHref("vcf", activeCollectionId, [], true, false)}">VCF (phone contacts)</a>` : ""}
         <span class="export-sync-heading">Google</span>
         ${!google.configured
           ? `<span class="export-sync-note">Google integration is not configured.</span>`
@@ -2757,7 +2775,6 @@ function contactsView() {
   };
   const syncedCount = state.contacts.filter((c) => c.googleContactsSyncStatus === "synced").length;
   const exhibitionLabel = activeCollection?.exhibitionName || activeCollection?.name || exhibitionNames[0] || "";
-  const firstMemberName = state.teamMembers[0]?.name || "Team_member";
   const googleGlyph = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="#4285F4" d="M23 12.27c0-.79-.07-1.54-.2-2.27H12v4.51h6.16a5.27 5.27 0 0 1-2.28 3.46v2.88h3.7C21.7 18.89 23 15.9 23 12.27z"/><path fill="#34A853" d="M12 23.5c3.08 0 5.66-1.02 7.55-2.77l-3.7-2.87c-1.02.69-2.33 1.1-3.85 1.1-2.96 0-5.47-2-6.37-4.69H1.8v2.95A11.42 11.42 0 0 0 12 23.5z"/><path fill="#FBBC05" d="M5.63 14.27a6.85 6.85 0 0 1 0-4.38V6.94H1.8a11.44 11.44 0 0 0 0 10.28l3.83-2.95z"/><path fill="#EA4335" d="M12 5.32c1.67 0 3.17.58 4.35 1.71l3.26-3.26C17.65 1.9 15.07.8 12 .8A11.42 11.42 0 0 0 1.8 6.94l3.83 2.95c.9-2.69 3.41-4.57 6.37-4.57z"/></svg>`;
   const node = el(`
     <section class="panel contacts-panel">
@@ -2797,8 +2814,7 @@ function contactsView() {
           <div class="workflow-card-body">
             <span class="workflow-icon icon-violet" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
             <div class="workflow-desc">
-              <span>File name shows team member name.</span>
-              <span class="workflow-chip file">${escapeHtml(String(firstMemberName).replace(/\s+/g, "_"))}_contacts.xlsx</span>
+              <span>Downloads follow your filters. File name shows the filter used.</span>
             </div>
           </div>
           ${exportMenu ? `<span class="workflow-action-slot" id="workflowExportSlot"></span>` : `<span class="workflow-note">Create an exhibition to enable exports.</span>`}
@@ -2911,27 +2927,6 @@ function contactsView() {
         ${visibleContacts.length ? "" : `<p class="contact-empty">No contacts match these filters.</p>`}`}
       </div>
         </div>
-        <aside class="contacts-side">
-          <div class="side-panel">
-            <div class="side-panel-head">
-              <span class="side-panel-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg></span>
-              <strong>Team members</strong>
-            </div>
-            ${state.teamMembers.length ? `<ul class="team-list">
-              ${state.teamMembers.map((m) => `<li class="team-list-item"><span class="team-avatar">${escapeHtml(contactInitials(m.name))}</span><div class="team-list-text"><strong>${escapeHtml(m.name)}</strong>${m.role ? `<span>${escapeHtml(m.role)}</span>` : ""}</div></li>`).join("")}
-            </ul>` : `<p class="side-panel-empty">No team members yet. Add one to start assigning contacts.</p>`}
-            <button type="button" class="side-panel-btn" id="sideAddTeam"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>Add team member</button>
-            <p class="side-panel-note">Use team members for assignment and download.</p>
-          </div>
-          <div class="tip-card">
-            <div class="tip-head"><span class="tip-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg></span><strong>Tip</strong></div>
-            <p>Sync contacts to Google to save them on your phone. Contacts will be labelled with the exhibition name and year.</p>
-          </div>
-          <div class="tip-card blue">
-            <div class="tip-head"><span class="tip-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span><strong>Export tip</strong></div>
-            <p>When you export by team member, the file name includes the team member name.</p>
-          </div>
-        </aside>
       </div>
     </section>
   `);
@@ -2939,7 +2934,11 @@ function contactsView() {
   if (exportSlot && exportMenu) {
     const wrapper = document.createElement("span");
     wrapper.innerHTML = exportMenu;
-    exportSlot.replaceWith(wrapper.firstElementChild);
+    // Append into the slot rather than replacing it: the slot element is the
+    // styling hook (.workflow-action-slot ...) that lays this button out to
+    // match the other workflow cards. Replacing it dropped that wrapper, so
+    // the menu fell back to the generic export-menu styling instead.
+    exportSlot.appendChild(wrapper.firstElementChild);
   }
   const tbody = node.querySelector(".contact-list");
   if (tbody) tbody.innerHTML = visibleContacts.map((contact) => {
@@ -3035,7 +3034,6 @@ function contactsView() {
   }));
   node.querySelector("#manageTeamButton")?.addEventListener("click", showManageTeamModal);
   node.querySelector("#workflowAddTeam")?.addEventListener("click", showManageTeamModal);
-  node.querySelector("#sideAddTeam")?.addEventListener("click", showManageTeamModal);
   node.querySelector("#workflowSyncContacts")?.addEventListener("click", async (event) => {
     await prepareGoogleContactsSync(event.currentTarget, selectedIds, activeCollectionId, activeCollection);
   });
