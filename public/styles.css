@@ -1592,15 +1592,12 @@ label {
 }
 
 .review-complete-state {
-  min-height: 280px;
+  min-height: 320px;
   place-items: center;
   align-content: center;
   text-align: center;
-}
-
-.review-complete-state > div:not(.actions) {
-  display: grid;
-  gap: 7px;
+  gap: 10px;
+  padding: 40px 20px;
 }
 
 .review-complete-state h2,
@@ -1608,21 +1605,74 @@ label {
   margin: 0;
 }
 
-.review-complete-state .actions {
-  justify-content: center;
-  margin-top: 8px;
+.review-complete-state h2 {
+  font-size: 22px;
 }
 
 .review-complete-icon {
   display: grid;
   place-items: center;
-  width: 54px;
-  height: 54px;
+  width: 60px;
+  height: 60px;
   border-radius: 50%;
   background: #e8f6ef;
-  color: var(--ok);
-  font-size: 24px;
-  font-weight: 700;
+  color: #3d9e6b;
+  margin-bottom: 6px;
+}
+
+.review-complete-stats {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin: 12px 0 6px;
+}
+
+.review-complete-stat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 24px;
+  border: 1px solid #e2e8ec;
+  border-radius: 10px;
+  background: #fafbfc;
+  min-width: 140px;
+}
+
+.review-complete-stat svg {
+  flex-shrink: 0;
+  color: #3d9e6b;
+}
+
+.review-complete-stat div {
+  display: grid;
+  gap: 1px;
+  text-align: left;
+}
+
+.review-complete-stat strong {
+  font-size: 20px;
+  color: var(--ink);
+}
+
+.review-complete-stat span {
+  font-size: 12px;
+  color: #6b7d8a;
+}
+
+.review-complete-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.review-complete-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 240px;
+  justify-content: center;
 }
 
 .notice.bad {

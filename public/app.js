@@ -307,7 +307,8 @@ function ensureQueuePolling() {
       const activeTag = document.activeElement?.tagName;
       const isTyping = activeTag === "INPUT" || activeTag === "TEXTAREA" || activeTag === "SELECT";
       const isRecording = document.querySelector(".voice-recorder.recording") || document.querySelector(".voice-recorder.recorded");
-      if (state.view === "review" && !isTyping && !isRecording) render();
+      const hasModal = !!state.modal;
+      if (state.view === "review" && !isTyping && !isRecording && !hasModal) render();
     } catch {
       // Transient network hiccup — the interval will just try again.
     }
@@ -1793,16 +1794,34 @@ function readOriginalFile(file, preprocessing) {
 function reviewView() {
   const validCount = state.cards.filter((card) => card.status === "completed" && card.extraction?.name && card.extraction?.mobileNumber).length;
   if (!state.cards.length) {
+    const processedCount = Number(state.overview?.usage?.used || 0);
+    const contactCount = state.contacts.length || 0;
     const emptyNode = el(`
       <section class="panel review-complete-state">
-        <div class="review-complete-icon" aria-hidden="true">&#10003;</div>
-        <div>
-          <h2>All cards reviewed</h2>
-          <p class="muted">Your saved contacts are ready. You can open Contacts or upload another batch.</p>
+        <div class="review-complete-icon" aria-hidden="true">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="36" height="36"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd"/></svg>
         </div>
-        <div class="actions">
-          <button type="button" data-empty-review-view="contacts">Open contacts</button>
-          <button type="button" class="secondary" data-empty-review-view="upload">Upload more cards</button>
+        <h2>All cards processed</h2>
+        <p class="muted">Great job! All queued cards have been processed and moved to Contacts &amp; Exports.</p>
+        <div class="review-complete-stats">
+          <div class="review-complete-stat">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd"/></svg>
+            <div><strong>${processedCount}</strong><span>Cards processed</span></div>
+          </div>
+          <div class="review-complete-stat">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M7 8a3 3 0 100-6 3 3 0 000 6zM14.5 9a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-5.385-1.572zM14.5 16h-.106c.07-.297.088-.611.048-.933a7.47 7.47 0 00-1.588-3.755 4.502 4.502 0 015.874 2.636.818.818 0 01-.36.98A7.465 7.465 0 0114.5 16z"/></svg>
+            <div><strong>${contactCount}</strong><span>Contacts added</span></div>
+          </div>
+        </div>
+        <div class="review-complete-actions">
+          <button type="button" data-empty-review-view="contacts">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M7 8a3 3 0 100-6 3 3 0 000 6zM14.5 9a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-5.385-1.572zM14.5 16h-.106c.07-.297.088-.611.048-.933a7.47 7.47 0 00-1.588-3.755 4.502 4.502 0 015.874 2.636.818.818 0 01-.36.98A7.465 7.465 0 0114.5 16z"/></svg>
+            Open Contacts &amp; Exports
+          </button>
+          <button type="button" class="secondary" data-empty-review-view="upload">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 3.129a.75.75 0 001.09-1.03l-4.25-4.5a.75.75 0 00-1.09 0l-4.25 4.5a.75.75 0 101.09 1.03L9.25 4.636v8.614z"/><path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"/></svg>
+            Upload more cards
+          </button>
         </div>
       </section>
     `);
