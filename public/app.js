@@ -980,7 +980,7 @@ function shell() {
         <div class="brand"><strong>Card2Leads</strong><span>${escapeHtml(state.organisation?.name || "Workspace")}</span></div>
         <nav class="nav">
           ${navButton("upload", "Upload")}
-          ${navButton("review", `Queue & Review (${state.cards.length})`)}
+          ${navButton("review", `Review (${state.cards.length})`)}
           ${navButton("contacts", `Contacts & Exports (${state.contacts.length})`)}
           ${navButton("account", "Account")}
         </nav>
