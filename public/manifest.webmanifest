@@ -1,7 +1,7 @@
 {
-  "name": "Card2Leads by BrillBrains",
+  "name": "Card2Leads",
   "short_name": "Card2Leads",
-  "description": "Scan business cards, review extracted contacts, and export collections.",
+  "description": "Card2Leads scans business cards into organised digital contacts. Review extracted details, export records, and optionally sync with Google Contacts and Google Sheets. A product of BrillBrains Consultants Pvt. Ltd.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

@@ -327,7 +327,7 @@ function authView() {
       <nav class="public-nav">
         <a class="public-brand" href="#top" aria-label="Card2Leads home">
           <strong>Card2Leads</strong>
-          <small>By BrillBrains Consultants</small>
+          <small>A product of BrillBrains Consultants</small>
         </a>
         <div class="public-links" aria-label="Product sections">
           <a href="#features">Features</a>
@@ -352,6 +352,14 @@ function authView() {
         <div class="hero-visual" aria-label="Card scanning preview">
           <img class="hero-illustration" src="/illustrations-final/hero_illustration.png?v=final-20260808" alt="Scanning a business card, extracting its details and syncing organised contacts" />
         </div>
+      </section>
+
+      <section class="public-section about-section" id="about">
+        <p class="section-kicker">What is Card2Leads?</p>
+        <h2>A simple way to turn business cards into organised contacts.</h2>
+        <p class="about-lead">Card2Leads is a business-card digitisation and contact-management application that helps businesses and professionals convert physical or digital business cards into organised digital contact records.</p>
+        <p>Users can scan or upload business cards, extract contact information such as names, mobile numbers, email addresses, companies and designations, review and correct extracted information, add labels and notes, and export their contact records.</p>
+        <p>Users may also optionally connect their Google account to save selected contacts to Google Contacts or create and update contact records in Google Sheets. Card2Leads is operated by BrillBrains Consultants Pvt. Ltd.</p>
       </section>
 
       <section class="public-section features-section" id="features">
@@ -445,6 +453,30 @@ function authView() {
             <p>Add spoken notes, interests and follow-up instructions in Hindi, English or Hinglish. Card2Leads converts the input into text and links it to the relevant contact.</p>
           </div>
         </article>
+      </section>
+
+      <section class="public-section google-section" id="google-integration">
+        <div class="google-section-head">
+          <p class="section-kicker">Optional Google integration</p>
+          <h2>Connect Google only when you want to.</h2>
+          <p class="google-section-lead">Connecting your Google account is optional. Card2Leads requests Google permissions only when you choose to use a feature that requires them, and only after you approve them through Google's own authorisation screen.</p>
+        </div>
+        <div class="google-integration-grid">
+          <article>
+            <strong>Google Sign-In</strong>
+            <p>If you choose to sign in with Google, Card2Leads uses basic account information authorised by you to authenticate your account.</p>
+          </article>
+          <article>
+            <strong>Google Contacts</strong>
+            <p>If you choose to connect Google Contacts, Card2Leads uses the permissions you grant to save or synchronise the business contacts you select with your Google Contacts account.</p>
+          </article>
+          <article>
+            <strong>Google Sheets</strong>
+            <p>If you choose to use the Google Sheets integration, Card2Leads uses authorised access to create or update spreadsheets containing the business-card or contact records you choose to sync.</p>
+          </article>
+        </div>
+        <p class="google-section-note">Card2Leads does not require Google integration for business-card scanning features that do not depend on Google services. You can disconnect your Google account or revoke Card2Leads' Google permissions at any time. Card2Leads does not access Gmail, Google Calendar or unrelated Google Drive files.</p>
+        <p class="google-section-link"><a href="/privacy.html" target="_blank" rel="noopener">Learn how we use Google data → Privacy Policy</a></p>
       </section>
 
       <section class="public-section pricing-section" id="pricing">
@@ -584,13 +616,17 @@ function authView() {
       <footer class="public-footer">
         <div class="public-footer-brand">
           <strong>Card2Leads</strong>
+          <span>Business-card digitisation and contact management for businesses and professionals.</span>
           <span>A product of BrillBrains Consultants Pvt. Ltd.</span>
         </div>
-        <nav class="public-footer-links" aria-label="Legal and contact">
+        <nav class="public-footer-links" aria-label="Product, legal and contact links">
+          <a href="#features">Features</a>
+          <a href="#exports">How It Works</a>
           <a href="/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>
           <a href="/terms.html" target="_blank" rel="noopener">Terms of Use</a>
           <a href="/retention.html" target="_blank" rel="noopener">Data Retention</a>
-          <a href="mailto:tech@brillbrainsconsultants.com">Contact Us</a>
+          <a href="/contact.html" target="_blank" rel="noopener">Contact Us</a>
+          <a href="#top" data-auth-mode="login">Sign In</a>
         </nav>
         <p class="public-footer-note">&copy; ${new Date().getFullYear()} BrillBrains Consultants Pvt. Ltd. All rights reserved.</p>
       </footer>
@@ -631,7 +667,7 @@ function authScreen() {
       <div class="auth-screen-card">
         <button type="button" class="auth-back" data-auth-close>&larr; Back to site</button>
         <button type="button" class="auth-close" data-auth-close aria-label="Close and return to the Card2Leads home page">&times;</button>
-        <a class="auth-screen-brand" href="#top" data-auth-close><strong>Card2Leads</strong><span>By BrillBrains Consultants</span></a>
+        <a class="auth-screen-brand" href="#top" data-auth-close><strong>Card2Leads</strong><span>A product of BrillBrains Consultants</span></a>
         ${authFormMarkup(isSignup, isForgot, isReset)}
       </div>
     </main>
@@ -795,7 +831,7 @@ function nativeIntroView() {
         <div class="native-brand-mark" aria-hidden="true"><span></span></div>
         <div class="native-splash-copy">
           <h1>Card2Leads</h1>
-          <p>By BrillBrains</p>
+          <p>A product of BrillBrains Consultants</p>
           <span>Cards in. Contacts ready.</span>
         </div>
         <div class="native-splash-loader" aria-hidden="true"><i></i></div>
@@ -804,7 +840,7 @@ function nativeIntroView() {
     : el(`
       <main class="native-intro native-feature-slide" data-native-slide="${step}">
         <header class="native-intro-header">
-          <div class="native-wordmark"><strong>Card2Leads</strong><span>By BrillBrains</span></div>
+          <div class="native-wordmark"><strong>Card2Leads</strong><span>A product of BrillBrains</span></div>
           <button type="button" class="link-button" data-native-skip>Skip</button>
         </header>
         <section class="native-slide-visual">${slides[step].visual}</section>
