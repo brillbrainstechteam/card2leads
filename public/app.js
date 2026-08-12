@@ -295,6 +295,7 @@ function ensureQueuePolling() {
     return;
   }
   if (queuePollTimer) return;
+  let lastQueuedCount = state.cards.filter((card) => card.status === "queued").length;
   queuePollTimer = setInterval(async () => {
     if (!state.user || !state.cards.some((card) => card.status === "queued")) {
       clearInterval(queuePollTimer);
@@ -303,12 +304,24 @@ function ensureQueuePolling() {
     }
     try {
       const result = await api("/api/cards");
-      state.cards = result.cards;
+      const queuedNow = result.cards.filter((card) => card.status === "queued").length;
+      // A card leaving the queue means it was auto-saved into Contacts (or moved
+      // to review). Pull the full state so the Contacts list and the nav counts
+      // update on their own — otherwise the user has to refresh to see them.
+      if (queuedNow !== lastQueuedCount) {
+        await refreshAll();
+      } else {
+        state.cards = result.cards;
+      }
+      lastQueuedCount = state.cards.filter((card) => card.status === "queued").length;
       const activeTag = document.activeElement?.tagName;
       const isTyping = activeTag === "INPUT" || activeTag === "TEXTAREA" || activeTag === "SELECT";
       const isRecording = document.querySelector(".voice-recorder.recording") || document.querySelector(".voice-recorder.recorded");
       const hasModal = !!state.modal;
-      if (state.view === "review" && !isTyping && !isRecording && !hasModal) render();
+      // Refresh whichever tab the user is on (Review or Contacts), so processed
+      // cards surface without a manual reload — but never yank the page out from
+      // under an open form, a recording, or a modal.
+      if (!isTyping && !isRecording && !hasModal) render();
     } catch {
       // Transient network hiccup — the interval will just try again.
     }
