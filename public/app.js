@@ -327,7 +327,6 @@ function authView() {
       <nav class="public-nav">
         <a class="public-brand" href="#top" aria-label="Card2Leads home">
           <strong>Card2Leads</strong>
-          <small>A product of BrillBrains Consultants</small>
         </a>
         <div class="public-links" aria-label="Product sections">
           <a href="#features">Features</a>

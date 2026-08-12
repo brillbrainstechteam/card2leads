@@ -151,7 +151,10 @@ label {
 .shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 216px 1fr;
+  /* minmax(0, 1fr) lets the main column shrink below its content's intrinsic
+     width so a wide child (e.g. a table) scrolls inside its own container
+     instead of stretching the whole page. */
+  grid-template-columns: 216px minmax(0, 1fr);
 }
 
 .sidebar {
@@ -261,8 +264,10 @@ label {
 .main {
   padding: 18px 24px 28px;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   align-content: start;
+  min-width: 0;
 }
 
 .topbar,
@@ -2098,16 +2103,20 @@ label {
 }
 
 .public-hero {
-  width: min(1240px, calc(100% - 44px));
-  margin: 0 auto;
+  /* Full-bleed background so the purple gradient reaches the screen edges
+     instead of leaving white gutters; inner content stays aligned to 1240px
+     via the horizontal padding. */
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
   display: grid;
   grid-template-columns: minmax(0, 0.92fr) minmax(460px, 1.12fr);
   align-items: center;
   gap: 20px;
-  padding: 34px 0 26px;
+  padding: 34px max(22px, calc((100vw - 1240px) / 2)) 26px;
   background:
-    radial-gradient(circle at 84% 24%, rgba(143, 99, 170, 0.12), transparent 50%),
-    linear-gradient(90deg, #ffffff 0%, #ffffff 40%, #f7f4fc 68%, #f2ecfa 100%);
+    radial-gradient(circle at 84% 24%, rgba(143, 99, 170, 0.14), transparent 55%),
+    linear-gradient(90deg, #ffffff 0%, #ffffff 34%, #f7f4fc 62%, #efe7f9 100%);
 }
 
 .hero-copy {
@@ -4995,6 +5004,18 @@ strong {
 }
 
 @media (max-width: 760px) {
+  /* Guard against any single wide child (a table, a long unbroken string)
+     dragging the whole page — and the fixed bottom nav with it — wider than
+     the screen, which forced users to pinch-zoom out. overflow-x: clip stops
+     the spill without creating a scroll container (so sticky/fixed still work);
+     content that must scroll horizontally uses its own .table-wrap. */
+  .shell,
+  .main {
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
   .pricing-section {
     gap: 20px;
   }
