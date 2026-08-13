@@ -2746,6 +2746,7 @@ function setupVoiceRecorder(node, targetType, targetIds, targetLabel) {
         }
       });
       voiceNote = response.voiceNote;
+      const heardSpeech = Boolean(String(voiceNote.transcript || "").trim());
       node.querySelector("#voiceTranscript").value = voiceNote.transcript || "";
       node.querySelector("#voiceInterest").value = voiceNote.interest || "";
       node.querySelector("#voiceBudget").value = voiceNote.budget || "";
@@ -2754,11 +2755,21 @@ function setupVoiceRecorder(node, targetType, targetIds, targetLabel) {
       node.querySelector("#voiceAudioLink").innerHTML = voiceNote.audioUrl ? `<audio controls preload="none" src="${escapeAttr(voiceNote.audioUrl)}"></audio>` : "";
       resultBox.classList.remove("hidden");
       applyBtn.disabled = false;
-      liveLabel.textContent = "Voice note ready";
-      const confirmText = targetIds.length > 1
-        ? `Review carefully. Apply only if this note belongs to all ${targetLabel}.`
-        : "Transcript ready. Review it, then apply the voice note.";
-      setStatus(confirmText);
+      if (!heardSpeech) {
+        // The recording produced audio but no words came back — almost always a
+        // muted/blocked mic or a silent room. Say so plainly instead of the
+        // misleading "Transcript ready", and let them re-record or type it in.
+        liveLabel.textContent = "No speech detected";
+        transcribeBtn.disabled = false;
+        transcribeBtn.classList.remove("hidden");
+        setStatus("We couldn't hear any speech in that recording. Check that your microphone is on and not muted, then tap Re-record — or type the note below.", true);
+      } else {
+        liveLabel.textContent = "Voice note ready";
+        const confirmText = targetIds.length > 1
+          ? `Review carefully. Apply only if this note belongs to all ${targetLabel}.`
+          : "Transcript ready. Review it, then apply the voice note.";
+        setStatus(confirmText);
+      }
       window.requestAnimationFrame(() => resultBox.scrollIntoView({ behavior: "smooth", block: "nearest" }));
     } catch (err) {
       transcribeBtn.disabled = false;
