@@ -3521,6 +3521,10 @@ async function handleApi(req, res, pathname) {
       const files = Array.isArray(body.files) ? body.files : [];
       if (!files.length) return error(res, 400, "Select at least one card image before uploading.");
       if (files.length > MAX_BATCH_FILES) return error(res, 400, `A batch can contain at most ${MAX_BATCH_FILES} files.`);
+      // When staging, cards are stored but not read: they wait in "staged" until
+      // the user taps Start processing (POST /api/uploads/process-pending). This
+      // is the exhibition flow — capture fast now, process the batch later.
+      const stage = body.stage === true;
       const totalBytes = files.reduce(
         (sum, file) => sum + Math.max(0, Number(file.size || 0)) + Math.max(0, Number(file.backSize || 0)),
         0
@@ -3556,7 +3560,7 @@ async function handleApi(req, res, pathname) {
         failedFiles: 0,
         reviewRequiredCount: 0,
         duplicateCount: 0,
-        status: "processing",
+        status: stage ? "staged" : "processing",
         createdAt: now()
       };
       db.uploadBatches.unshift(batch);
@@ -3660,7 +3664,7 @@ async function handleApi(req, res, pathname) {
           backFileSize: Number(file.backSize || 0),
           width: dimensions?.width || null,
           height: dimensions?.height || null,
-          status: "queued",
+          status: stage ? "staged" : "queued",
           extraction: null,
           queuedImageWarning: imageWarning,
           queuedDuplicateInBatchId: duplicateInBatchId || "",
@@ -3679,16 +3683,50 @@ async function handleApi(req, res, pathname) {
       }
       // A batch made entirely of duplicate images is never touched by the queue
       // loop (nothing in it ever reaches "queued"), so it must be finalized
-      // here or it would otherwise sit at "processing" forever.
-      batch.status = batch.failedFiles === files.length
-        ? "failed"
-        : (batch.failedFiles + batch.duplicateCount) === files.length
-          ? "completed"
-          : "processing";
-      audit(db, user, "cards.uploaded", "batch", batch.id, { files: files.length, collectionId: collection.id });
+      // here or it would otherwise sit at "processing" forever. Staged batches
+      // stay "staged" until the user starts processing them.
+      if (!stage) {
+        batch.status = batch.failedFiles === files.length
+          ? "failed"
+          : (batch.failedFiles + batch.duplicateCount) === files.length
+            ? "completed"
+            : "processing";
+      }
+      audit(db, user, stage ? "cards.staged" : "cards.uploaded", "batch", batch.id, { files: files.length, collectionId: collection.id });
+      await saveDb(db);
+      if (!stage) scheduleQueueProcessing();
+      return send(res, 201, { batch, collection, cards, staged: stage });
+    }
+
+    // Promote every staged card to the processing queue. Card ids may be passed
+    // to process a subset; otherwise all of the org's staged cards are started.
+    if (req.method === "POST" && pathname === "/api/uploads/process-pending") {
+      const body = await readJson(req).catch(() => ({}));
+      const requestedIds = Array.isArray(body.cardIds) ? new Set(body.cardIds.map(String)) : null;
+      const staged = db.cards.filter((c) =>
+        c.organisationId === user.organisationId &&
+        c.status === "staged" &&
+        !c.deletedAt &&
+        (!requestedIds || requestedIds.has(c.id))
+      );
+      if (!staged.length) return error(res, 400, "There are no pending cards to process.");
+      const batchIds = new Set();
+      for (const card of staged) {
+        card.status = "queued";
+        card.updatedAt = now();
+        if (card.batchId) batchIds.add(card.batchId);
+      }
+      for (const batchId of batchIds) {
+        const batch = db.uploadBatches.find((b) => b.id === batchId);
+        if (batch) {
+          batch.status = "processing";
+          batch.updatedAt = now();
+        }
+      }
+      audit(db, user, "cards.process_pending", "user", user.id, { count: staged.length });
       await saveDb(db);
       scheduleQueueProcessing();
-      return send(res, 201, { batch, collection, cards });
+      return send(res, 200, { queued: staged.length });
     }
 
     if (req.method === "GET" && pathname === "/api/cards") {

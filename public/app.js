@@ -14,6 +14,7 @@ const state = {
   googleContactsSyncing: false,
   googleContactsSyncStatus: null,
   uploadMode: "existing",
+  uploadTab: "scan",
   selectedCollectionId: "",
   backSideTargetIndex: -1,
   showUploadSettings: false,
@@ -1027,8 +1028,8 @@ function shell() {
       <aside class="sidebar">
         <div class="brand"><strong>Card2Leads</strong><span>${escapeHtml(state.organisation?.name || "Workspace")}</span></div>
         <nav class="nav">
-          ${navButton("upload", "Upload")}
-          ${navButton("review", `Review (${state.cards.length})`)}
+          ${navButton("upload", pendingCards().length ? `Upload (${pendingCards().length} pending)` : "Upload")}
+          ${navButton("review", `Review (${reviewCards().length})`)}
           ${navButton("contacts", `Contacts & Exports (${state.contacts.length})`)}
           ${navButton("account", "Account")}
         </nav>
@@ -1077,7 +1078,10 @@ function navButton(view, label) {
     contacts: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M7 8a3 3 0 100-6 3 3 0 000 6zM14.5 9a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-5.385-1.572zM14.5 16h-.106c.07-.297.088-.611.048-.933a7.47 7.47 0 00-1.588-3.755 4.502 4.502 0 015.874 2.636.818.818 0 01-.36.98A7.465 7.465 0 0114.5 16z"/></svg>',
     account: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M7.84 1.804A1 1 0 018.82 1h2.36a1 1 0 01.98.804l.331 1.652a6.993 6.993 0 011.929 1.115l1.598-.54a1 1 0 011.186.447l1.18 2.044a1 1 0 01-.205 1.251l-1.267 1.113a7.047 7.047 0 010 2.228l1.267 1.113a1 1 0 01.206 1.25l-1.18 2.045a1 1 0 01-1.187.447l-1.598-.54a6.993 6.993 0 01-1.929 1.115l-.33 1.652a1 1 0 01-.98.804H8.82a1 1 0 01-.98-.804l-.331-1.652a6.993 6.993 0 01-1.929-1.115l-1.598.54a1 1 0 01-1.186-.447l-1.18-2.044a1 1 0 01.205-1.251l1.267-1.114a7.05 7.05 0 010-2.227L1.821 7.773a1 1 0 01-.206-1.25l1.18-2.045a1 1 0 011.187-.447l1.598.54A6.993 6.993 0 017.51 3.456l.33-1.652zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>'
   };
-  const count = view === "review" ? state.cards.length : view === "contacts" ? state.contacts.length : 0;
+  const count = view === "review" ? reviewCards().length
+    : view === "contacts" ? state.contacts.length
+    : view === "upload" ? pendingCards().length
+    : 0;
   return `<button class="${state.view === view ? "active" : ""}" data-view="${view}" aria-label="${escapeAttr(label)}">
     <span class="nav-icon" aria-hidden="true">${svgIcons[view]}</span>
     <span class="nav-full">${label}</span>
@@ -1296,6 +1300,7 @@ function metric(label, value) {
 }
 
 function uploadView() {
+  if (state.uploadTab === "pending") return withUploadSubtabs(pendingPanel());
   const c = state.overview.activeCollection || {
     id: "",
     name: "",
@@ -1400,7 +1405,8 @@ function uploadView() {
         <p id="processingTip" class="processing-tip"></p>
       </div>
       <div class="actions upload-submit-actions">
-        <button id="uploadBtn" ${state.selectedFiles.length ? "" : "disabled"}>Upload and read cards</button>
+        <button id="stageBtn" ${state.selectedFiles.length ? "" : "disabled"}>Add to Pending</button>
+        <button class="secondary" id="uploadBtn" ${state.selectedFiles.length ? "" : "disabled"}>Upload &amp; read now</button>
         ${state.selectedFiles.length ? `<button class="secondary" id="clearFilesBtn" type="button">Clear</button>` : ""}
       </div>
     </section>
@@ -1566,7 +1572,185 @@ function uploadView() {
     render();
   });
   node.querySelector("#uploadBtn").addEventListener("click", () => uploadFiles(node));
+  node.querySelector("#stageBtn")?.addEventListener("click", () => stagePendingFiles(node));
+  return withUploadSubtabs(node);
+}
+
+// Wraps the Upload screen content with the [Scan / Upload] / [Pending] sub-tabs.
+function withUploadSubtabs(content) {
+  const pendingCount = pendingCards().length;
+  const wrap = el(`
+    <div class="upload-wrap">
+      <div class="upload-subtabs" role="tablist" aria-label="Upload sections">
+        <button type="button" role="tab" class="upload-subtab ${state.uploadTab !== "pending" ? "active" : ""}" data-upload-tab="scan" aria-selected="${state.uploadTab !== "pending"}">Scan / Upload</button>
+        <button type="button" role="tab" class="upload-subtab ${state.uploadTab === "pending" ? "active" : ""}" data-upload-tab="pending" aria-selected="${state.uploadTab === "pending"}">Pending${pendingCount ? ` (${pendingCount})` : ""}</button>
+      </div>
+    </div>
+  `);
+  wrap.querySelectorAll("[data-upload-tab]").forEach((btn) => btn.addEventListener("click", () => {
+    state.uploadTab = btn.dataset.uploadTab;
+    clearMessage(false);
+    render();
+  }));
+  wrap.appendChild(content);
+  return wrap;
+}
+
+// The Pending sub-tab: staged cards awaiting a batch "Start processing".
+function pendingPanel() {
+  const pending = pendingCards();
+  const node = el(`
+    <section class="panel pending-panel">
+      ${pending.length ? `
+        <div class="pending-head">
+          <div>
+            <h2>Pending cards (${pending.length})</h2>
+            <p class="muted">Add a voice note or the back of a card to any of these, then process them all together. Nothing is read until you tap Start processing.</p>
+          </div>
+          <div class="pending-head-actions">
+            <button type="button" id="startProcessing">Start processing (${pending.length})</button>
+            <button type="button" class="secondary slim" id="clearPending">Clear all</button>
+          </div>
+        </div>
+        <ul class="pending-list">${pending.map(pendingCardMarkup).join("")}</ul>
+      ` : `
+        <div class="pending-empty">
+          <div class="pending-empty-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="34" height="34"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/></svg>
+          </div>
+          <h2>No cards waiting</h2>
+          <p class="muted">Cards you scan or upload wait here until you start processing them as a batch — ideal for capturing quickly at an event and reading them all later.</p>
+          <button type="button" class="secondary" id="goScan">Scan or upload cards</button>
+        </div>
+      `}
+    </section>
+  `);
+  node.querySelector("#startProcessing")?.addEventListener("click", startPendingProcessing);
+  node.querySelector("#clearPending")?.addEventListener("click", clearPendingCards);
+  node.querySelector("#goScan")?.addEventListener("click", () => { state.uploadTab = "scan"; render(); });
+  node.querySelectorAll("[data-pending-voice]").forEach((btn) => btn.addEventListener("click", () => {
+    const card = pending.find((c) => c.id === btn.dataset.pendingVoice);
+    showVoiceNoteModal("card", [btn.dataset.pendingVoice], card?.originalFileName || "this card");
+  }));
+  node.querySelectorAll("[data-pending-delete]").forEach((btn) => btn.addEventListener("click", () => deletePendingCard(btn.dataset.pendingDelete)));
   return node;
+}
+
+function pendingCardMarkup(card) {
+  const hasVoice = Boolean(card.extraction?.voiceTranscript);
+  return `<li class="pending-card">
+    <div class="pending-card-media">
+      ${card.storageUrl ? `<img src="${escapeAttr(card.storageUrl)}" alt="Card ${escapeAttr(card.originalFileName || "")}" loading="lazy" />` : `<div class="pending-noimg">No preview</div>`}
+      ${card.pairMode === "front-back" ? `<span class="pending-tag">Front + back</span>` : ""}
+    </div>
+    <div class="pending-card-body">
+      <strong title="${escapeAttr(card.originalFileName || "Card")}">${escapeHtml(card.originalFileName || "Card")}</strong>
+      ${hasVoice ? `<span class="pending-voice-badge"><span class="button-mic-icon" aria-hidden="true"></span>Voice note added</span>` : `<span class="pending-hint">No voice note yet</span>`}
+      <div class="pending-card-actions">
+        <button type="button" class="secondary slim" data-pending-voice="${escapeAttr(card.id)}"><span class="button-mic-icon" aria-hidden="true"></span>${hasVoice ? "Re-record" : "Add voice note"}</button>
+        <button type="button" class="danger slim" data-pending-delete="${escapeAttr(card.id)}">Delete</button>
+      </div>
+    </div>
+  </li>`;
+}
+
+async function startPendingProcessing() {
+  const pending = pendingCards();
+  if (!pending.length) return;
+  try {
+    const result = await api("/api/uploads/process-pending", { method: "POST", body: {} });
+    await refreshAll();
+    state.uploadTab = "scan";
+    state.message = { text: `Processing ${result.queued} card(s). They move to Contacts automatically as they're read.`, bad: false };
+    window.EasySaveNative?.haptic("success");
+    navigateToView("review");
+    ensureQueuePolling();
+  } catch (err) {
+    setMessage(err.message, true);
+  }
+}
+
+function clearPendingCards() {
+  const pending = pendingCards();
+  if (!pending.length) return;
+  state.modal = {
+    tone: "danger",
+    title: `Delete ${pending.length} pending card(s)?`,
+    body: "This removes the uploaded images without processing them. This cannot be undone.",
+    cancelText: "Keep them",
+    confirmText: "Delete all",
+    confirmClass: "danger",
+    onConfirm: async () => {
+      try {
+        await Promise.all(pending.map((card) => api(`/api/cards/${card.id}`, { method: "DELETE" })));
+        await refreshAll();
+        state.message = { text: "Pending cards cleared.", bad: false };
+        render();
+      } catch (err) {
+        setMessage(err.message, true);
+      }
+    }
+  };
+  render();
+}
+
+async function deletePendingCard(cardId) {
+  try {
+    await api(`/api/cards/${cardId}`, { method: "DELETE" });
+    await refreshAll();
+    render();
+  } catch (err) {
+    setMessage(err.message, true);
+  }
+}
+
+// Uploads the selected cards as "staged" (no AI read yet) and jumps to Pending.
+async function stagePendingFiles(node) {
+  if (!state.selectedFiles.length) return;
+  const stageBtn = node.querySelector("#stageBtn");
+  const originalText = stageBtn.textContent;
+  stageBtn.disabled = true;
+  stageBtn.textContent = "Adding…";
+  try {
+    const files = await Promise.all(state.selectedFiles.map(readCardFileData));
+    const createNewCollection = !node.querySelector("#existingCollectionSelect");
+    syncUploadDraft(node);
+    const requestedCollectionName = (node.querySelector("#collectionName")?.value || "").trim();
+    const requestedExhibitionName = (node.querySelector("#exhibitionName")?.value || "").trim() || requestedCollectionName;
+    const body = {
+      files,
+      stage: true,
+      createNewCollection,
+      collectionId: createNewCollection ? "" : (node.querySelector("#existingCollectionSelect")?.value || state.selectedCollectionId || state.overview.activeCollection?.id || ""),
+      collectionName: requestedCollectionName || requestedExhibitionName,
+      exhibitionName: requestedExhibitionName,
+      exhibitionDate: node.querySelector("#exhibitionDate")?.value || "",
+      destinationType: state.overview.activeCollection?.destinationType || "excel",
+      destinationName: destinationNameForUpload(node)
+    };
+    const result = await api("/api/uploads", { method: "POST", body });
+    state.selectedFiles.forEach((file) => {
+      if (file.previewUrl) URL.revokeObjectURL(file.previewUrl);
+      if (file.backPreviewUrl) URL.revokeObjectURL(file.backPreviewUrl);
+    });
+    state.selectedFiles = [];
+    await refreshAll();
+    state.selectedCollectionId = result.collection?.id || "";
+    state.uploadMode = "existing";
+    state.showUploadSettings = false;
+    state.showUploadOptions = false;
+    state.draftCollectionName = "";
+    state.draftExhibitionName = "";
+    state.draftExhibitionDate = "";
+    state.uploadTab = "pending";
+    state.message = { text: `${result.cards.length} card(s) added to Pending. Add voice notes if you like, then tap Start processing when you're ready.`, bad: false };
+    window.EasySaveNative?.haptic("success");
+    render();
+  } catch (err) {
+    setMessage(err.message, true);
+    stageBtn.disabled = false;
+    stageBtn.textContent = originalText;
+  }
 }
 
 async function uploadFiles(node) {
@@ -1855,9 +2039,19 @@ function readOriginalFile(file, preprocessing) {
   });
 }
 
+// Staged cards live in the Upload → Pending sub-tab, not in Review.
+function reviewCards() {
+  return state.cards.filter((card) => card.status !== "staged");
+}
+
+function pendingCards() {
+  return state.cards.filter((card) => card.status === "staged");
+}
+
 function reviewView() {
-  const validCount = state.cards.filter((card) => card.status === "completed" && card.extraction?.name && card.extraction?.mobileNumber).length;
-  if (!state.cards.length) {
+  const cards = reviewCards();
+  const validCount = cards.filter((card) => card.status === "completed" && card.extraction?.name && card.extraction?.mobileNumber).length;
+  if (!cards.length) {
     const processedCount = Number(state.overview?.usage?.used || 0);
     const contactCount = state.contacts.length || 0;
     const emptyNode = el(`
@@ -1897,8 +2091,8 @@ function reviewView() {
     });
     return emptyNode;
   }
-  const queuedCount = state.cards.filter((card) => card.status === "queued").length;
-  const readyCount = state.cards.filter((card) => card.status === "completed").length;
+  const queuedCount = cards.filter((card) => card.status === "queued").length;
+  const readyCount = cards.filter((card) => card.status === "completed").length;
   const remaining = Number(state.overview?.usage?.remaining ?? Infinity);
   const limitReached = queuedCount > 0 && remaining <= 0;
   const collectionName = escapeHtml(state.overview?.activeCollection?.exhibitionName || state.overview?.activeCollection?.name || "");
@@ -1918,7 +2112,7 @@ function reviewView() {
             <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path d="M15.98 1.804a1 1 0 00-1.96 0l-.24 1.192a1 1 0 01-.784.785l-1.192.238a1 1 0 000 1.962l1.192.238a1 1 0 01.785.785l.238 1.192a1 1 0 001.962 0l.238-1.192a1 1 0 01.785-.785l1.192-.238a1 1 0 000-1.962l-1.192-.238a1 1 0 01-.785-.785l-.238-1.192zM6.949 5.684a1 1 0 00-1.898 0l-.683 2.051a1 1 0 01-.633.633l-2.052.683a1 1 0 000 1.898l2.052.684a1 1 0 01.633.632l.683 2.052a1 1 0 001.898 0l.683-2.052a1 1 0 01.633-.632l2.052-.684a1 1 0 000-1.898l-2.052-.683a1 1 0 01-.633-.633L6.95 5.684zM13.949 13.684a1 1 0 00-1.898 0l-.184.551a1 1 0 01-.632.633l-.551.183a1 1 0 000 1.898l.551.183a1 1 0 01.633.633l.183.551a1 1 0 001.898 0l.184-.551a1 1 0 01.632-.633l.551-.183a1 1 0 000-1.898l-.551-.184a1 1 0 01-.633-.632l-.183-.551z"/></svg>
             Save ready contacts (${validCount})
           </button>
-          <button type="button" class="secondary slim" id="voiceBatch" ${state.cards.length ? "" : "disabled"}>
+          <button type="button" class="secondary slim" id="voiceBatch" ${cards.length ? "" : "disabled"}>
             <span class="button-mic-icon" aria-hidden="true"></span> Add voice note to batch
           </button>
         </div>
@@ -1942,11 +2136,11 @@ function reviewView() {
   node.querySelector("#reviewGoContacts")?.addEventListener("click", () => navigateToView("contacts"));
   node.querySelector("#saveAllValid").addEventListener("click", saveAllValidContacts);
   node.querySelector("#voiceBatch").addEventListener("click", () => {
-    const ids = state.cards.map((card) => card.id);
+    const ids = cards.map((card) => card.id);
     showVoiceNoteModal("batch", ids, `${ids.length} review card(s)`);
   });
   const list = node.querySelector(".review-list");
-  state.cards.forEach((card, index) => list.appendChild(cardReview(card, index + 1)));
+  cards.forEach((card, index) => list.appendChild(cardReview(card, index + 1)));
   return node;
 }
 
