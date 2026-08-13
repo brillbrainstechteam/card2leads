@@ -489,7 +489,7 @@ function authView() {
           </article>
         </div>
         <p class="google-section-note">Card2Leads does not require Google integration for business-card scanning features that do not depend on Google services. You can disconnect your Google account or revoke Card2Leads' Google permissions at any time. Card2Leads does not access Gmail, Google Calendar or unrelated Google Drive files.</p>
-        <p class="google-section-link"><a href="/privacy.html" target="_blank" rel="noopener">Learn how we use Google data → Privacy Policy</a></p>
+        <p class="google-section-link"><a href="/privacy-policy" target="_blank" rel="noopener">Learn how we use Google data → Privacy Policy</a></p>
       </section>
 
       <section class="public-section pricing-section" id="pricing">
@@ -635,10 +635,10 @@ function authView() {
         <nav class="public-footer-links" aria-label="Product, legal and contact links">
           <a href="#features">Features</a>
           <a href="#exports">How It Works</a>
-          <a href="/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>
-          <a href="/terms.html" target="_blank" rel="noopener">Terms of Use</a>
+          <a href="/privacy-policy" target="_blank" rel="noopener">Privacy Policy</a>
+          <a href="/terms" target="_blank" rel="noopener">Terms of Use</a>
           <a href="/retention.html" target="_blank" rel="noopener">Data Retention</a>
-          <a href="/contact.html" target="_blank" rel="noopener">Contact Us</a>
+          <a href="/contact" target="_blank" rel="noopener">Contact Us</a>
           <a href="#top" data-auth-mode="login">Sign In</a>
         </nav>
         <p class="public-footer-note">&copy; ${new Date().getFullYear()} BrillBrains Consultants Pvt. Ltd. All rights reserved.</p>
@@ -704,7 +704,7 @@ function authFormMarkup(isSignup, isForgot, isReset) {
       ${isSignup ? `<label>Full name <input name="name" autocomplete="name" required /></label>` : ""}
       ${isReset ? `<input name="token" type="hidden" value="${escapeAttr(state.resetToken)}" />` : `<label>Email <input name="email" type="email" autocomplete="email" required /></label>`}
       ${isForgot ? "" : `<label>Password <input name="password" type="password" autocomplete="${isSignup || isReset ? "new-password" : "current-password"}" required />${isSignup || isReset ? `<span class="field-help">Use at least 10 characters with uppercase, lowercase, number, and symbol.</span>` : ""}</label>`}
-      ${isSignup ? `<label class="checkbox-label"><input name="acceptTerms" type="checkbox" required /> <span>I accept the <a href="/terms.html" target="_blank">terms</a> and <a href="/privacy.html" target="_blank">privacy policy</a></span></label>` : ""}
+      ${isSignup ? `<label class="checkbox-label"><input name="acceptTerms" type="checkbox" required /> <span>I accept the <a href="/terms" target="_blank">terms</a> and <a href="/privacy-policy" target="_blank">privacy policy</a></span></label>` : ""}
       <div class="actions">
         <button type="submit">${isReset ? "Update password" : isForgot ? "Send reset link" : isSignup ? "Create account" : "Log in"}</button>
       </div>
@@ -4041,8 +4041,8 @@ function accountView() {
           <h3>Privacy documents</h3>
           <p class="muted">Use these as starter pages before selling. Replace with lawyer-reviewed terms for production.</p>
           <div class="actions">
-            <a href="/privacy.html" target="_blank"><button class="secondary" type="button">Privacy policy</button></a>
-            <a href="/terms.html" target="_blank"><button class="secondary" type="button">Terms</button></a>
+            <a href="/privacy-policy" target="_blank"><button class="secondary" type="button">Privacy policy</button></a>
+            <a href="/terms" target="_blank"><button class="secondary" type="button">Terms</button></a>
             <a href="/retention.html" target="_blank"><button class="secondary" type="button">Data retention</button></a>
           </div>
         </div>
@@ -4208,8 +4208,8 @@ function accountBillingView() {
           <h3>Privacy documents</h3>
           <p class="muted">Use these as starter pages before selling. Replace with lawyer-reviewed terms for production.</p>
           <div class="actions">
-            <a href="/privacy.html" target="_blank"><button class="secondary" type="button">Privacy policy</button></a>
-            <a href="/terms.html" target="_blank"><button class="secondary" type="button">Terms</button></a>
+            <a href="/privacy-policy" target="_blank"><button class="secondary" type="button">Privacy policy</button></a>
+            <a href="/terms" target="_blank"><button class="secondary" type="button">Terms</button></a>
             <a href="/retention.html" target="_blank"><button class="secondary" type="button">Data retention</button></a>
           </div>
         </div>

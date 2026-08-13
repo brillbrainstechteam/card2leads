@@ -5299,6 +5299,11 @@ const server = http.createServer((req, res) => {
   if (url.pathname.startsWith("/api/")) return handleApi(req, res, url.pathname);
   if (url.pathname.startsWith("/illustrations-final/")) return serveFinalIllustration(req, res, url.pathname);
   if (url.pathname.startsWith("/illustrations/")) return serveIllustration(req, res, url.pathname);
+  // Clean, crawlable URLs for the public legal/contact pages. These return the
+  // page HTML directly (HTTP 200, no redirect, no login) so /privacy-policy is a
+  // real link Google's OAuth verification can follow and match to Branding.
+  const CLEAN_PAGE_ROUTES = { "/privacy-policy": "/privacy.html", "/terms": "/terms.html", "/contact": "/contact.html" };
+  if (CLEAN_PAGE_ROUTES[url.pathname]) return serveStatic(req, res, CLEAN_PAGE_ROUTES[url.pathname]);
   return serveStatic(req, res, url.pathname);
 });
 

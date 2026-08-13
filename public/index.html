@@ -52,10 +52,68 @@
     </script>
 
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="stylesheet" href="/styles.css?v=20260813-19" />
+    <link rel="stylesheet" href="/styles.css?v=20260813-20" />
+    <style>
+      /* Styles for the static, crawlable homepage fallback below. It is present
+         in the raw HTML for search engines and Google's OAuth verification
+         crawler (which may not run JavaScript) and is replaced by the
+         interactive app once app.js loads. */
+      .static-home { max-width: 860px; margin: 0 auto; padding: 28px 22px 64px; color: #2a3142; font-size: 16px; line-height: 1.6; }
+      .static-home a { color: #6c3fa4; }
+      .static-home-nav { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 20px; border-bottom: 1px solid #e6e2ee; }
+      .static-home-brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 20px; color: #1b2942; text-decoration: none; text-transform: uppercase; letter-spacing: .02em; }
+      .static-home-nav nav { display: flex; flex-wrap: wrap; gap: 16px; }
+      .static-home-nav nav a { text-decoration: none; font-weight: 600; }
+      .static-home h1 { font-size: 34px; line-height: 1.15; color: #060f3f; margin: 28px 0 6px; }
+      .static-home-tagline { font-size: 19px; font-weight: 600; color: #6c3fa4; margin: 0 0 18px; }
+      .static-home h2 { font-size: 20px; color: #1b2942; margin: 26px 0 8px; }
+      .static-home ul { padding-left: 20px; }
+      .static-home-operator { font-weight: 600; color: #55606c; }
+      .static-home-legal { margin-top: 24px; padding-top: 16px; border-top: 1px solid #e6e2ee; font-weight: 600; }
+    </style>
   </head>
   <body>
-    <div id="app"></div>
-    <script src="/app.js?v=20260813-19"></script>
+    <div id="app">
+      <!-- Static homepage content: crawlable without JavaScript, replaced by the
+           interactive app when app.js runs. Keep the product name "Card2Leads"
+           as visible text so it matches the Google OAuth consent-screen app name. -->
+      <main class="static-home">
+        <header class="static-home-nav">
+          <a class="static-home-brand" href="/" aria-label="Card2Leads">
+            <span>Card2Leads</span>
+          </a>
+          <nav aria-label="Primary">
+            <a href="#features">Features</a>
+            <a href="/privacy-policy">Privacy Policy</a>
+            <a href="/terms">Terms of Use</a>
+            <a href="/contact">Contact</a>
+          </nav>
+        </header>
+
+        <h1>Card2Leads</h1>
+        <p class="static-home-tagline">Business Card Scanning &amp; Contact Management</p>
+        <p>Card2Leads helps businesses and professionals turn business cards into organised digital contacts. Scan or upload business cards, extract names, phone numbers, email addresses, companies and designations, review and correct the details, add labels and voice notes, and export your records as Excel, CSV or VCF files.</p>
+        <p>You can also optionally connect your Google account to save selected contacts to <strong>Google Contacts</strong> or create and update contact records in <strong>Google Sheets</strong>. Connecting Google is optional and is only requested when you choose to use a feature that needs it.</p>
+        <p class="static-home-operator">Card2Leads is operated by BrillBrains Consultants Pvt. Ltd.</p>
+
+        <h2 id="features">What you can do with Card2Leads</h2>
+        <ul>
+          <li>Scan a business card with your camera or upload single and bulk card images.</li>
+          <li>Automatically extract contact details from each card.</li>
+          <li>Review and correct the extracted information before saving.</li>
+          <li>Add labels, notes and voice notes to organise your leads.</li>
+          <li>Export contacts as Excel, CSV or VCF files.</li>
+          <li>Optionally sync selected contacts to Google Contacts and Google Sheets.</li>
+        </ul>
+
+        <p class="static-home-legal">
+          <a href="/privacy-policy">Privacy Policy</a> ·
+          <a href="/terms">Terms of Use</a> ·
+          <a href="/contact">Contact Us</a>
+        </p>
+        <p>&copy; 2026 BrillBrains Consultants Pvt. Ltd. All rights reserved.</p>
+      </main>
+    </div>
+    <script src="/app.js?v=20260813-20"></script>
   </body>
 </html>
