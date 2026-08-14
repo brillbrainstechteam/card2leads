@@ -59,6 +59,15 @@ const PLAN_LIMITS = Object.freeze({
   event: 300
 });
 
+// Pay-to-start (D4): new accounts get zero scan access until they subscribe.
+// The single demo account is exempt — set DEMO_ACCOUNT_EMAIL in .env to the
+// address that should scan without paying, with an optional scan allowance.
+const DEMO_ACCOUNT_EMAIL = String(process.env.DEMO_ACCOUNT_EMAIL || "").trim().toLowerCase();
+const DEMO_ACCOUNT_SCANS = Math.max(0, Number(process.env.DEMO_ACCOUNT_SCANS || 500));
+function isDemoEmail(email) {
+  return Boolean(DEMO_ACCOUNT_EMAIL) && String(email || "").trim().toLowerCase() === DEMO_ACCOUNT_EMAIL;
+}
+
 // --- Razorpay billing (subscriptions + one-time top-up) ---
 const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || "";
 const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || "";
@@ -1051,8 +1060,10 @@ async function processQueueCycle() {
     }
 
     const results = await mapWithConcurrency(toProcess, EXTRACTION_CONCURRENCY, async ({ card, collection }) => {
+      // A poor-quality image never reaches the paid OCR step, so it must not
+      // consume a scan credit — mark it non-billable (billable: false).
       if (card.queuedImageWarning) {
-        return { cardId: card.id, extracted: makeManualReviewExtraction(card.originalFileName, collection, card.queuedImageWarning) };
+        return { cardId: card.id, extracted: makeManualReviewExtraction(card.originalFileName, collection, card.queuedImageWarning), billable: false };
       }
       try {
         const imageBuffer = fs.readFileSync(card.storagePath);
@@ -1068,9 +1079,10 @@ async function processQueueCycle() {
           file.backDataUrl = `data:${file.backType};base64,${backBuffer.toString("base64")}`;
         }
         const extracted = await extractBusinessCard(file, collection);
-        return { cardId: card.id, extracted };
+        // Only a scan the OCR provider actually completed counts as a credit.
+        return { cardId: card.id, extracted, billable: true };
       } catch (err) {
-        return { cardId: card.id, extracted: makeManualReviewExtraction(card.originalFileName, collection, `Automatic scanning failed: ${err.message}`) };
+        return { cardId: card.id, extracted: makeManualReviewExtraction(card.originalFileName, collection, `Automatic scanning failed: ${err.message}`), billable: false };
       }
     });
 
@@ -1084,7 +1096,7 @@ async function processQueueCycle() {
     const batchesById = new Map(db.uploadBatches.map((b) => [b.id, b]));
     const touchedBatchIds = new Set();
 
-    for (const { cardId, extracted } of results) {
+    for (const { cardId, extracted, billable } of results) {
       const card = cardsById.get(cardId);
       if (!card || card.status !== "queued") continue;
 
@@ -1144,10 +1156,13 @@ async function processQueueCycle() {
         }
       }
 
+      // Only count a scan credit when the OCR provider actually processed the
+      // card (billable). Poor-quality images and failed scans are routed to
+      // review without charging the client (D1: only successful scans count).
       const organisation = orgsById.get(card.organisationId);
-      if (organisation) {
+      if (organisation && billable) {
         organisation.scansUsed = Number(organisation.scansUsed || 0) + 1;
-        organisation.scanLimit = Number(organisation.scanLimit || PLAN_LIMITS[organisation.plan] || PLAN_LIMITS.trial);
+        organisation.scanLimit = Number(organisation.scanLimit || PLAN_LIMITS[organisation.plan] || 0);
         organisation.updatedAt = now();
       }
 
@@ -1602,12 +1617,25 @@ function collectionForUser(db, user, requestedId) {
 
 function planUsage(organisation) {
   const plan = String(organisation?.plan || "trial").toLowerCase();
-  const limit = Number(organisation?.scanLimit || PLAN_LIMITS[plan] || PLAN_LIMITS.trial);
   const used = Math.max(0, Number(organisation?.scansUsed || 0));
+  // Pay-to-start: only the demo account or an active paid plan may scan. Everyone
+  // else has zero scan access until they subscribe (no free trial).
+  const entitled = Boolean(organisation?.isDemoAccount) || orgIsPaid(organisation);
+  if (!entitled) {
+    return { plan, limit: 0, used, remaining: 0, requiresPayment: true };
+  }
+  const limit = Number(organisation?.scanLimit || PLAN_LIMITS[plan] || 0);
   if (oneTimePlanExpired(organisation)) {
     return { plan, limit, used, remaining: 0, expired: true };
   }
   return { plan, limit, used, remaining: Math.max(0, limit - used) };
+}
+
+// User-facing reason a scan is blocked, based on a planUsage() result.
+function scanBlockedMessage(usage) {
+  if (usage?.requiresPayment) return "Activate a plan to start scanning your cards. Head to Account to choose a plan.";
+  if (usage?.expired) return "Your plan has expired. Renew it to continue scanning.";
+  return "You've used all your scans for this period. Add scan credits or upgrade to continue.";
 }
 
 function billingConfigured() {
@@ -2664,6 +2692,319 @@ function imageDimensions(buffer, type) {
   return null;
 }
 
+// ===========================================================================
+// Card2Leads Admin Panel — backend (Phase 1).
+// Self-contained: admin tables are read/written via direct SQL (pgPool) and
+// are never part of the customer app's in-memory persistence, so they cannot
+// be clobbered by a customer-app save. Admin reads of CUSTOMER data use
+// readDb(); admin writes to customer records go through readDb()->saveDb().
+// Requires PostgreSQL (production). See docs/PHASE-0-TECHNICAL-AUDIT.md.
+// ===========================================================================
+
+const ADMIN_COOKIE = "admin_session";
+const ADMIN_SESSION_TTL_MS = 8 * 60 * 60 * 1000;   // 8h absolute (D8)
+const ADMIN_IDLE_TIMEOUT_MS = 30 * 60 * 1000;      // 30m idle (D8)
+
+function adminSessionCookie(req, value, maxAgeSeconds) {
+  const attrs = [
+    `${ADMIN_COOKIE}=${value}`,
+    "HttpOnly",
+    "Path=/",
+    "SameSite=Lax",
+    `Max-Age=${maxAgeSeconds}`
+  ];
+  if (isSecureRequest(req)) attrs.push("Secure");
+  return attrs.join("; ");
+}
+
+// Seed the first Super Admin from env on boot (D8). Idempotent.
+async function ensureBootstrapAdmin() {
+  if (!pgPool) return;
+  const email = String(process.env.ADMIN_BOOTSTRAP_EMAIL || "").trim().toLowerCase();
+  const password = String(process.env.ADMIN_BOOTSTRAP_PASSWORD || "");
+  if (!email || !password) return;
+  const existing = await pgPool.query("select id from admin_users where email = $1", [email]);
+  if (existing.rowCount) return;
+  await pgPool.query(
+    `insert into admin_users (id, name, email, password_hash, role, status, created_at, updated_at)
+     values ($1,$2,$3,$4,'super_admin','active',$5,$5)`,
+    [id("adm"), process.env.ADMIN_BOOTSTRAP_NAME || "Super Admin", email, hashPassword(password), now()]
+  );
+  console.log(`Admin: bootstrapped super admin ${email}`);
+}
+
+// Resolve the admin behind the request cookie, enforcing absolute + idle expiry.
+async function currentAdmin(req) {
+  if (!pgPool) return null;
+  const sessionId = verifySessionCookie(parseCookies(req)[ADMIN_COOKIE]);
+  if (!sessionId) return null;
+  const result = await pgPool.query(
+    `select s.id as session_id, s.expires_at, s.last_seen_at,
+            a.id, a.name, a.email, a.role, a.status
+       from admin_sessions s
+       join admin_users a on a.id = s.admin_id
+      where s.id = $1`,
+    [sessionId]
+  );
+  const row = result.rows[0];
+  if (!row || row.status !== "active") return null;
+  const nowMs = Date.now();
+  if (new Date(row.expires_at).getTime() <= nowMs) return null;
+  if (nowMs - new Date(row.last_seen_at).getTime() > ADMIN_IDLE_TIMEOUT_MS) return null;
+  await pgPool.query("update admin_sessions set last_seen_at = $2 where id = $1", [sessionId, now()]);
+  return { sessionId, id: row.id, name: row.name, email: row.email, role: row.role };
+}
+
+async function requireAdmin(req, res) {
+  if (!pgPool) {
+    error(res, 503, "Admin panel requires the PostgreSQL database.");
+    return null;
+  }
+  const admin = await currentAdmin(req);
+  if (!admin) {
+    error(res, 401, "Your admin session has expired. Please sign in again.");
+    return null;
+  }
+  return admin;
+}
+
+async function adminAudit(admin, { clientId = null, action, previousValue = null, newValue = null, reason = null, metadata = {} }) {
+  await pgPool.query(
+    `insert into admin_audit_logs (id, admin_id, admin_email, client_id, action, previous_value, new_value, reason, metadata, created_at)
+     values ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,$9::jsonb,$10)`,
+    [
+      id("aud"), admin.id, admin.email, clientId, action,
+      previousValue == null ? null : JSON.stringify(previousValue),
+      newValue == null ? null : JSON.stringify(newValue),
+      reason, JSON.stringify(metadata || {}), now()
+    ]
+  );
+}
+
+// ---- Lifecycle / summary derivation (in-memory, from customer db) ----------
+
+function orgIsPaid(org) {
+  const status = String(org.subscriptionStatus || "").toLowerCase();
+  const paidModes = ["subscription", "one_time"];
+  return paidModes.includes(String(org.billingMode || "")) &&
+    !["cancelled", "expired", "halted", "completed"].includes(status) &&
+    String(org.plan || "trial").toLowerCase() !== "trial";
+}
+
+function deriveLifecycle(org, activity) {
+  // Account status overrides lifecycle where relevant.
+  if (org.status === "suspended") return "SUSPENDED";
+  if (org.status === "pending_deletion") return "PENDING_DELETION";
+  if (orgIsPaid(org)) {
+    const status = String(org.subscriptionStatus || "").toLowerCase();
+    if (status === "past_due") return "PAYMENT_FAILED";
+    return activity.renewed ? "RENEWED" : "PAID";
+  }
+  // Not paid — where are they in the funnel? (pay-to-start model, Q1)
+  if (activity.scans >= 10 || activity.sessions >= 2 || activity.exports > 0) return "ENGAGED";
+  if (activity.scans > 0) return "ACTIVATED";
+  return "REGISTERED";
+}
+
+function clientActivity(db, org) {
+  const orgCards = db.cards.filter((c) => c.organisationId === org.id);
+  const orgContacts = db.contacts.filter((c) => c.organisationId === org.id && !c.deletedAt);
+  const batches = db.uploadBatches.filter((b) => b.organisationId === org.id);
+  const scans = Number(org.scansUsed || 0);
+  const timestamps = [
+    ...orgContacts.map((c) => c.updatedAt || c.createdAt),
+    ...orgCards.map((c) => c.updatedAt || c.createdAt)
+  ].filter(Boolean).sort();
+  return {
+    scans,
+    sessions: batches.length,
+    contacts: orgContacts.length,
+    exports: 0, // populated from product_events once instrumented (Phase 2)
+    renewed: false,
+    lastActivityAt: timestamps.length ? timestamps[timestamps.length - 1] : null
+  };
+}
+
+function clientSummary(db, org) {
+  const users = db.users.filter((u) => u.organisationId === org.id);
+  const primary = users.find((u) => u.status !== "deleted") || users[0] || null;
+  const activity = clientActivity(db, org);
+  const scanLimit = Number(org.scanLimit || PLAN_LIMITS[org.plan] || 0);
+  const scansUsed = Number(org.scansUsed || 0);
+  return {
+    clientId: org.id,
+    clientName: org.name,
+    primaryUser: primary ? { id: primary.id, name: primary.name, email: primary.email, phone: primary.phone || null } : null,
+    email: primary?.email || null,
+    phone: primary?.phone || null,
+    lifecycle: deriveLifecycle(org, activity),
+    accountStatus: (org.status || "active").toUpperCase(),
+    plan: org.plan || "trial",
+    billingMode: org.billingMode || "none",
+    subscriptionStatus: org.subscriptionStatus || "none",
+    usage: { used: scansUsed, limit: scanLimit, remaining: Math.max(0, scanLimit - scansUsed) },
+    userCount: users.length,
+    lastActivityAt: activity.lastActivityAt,
+    createdAt: org.createdAt
+  };
+}
+
+function withinDays(iso, days) {
+  if (!iso) return false;
+  return Date.now() - new Date(iso).getTime() <= days * 24 * 60 * 60 * 1000;
+}
+
+async function handleAdminApi(req, res, pathname) {
+ try {
+  // --- Auth: login / logout / me (no session required for login) ---
+  if (req.method === "POST" && pathname === "/api/admin/auth/login") {
+    if (!pgPool) return error(res, 503, "Admin panel requires the PostgreSQL database.");
+    if (!rateLimit(req, res, "admin-login", 10, 15 * 60 * 1000)) return;
+    const body = await readJson(req);
+    const email = String(body.email || "").trim().toLowerCase();
+    const result = await pgPool.query("select * from admin_users where email = $1", [email]);
+    const admin = result.rows[0];
+    const passwordOk = verifyPassword(
+      String(body.password || ""),
+      admin && admin.password_hash ? admin.password_hash : DUMMY_PASSWORD_HASH
+    );
+    if (!admin || admin.status !== "active" || !passwordOk) {
+      return error(res, 401, "Incorrect email or password.");
+    }
+    const sessionId = id("asn");
+    const expiresAt = new Date(Date.now() + ADMIN_SESSION_TTL_MS).toISOString();
+    await pgPool.query(
+      `insert into admin_sessions (id, admin_id, created_at, expires_at, last_seen_at, ip, user_agent)
+       values ($1,$2,$3,$4,$3,$5,$6)`,
+      [sessionId, admin.id, now(), expiresAt, clientIp(req), String(req.headers["user-agent"] || "").slice(0, 400)]
+    );
+    await pgPool.query("update admin_users set last_login_at = $2 where id = $1", [admin.id, now()]);
+    await adminAudit({ id: admin.id, email: admin.email }, { action: "ADMIN_LOGIN" });
+    return send(res, 200, { admin: { id: admin.id, name: admin.name, email: admin.email, role: admin.role } }, {
+      "Set-Cookie": adminSessionCookie(req, signSession(sessionId), Math.floor(ADMIN_SESSION_TTL_MS / 1000))
+    });
+  }
+
+  if (req.method === "POST" && pathname === "/api/admin/auth/logout") {
+    if (pgPool) {
+      const sessionId = verifySessionCookie(parseCookies(req)[ADMIN_COOKIE]);
+      if (sessionId) await pgPool.query("delete from admin_sessions where id = $1", [sessionId]);
+    }
+    return send(res, 200, { ok: true }, { "Set-Cookie": adminSessionCookie(req, "", 0) });
+  }
+
+  // --- Everything below requires an authenticated admin ---
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  if (req.method === "GET" && pathname === "/api/admin/auth/me") {
+    return send(res, 200, { admin });
+  }
+
+  if (req.method === "GET" && pathname === "/api/admin/dashboard") {
+    const db = readDb();
+    const orgs = db.organisations;
+    const summaries = orgs.map((o) => clientSummary(db, o));
+    const totalClients = orgs.length;
+    const newSignups7d = orgs.filter((o) => withinDays(o.createdAt, 7)).length;
+    const activated = summaries.filter((s) => s.usage.used > 0).length;
+    const activePaid = summaries.filter((s) => ["PAID", "RENEWED"].includes(s.lifecycle)).length;
+    const usageExhausted = summaries.filter((s) => s.usage.limit > 0 && s.usage.remaining <= 0).length;
+    const [payFail, scansToday] = await Promise.all([
+      pgPool.query("select count(*)::int as n from payments where status = 'failed'"),
+      pgPool.query("select count(*)::int as n from product_events where event_name = 'card_scan_success' and created_at::date = (now() at time zone 'Asia/Kolkata')::date")
+    ]);
+    // Funnel (pay-to-start model): Registered -> Activated -> Engaged -> Paid.
+    const engaged = summaries.filter((s) => ["ENGAGED", "PAID", "RENEWED"].includes(s.lifecycle)).length;
+    const paid = activePaid;
+    const attention = {
+      registeredNotActivated: summaries.filter((s) => s.lifecycle === "REGISTERED").length,
+      activatedNotPaid: summaries.filter((s) => ["ACTIVATED", "ENGAGED"].includes(s.lifecycle)).length,
+      paymentFailed: summaries.filter((s) => s.lifecycle === "PAYMENT_FAILED").length,
+      usageExhausted,
+      suspended: summaries.filter((s) => s.accountStatus === "SUSPENDED").length,
+      pendingDeletion: summaries.filter((s) => s.accountStatus === "PENDING_DELETION").length
+    };
+    return send(res, 200, {
+      kpis: {
+        totalClients, newSignups7d, activatedUsers: activated, activePaidClients: activePaid,
+        conversionPct: totalClients ? Math.round((activePaid / totalClients) * 1000) / 10 : 0,
+        scansToday: scansToday.rows[0].n, failedPayments: payFail.rows[0].n, usageExhausted
+      },
+      funnel: [
+        { stage: "Registered", count: totalClients },
+        { stage: "Activated", count: activated },
+        { stage: "Engaged", count: engaged },
+        { stage: "Paid", count: paid }
+      ],
+      attention
+    });
+  }
+
+  if (req.method === "GET" && pathname === "/api/admin/clients") {
+    const db = readDb();
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const q = String(url.searchParams.get("q") || "").trim().toLowerCase();
+    const lifecycleFilter = String(url.searchParams.get("lifecycle") || "").toUpperCase();
+    const statusFilter = String(url.searchParams.get("status") || "").toUpperCase();
+    const page = Math.max(1, Number(url.searchParams.get("page") || 1));
+    const pageSize = Math.min(100, Math.max(1, Number(url.searchParams.get("pageSize") || 25)));
+
+    let rows = db.organisations.map((o) => clientSummary(db, o));
+    if (q) {
+      rows = rows.filter((s) => {
+        const hay = [s.clientName, s.clientId, s.email, s.phone, s.primaryUser?.name].filter(Boolean).join(" ").toLowerCase();
+        return hay.includes(q);
+      });
+    }
+    if (lifecycleFilter) rows = rows.filter((s) => s.lifecycle === lifecycleFilter);
+    if (statusFilter) rows = rows.filter((s) => s.accountStatus === statusFilter);
+    rows.sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+    const total = rows.length;
+    const start = (page - 1) * pageSize;
+    return send(res, 200, {
+      total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      clients: rows.slice(start, start + pageSize)
+    });
+  }
+
+  if (req.method === "GET" && pathname.startsWith("/api/admin/clients/") && pathname.split("/").length === 5) {
+    const clientId = decodeURIComponent(pathname.split("/")[4]);
+    const db = readDb();
+    const org = db.organisations.find((o) => o.id === clientId);
+    if (!org) return error(res, 404, "Client not found.");
+    const summary = clientSummary(db, org);
+    const users = db.users
+      .filter((u) => u.organisationId === org.id)
+      .map((u) => ({ id: u.id, name: u.name, email: u.email, phone: u.phone || null, status: u.status, createdAt: u.createdAt }));
+    const google = db.googleConnections.find((g) => g.organisationId === org.id);
+    const [ledger, notes, payments, events] = await Promise.all([
+      pgPool.query("select * from usage_ledger where client_id = $1 order by created_at desc limit 100", [clientId]),
+      pgPool.query("select * from admin_notes where client_id = $1 order by created_at desc limit 50", [clientId]),
+      pgPool.query("select * from payments where client_id = $1 order by created_at desc limit 50", [clientId]),
+      pgPool.query("select event_name, created_at, metadata from product_events where client_id = $1 order by created_at desc limit 100", [clientId])
+    ]);
+    await adminAudit(admin, { clientId, action: "CLIENT_VIEWED" }); // D10-lite: log PII access
+    return send(res, 200, {
+      ...summary,
+      users,
+      googleIntegration: google
+        ? { status: google.status, email: google.googleEmail || null, connectedAt: google.createdAt, lastSyncAt: google.updatedAt || null }
+        : { status: "not_connected" },
+      usageLedger: ledger.rows,
+      notes: notes.rows,
+      payments: payments.rows,
+      timeline: events.rows
+    });
+  }
+
+  return error(res, 404, "Unknown admin endpoint.");
+ } catch (err) {
+  console.error("[admin] error:", err && err.stack ? err.stack : err);
+  if (!res.headersSent) return error(res, 500, "Something went wrong in the admin panel.");
+ }
+}
+
 async function handleApi(req, res, pathname) {
   if (req.method === "GET" && pathname === "/api/health") {
     try {
@@ -2762,12 +3103,14 @@ async function handleApi(req, res, pathname) {
       if (passwordError) return error(res, 400, passwordError);
       if (db.users.some((u) => u.email === email)) return error(res, 409, "An account already exists for this email.");
       const verificationToken = randomToken("verify");
+      const demoAccount = isDemoEmail(email);
       const org = {
         id: id("org"),
         name: `${body.name}'s Workspace`,
-        plan: "trial",
-        scanLimit: PLAN_LIMITS.trial,
+        plan: demoAccount ? "demo" : "trial",
+        scanLimit: demoAccount ? DEMO_ACCOUNT_SCANS : 0,
         scansUsed: 0,
+        isDemoAccount: demoAccount,
         topupScans: 0,
         retentionPolicy: "90-days",
         setupComplete: false,
@@ -2939,12 +3282,14 @@ async function handleApi(req, res, pathname) {
       if (user?.googleSubject && user.googleSubject !== profile.sub) return redirect(res, "/?auth=google_failed");
       const existingAccount = Boolean(user);
       if (!user) {
+        const demoAccount = isDemoEmail(googleEmail);
         const org = {
           id: id("org"),
           name: `${profile.name || profile.email}'s Workspace`,
-          plan: "trial",
-          scanLimit: PLAN_LIMITS.trial,
+          plan: demoAccount ? "demo" : "trial",
+          scanLimit: demoAccount ? DEMO_ACCOUNT_SCANS : 0,
           scansUsed: 0,
+          isDemoAccount: demoAccount,
           topupScans: 0,
           retentionPolicy: "90-days",
           setupComplete: false,
@@ -3338,10 +3683,26 @@ async function handleApi(req, res, pathname) {
       const body = await readJson(req);
       const organisation = db.organisations.find((o) => o.id === user.organisationId);
       if (!organisation) return error(res, 404, "Workspace not found.");
-      const businessName = String(body.businessName || "").trim();
-      if (!businessName) return error(res, 400, "Business name is required.");
+      // Onboarding now captures the client's name, company and phone (mandatory)
+      // so the admin panel can identify and search accounts (D3).
+      const companyName = String(body.companyName || body.businessName || "").trim();
+      if (!companyName) return error(res, 400, "Company name is required.");
+      const contactName = String(body.contactName || body.name || user.name || "").trim();
+      if (!contactName) return error(res, 400, "Your name is required.");
+      const phone = String(body.phone || "").trim();
+      if (phone.replace(/\D/g, "").length < 7) return error(res, 400, "A valid phone number is required.");
       const destinationType = ["excel", "google"].includes(body.destinationType) ? body.destinationType : "excel";
-      organisation.name = businessName;
+      user.name = contactName;
+      user.phone = phone;
+      user.updatedAt = now();
+      // Reaffirm demo status here in case DEMO_ACCOUNT_EMAIL was set after signup.
+      if (isDemoEmail(user.email) && !organisation.isDemoAccount) {
+        organisation.isDemoAccount = true;
+        organisation.plan = "demo";
+        organisation.scanLimit = DEMO_ACCOUNT_SCANS;
+      }
+      organisation.name = companyName;
+      organisation.contactPhone = phone;
       organisation.setupComplete = true;
       organisation.defaultExhibitionName = String(body.defaultExhibitionName || "").trim();
       organisation.updatedAt = now();
@@ -3525,6 +3886,16 @@ async function handleApi(req, res, pathname) {
       // the user taps Start processing (POST /api/uploads/process-pending). This
       // is the exhibition flow — capture fast now, process the batch later.
       const stage = body.stage === true;
+      // Pay-to-start: staging (capturing) is always allowed, but actually reading
+      // cards needs scan credits. Block the process-now path up front with a clear
+      // message rather than letting the cards queue and silently never process.
+      if (!stage) {
+        const org = db.organisations.find((o) => o.id === user.organisationId);
+        const usage = planUsage(org);
+        if (usage.remaining <= 0) {
+          return error(res, 402, scanBlockedMessage(usage), { code: "payment_required" });
+        }
+      }
       const totalBytes = files.reduce(
         (sum, file) => sum + Math.max(0, Number(file.size || 0)) + Math.max(0, Number(file.backSize || 0)),
         0
@@ -3710,6 +4081,10 @@ async function handleApi(req, res, pathname) {
         (!requestedIds || requestedIds.has(c.id))
       );
       if (!staged.length) return error(res, 400, "There are no pending cards to process.");
+      // Pay-to-start: reading staged cards needs scan credits.
+      const org = db.organisations.find((o) => o.id === user.organisationId);
+      const usage = planUsage(org);
+      if (usage.remaining <= 0) return error(res, 402, scanBlockedMessage(usage), { code: "payment_required" });
       const batchIds = new Set();
       for (const card of staged) {
         card.status = "queued";
@@ -5296,6 +5671,7 @@ function buildVcf(contacts) {
 const server = http.createServer((req, res) => {
   Object.entries(securityHeaders(req)).forEach(([name, value]) => res.setHeader(name, value));
   const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.pathname.startsWith("/api/admin/")) return handleAdminApi(req, res, url.pathname);
   if (url.pathname.startsWith("/api/")) return handleApi(req, res, url.pathname);
   if (url.pathname.startsWith("/illustrations-final/")) return serveFinalIllustration(req, res, url.pathname);
   if (url.pathname.startsWith("/illustrations/")) return serveIllustration(req, res, url.pathname);
@@ -5310,6 +5686,7 @@ const server = http.createServer((req, res) => {
 if (require.main === module) {
   validateRuntimeConfiguration();
   ensureStorage()
+    .then(() => ensureBootstrapAdmin())
     .then(() => {
       // Set HOST=127.0.0.1 in production so the app is reachable only via the
       // reverse proxy (CloudPanel/nginx) and never exposed publicly on its port.

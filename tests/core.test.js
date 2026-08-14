@@ -439,19 +439,19 @@ test("stored contacts are repaired to their contact-list exhibition", () => {
   assert.equal(db.cards[0].extraction.exhibitionName, "GJEPC");
 });
 
-test("plan usage reports remaining scans", () => {
-  assert.deepEqual(planUsage({ plan: "event", scansUsed: 125 }), {
-    plan: "event",
-    limit: 300,
-    used: 125,
-    remaining: 175
-  });
+test("plan usage reports remaining scans for an active paid plan", () => {
+  const usage = planUsage({ plan: "event", scansUsed: 125, billingMode: "one_time", subscriptionStatus: "paid_once", currentPeriodEnd: "2099-01-01T00:00:00.000Z" });
+  assert.equal(usage.plan, "event");
+  assert.equal(usage.limit, 300);
+  assert.equal(usage.used, 125);
+  assert.equal(usage.remaining, 175);
 });
 
-test("current subscription plans use their configured scan limits", () => {
-  assert.equal(planUsage({ plan: "monthly", scansUsed: 25 }).remaining, 125);
-  assert.equal(planUsage({ plan: "quarterly", scansUsed: 100 }).remaining, 200);
-  assert.equal(planUsage({ plan: "annual", scansUsed: 1000 }).remaining, 500);
+test("active subscription plans use their configured scan limits", () => {
+  const remaining = (plan, used) => planUsage({ plan, scansUsed: used, billingMode: "subscription", subscriptionStatus: "active" }).remaining;
+  assert.equal(remaining("monthly", 25), 125);
+  assert.equal(remaining("quarterly", 100), 200);
+  assert.equal(remaining("annual", 1000), 500);
 });
 
 test("extra scans can only be purchased for an active paid plan", () => {
@@ -529,13 +529,15 @@ test("expired one-time plans cannot use remaining scans", () => {
   });
 });
 
-test("trial accounts receive a 20-scan demo allowance", () => {
-  assert.deepEqual(planUsage({ plan: "trial", scansUsed: 0 }), {
-    plan: "trial",
-    limit: 20,
-    used: 0,
-    remaining: 20
-  });
+test("pay-to-start: unpaid accounts get no scans; demo accounts do", () => {
+  // No free trial — a brand-new/unpaid account cannot scan until it subscribes.
+  const trial = planUsage({ plan: "trial", scansUsed: 0 });
+  assert.equal(trial.remaining, 0);
+  assert.equal(trial.requiresPayment, true);
+  // The single demo account (isDemoAccount) scans against its own allowance.
+  const demo = planUsage({ plan: "demo", isDemoAccount: true, scanLimit: 500, scansUsed: 10 });
+  assert.equal(demo.remaining, 490);
+  assert.equal(demo.requiresPayment, undefined);
 });
 
 test("password rules require length and character classes", () => {

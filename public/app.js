@@ -1135,15 +1135,16 @@ function onboardingView() {
           ${state.authInfo ? `<div class="notice compact">${escapeHtml(state.authInfo)}</div>` : ""}
           ${state.onboardingError ? `<div class="notice bad compact">${escapeHtml(state.onboardingError)}</div>` : ""}
           <form id="onboardingForm" class="grid two setup-form">
-            <label>Business name <input name="businessName" value="${escapeAttr(workspaceName)}" placeholder="Your business name" autocomplete="organization" required /></label>
+            <label>Your name <input name="contactName" value="${escapeAttr(state.user?.name || "")}" placeholder="Your full name" autocomplete="name" required /></label>
+            <label>Company name <input name="companyName" value="${escapeAttr(workspaceName)}" placeholder="Your company or business name" autocomplete="organization" required /></label>
+            <label>Phone number <input name="phone" type="tel" value="${escapeAttr(state.user?.phone || "")}" placeholder="e.g. +91 90000 00000" autocomplete="tel" required /></label>
             <label>Exhibition or event <span class="optional-label">Optional</span><input name="defaultExhibitionName" placeholder="For example, IIJS Premiere 2026" /></label>
             <div class="setup-reassurance wide">
               <span class="setup-check" aria-hidden="true">&#10003;</span>
               <p><strong>Your first contact sheet is automatic.</strong><br />Upload your cards and Card2Leads will prepare it for you.</p>
             </div>
             <div class="actions wide setup-actions">
-              <button type="submit">Start scanning</button>
-              <button type="button" class="secondary" id="skipSetup">Skip for now</button>
+              <button type="submit">Continue</button>
             </div>
           </form>
         </div>
@@ -1169,12 +1170,6 @@ function onboardingView() {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     await completeSetup(Object.fromEntries(new FormData(form).entries()));
-  });
-  node.querySelector("#skipSetup").addEventListener("click", async () => {
-    await completeSetup({
-      businessName: state.organisation?.name || generatedWorkspaceName,
-      defaultExhibitionName: ""
-    });
   });
   node.querySelector("#logoutSetupTop").addEventListener("click", logout);
   return node;
@@ -1666,8 +1661,19 @@ async function startPendingProcessing() {
     navigateToView("review");
     ensureQueuePolling();
   } catch (err) {
-    setMessage(err.message, true);
+    if (!handleScanBlocked(err)) setMessage(err.message, true);
   }
+}
+
+// Pay-to-start: on a 402 the account has no scan credits — surface the message
+// and take them to Account to choose a plan instead of a bare error toast.
+function handleScanBlocked(err) {
+  if (err?.status === 402 || err?.data?.code === "payment_required") {
+    state.message = { text: err.message, bad: true };
+    navigateToView("account");
+    return true;
+  }
+  return false;
 }
 
 function clearPendingCards() {
@@ -1858,7 +1864,7 @@ async function uploadFiles(node) {
     window.EasySaveNative?.haptic("success");
     navigateToView("review");
   } catch (err) {
-    setMessage(err.message, true);
+    if (!handleScanBlocked(err)) setMessage(err.message, true);
   } finally {
     window.clearInterval(timer);
     window.removeEventListener("beforeunload", preventExit);
