@@ -355,9 +355,9 @@ function authView() {
 
       <section class="public-hero" id="top">
         <div class="hero-copy">
-          <p class="section-kicker">Business card capture, simplified</p>
-          <h1>Turn business cards into organised, <em>ready-to-use contacts.</em></h1>
-          <p class="hero-text">Card2Leads is a business-card scanning and contact-management application that converts individual or bulk card uploads into structured contact records. Review extracted details, add labels and voice notes, then export or sync approved contacts to Google Contacts and Google Sheets.</p>
+          <h1 class="hero-brand">Card2Leads</h1>
+          <p class="hero-headline">Turn business cards into organised, <em>ready-to-use contacts.</em></p>
+          <p class="hero-text">Card2Leads is a business-card scanning and contact-management application that converts individual or bulk card uploads into structured contact records. Review extracted details, add labels and voice notes, then export or sync approved contacts to Google Contacts and Google Sheets. Card2Leads is operated by BrillBrains Consultants Pvt. Ltd.</p>
           <div class="hero-actions">
             <button type="button" data-auth-mode="signup">Get Started</button>
           </div>

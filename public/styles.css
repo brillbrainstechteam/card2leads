@@ -2300,17 +2300,28 @@ label {
   margin-bottom: 0;
 }
 
-.hero-copy h1 {
+/* The product name is the h1 so the rendered page's main heading matches the
+   OAuth consent-screen app name ("Card2Leads"); the tagline sits just below. */
+.hero-brand {
+  margin: 0;
+  font-size: clamp(26px, 2.6vw, 34px);
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #1b2942;
+}
+
+.hero-headline {
   max-width: 700px;
   margin: 0;
-  font-size: clamp(32px, 3.4vw, 46px);
+  font-size: clamp(30px, 3.2vw, 44px);
   line-height: 1.12;
   font-weight: 600;
   letter-spacing: 0;
   color: #060f3f;
 }
 
-.hero-copy h1 em {
+.hero-headline em {
   display: block;
   font-style: italic;
   color: var(--purple);
@@ -6439,8 +6450,12 @@ strong {
     display: none;
   }
 
-  .hero-copy h1 {
-    font-size: 36px;
+  .hero-brand {
+    font-size: 26px;
+  }
+
+  .hero-headline {
+    font-size: 34px;
   }
 
   .hero-text {
