@@ -1095,6 +1095,7 @@ async function processQueueCycle() {
     const orgsById = new Map(db.organisations.map((o) => [o.id, o]));
     const batchesById = new Map(db.uploadBatches.map((b) => [b.id, b]));
     const touchedBatchIds = new Set();
+    const scanLogEntries = [];
 
     for (const { cardId, extracted, billable } of results) {
       const card = cardsById.get(cardId);
@@ -1164,6 +1165,15 @@ async function processQueueCycle() {
         organisation.scansUsed = Number(organisation.scansUsed || 0) + 1;
         organisation.scanLimit = Number(organisation.scanLimit || PLAN_LIMITS[organisation.plan] || 0);
         organisation.updatedAt = now();
+        // Log the scan so the admin panel has an auditable per-scan record.
+        const uploaderId = batchesById.get(card.batchId)?.uploadedBy || null;
+        scanLogEntries.push({
+          clientId: organisation.id,
+          userId: uploaderId,
+          referenceId: card.id,
+          demo: Boolean(organisation.isDemoAccount),
+          name: (finalExtraction?.name || "").trim() || null
+        });
       }
 
       const batch = batchesById.get(card.batchId);
@@ -1182,6 +1192,19 @@ async function processQueueCycle() {
     }
 
     await saveDb(db);
+    // Best-effort scan logs (never block the cycle): one usage_ledger
+    // SCAN_CONSUMED row and one product_events scan_completed per billable scan.
+    await Promise.all(scanLogEntries.flatMap((s) => [
+      recordUsageLedger({
+        clientId: s.clientId, userId: s.userId, type: "SCAN_CONSUMED",
+        quantity: 1, balanceEffect: -1, source: "scan", referenceId: s.referenceId,
+        metadata: { demo: s.demo }
+      }),
+      recordProductEvent({
+        name: "scan_completed", clientId: s.clientId, userId: s.userId,
+        source: "queue", metadata: { cardId: s.referenceId, demo: s.demo, hasName: Boolean(s.name) }
+      })
+    ]));
     nextDelay = queuedCards.length > toProcess.length ? 600 : 3000;
   } catch (err) {
     console.error("[queue] processing cycle failed:", err.message);
@@ -1618,10 +1641,12 @@ function collectionForUser(db, user, requestedId) {
 function planUsage(organisation) {
   const plan = String(organisation?.plan || "trial").toLowerCase();
   const used = Math.max(0, Number(organisation?.scansUsed || 0));
-  // Pay-to-start: only the demo account or an active paid plan may scan. Everyone
-  // else has zero scan access until they subscribe (no free trial).
-  const entitled = Boolean(organisation?.isDemoAccount) || orgIsPaid(organisation);
-  if (!entitled) {
+  // The demo/test account scans without limit so it's never blocked mid-test.
+  if (organisation?.isDemoAccount) {
+    return { plan: "demo", limit: Infinity, used, remaining: Number.MAX_SAFE_INTEGER, unlimited: true };
+  }
+  // Pay-to-start: everyone else needs an active paid plan; no free trial.
+  if (!orgIsPaid(organisation)) {
     return { plan, limit: 0, used, remaining: 0, requiresPayment: true };
   }
   const limit = Number(organisation?.scanLimit || PLAN_LIMITS[plan] || 0);
@@ -2854,6 +2879,55 @@ function withinDays(iso, days) {
   return Date.now() - new Date(iso).getTime() <= days * 24 * 60 * 60 * 1000;
 }
 
+// --- Scan / usage logging (admin panel tables, written by direct SQL so they
+// are independent of the customer app's in-memory Postgres rewrite). All writes
+// are best-effort: a logging failure must never break a customer request. ---
+async function recordUsageLedger(entry) {
+  if (!pgPool || !entry?.clientId) return;
+  try {
+    await pgPool.query(
+      `insert into usage_ledger (id, client_id, user_id, transaction_type, quantity, balance_effect, source, reference_id, admin_id, reason, metadata)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [id("ledg"), entry.clientId, entry.userId || null, entry.type, Number(entry.quantity || 0),
+       Number(entry.balanceEffect || 0), entry.source || null, entry.referenceId || null,
+       entry.adminId || null, entry.reason || null, JSON.stringify(entry.metadata || {})]
+    );
+  } catch (err) {
+    console.error("[ledger] write failed:", err.message);
+  }
+}
+
+async function recordProductEvent(event) {
+  if (!pgPool || !event?.name) return;
+  try {
+    await pgPool.query(
+      `insert into product_events (id, event_name, client_id, user_id, session_id, idempotency_key, source, metadata)
+       values ($1,$2,$3,$4,$5,$6,$7,$8) on conflict (idempotency_key) do nothing`,
+      [id("evt"), event.name, event.clientId || null, event.userId || null, event.sessionId || null,
+       event.idempotencyKey || null, event.source || null, JSON.stringify(event.metadata || {})]
+    );
+  } catch (err) {
+    console.error("[event] write failed:", err.message);
+  }
+}
+
+async function recordPayment(payment) {
+  if (!pgPool || !payment?.clientId) return;
+  try {
+    await pgPool.query(
+      `insert into payments (id, client_id, user_id, amount_paise, currency, plan, status, provider, provider_payment_id, provider_order_id, provider_reference, subscription_id, failure_reason, completed_at)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+      [id("pay"), payment.clientId, payment.userId || null, Number(payment.amountPaise || 0),
+       payment.currency || "INR", payment.plan || null, payment.status || "paid", payment.provider || "razorpay",
+       payment.providerPaymentId || null, payment.providerOrderId || null, payment.providerReference || null,
+       payment.subscriptionId || null, payment.failureReason || null,
+       payment.status === "paid" ? new Date() : null]
+    );
+  } catch (err) {
+    console.error("[payment] write failed:", err.message);
+  }
+}
+
 async function handleAdminApi(req, res, pathname) {
  try {
   // --- Auth: login / logout / me (no session required for login) ---
@@ -3523,6 +3597,9 @@ async function handleApi(req, res, pathname) {
       if (!pendingOrder) return error(res, 400, "This payment order was not found for your workspace.");
       if (grantOneTimePlan(organisation, pendingOrder.plan, { orderId, paymentId })) {
         audit(db, user, "billing.one_time_verified", "organisation", organisation.id, { orderId, paymentId, plan: pendingOrder.plan });
+        await recordPayment({ clientId: organisation.id, userId: user.id, amountPaise: PLAN_PRICES_PAISE[pendingOrder.plan] || 0, plan: pendingOrder.plan, status: "paid", providerPaymentId: paymentId, providerOrderId: orderId });
+        await recordUsageLedger({ clientId: organisation.id, userId: user.id, type: "PLAN_ALLOCATION", quantity: PLAN_LIMITS[pendingOrder.plan] || 0, balanceEffect: PLAN_LIMITS[pendingOrder.plan] || 0, source: "plan", referenceId: orderId, metadata: { plan: pendingOrder.plan, mode: "one_time" } });
+        await recordProductEvent({ name: "plan_activated", clientId: organisation.id, userId: user.id, source: "verify", idempotencyKey: `plan:${orderId}`, metadata: { plan: pendingOrder.plan, mode: "one_time" } });
       }
       await saveDb(db);
       return send(res, 200, { ok: true, usage: planUsage(organisation), billing: billingSummary(organisation) });
@@ -3660,6 +3737,14 @@ async function handleApi(req, res, pathname) {
       const collections = db.collections.filter((c) => c.organisationId === user.organisationId && c.status !== "deleted");
       const active = findCollectionForUser(db, user);
       const organisation = db.organisations.find((o) => o.id === user.organisationId);
+      // Flag the demo/test account on any authenticated load, so an account that
+      // already existed before DEMO_ACCOUNT_EMAIL was set still becomes unlimited.
+      if (organisation && isDemoEmail(user.email) && !organisation.isDemoAccount) {
+        organisation.isDemoAccount = true;
+        organisation.plan = "demo";
+        organisation.updatedAt = now();
+        await saveDb(db);
+      }
       const contacts = db.contacts.filter((c) => c.organisationId === user.organisationId && !c.deletedAt);
       const cards = db.cards.filter((c) => c.organisationId === user.organisationId);
       return send(res, 200, {

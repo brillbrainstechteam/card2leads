@@ -534,9 +534,10 @@ test("pay-to-start: unpaid accounts get no scans; demo accounts do", () => {
   const trial = planUsage({ plan: "trial", scansUsed: 0 });
   assert.equal(trial.remaining, 0);
   assert.equal(trial.requiresPayment, true);
-  // The single demo account (isDemoAccount) scans against its own allowance.
-  const demo = planUsage({ plan: "demo", isDemoAccount: true, scanLimit: 500, scansUsed: 10 });
-  assert.equal(demo.remaining, 490);
+  // The single demo/test account scans without limit so testing is never blocked.
+  const demo = planUsage({ plan: "demo", isDemoAccount: true, scansUsed: 10 });
+  assert.equal(demo.unlimited, true);
+  assert.ok(demo.remaining > 1e6);
   assert.equal(demo.requiresPayment, undefined);
 });
 

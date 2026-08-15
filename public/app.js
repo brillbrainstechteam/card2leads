@@ -1363,7 +1363,7 @@ function uploadView() {
           <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9 9a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1zm1-4a.75.75 0 01.75.75v.01a.75.75 0 01-1.5 0V5.75A.75.75 0 0110 5zm-.75 5.75a.75.75 0 011.5 0v3.5a.75.75 0 01-1.5 0v-3.5z" clip-rule="evenodd"/></svg>
           For the best results: fill the frame with the card, use even light, avoid glare and shadows, and hold steady until it's sharp.
         </p>
-        ${state.overview.usage ? `<div class="upload-allowance"><svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" /></svg> ${Number(state.overview.usage.remaining)} scans remaining this period</div>` : ""}
+        ${state.overview.usage ? `<div class="upload-allowance"><svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" /></svg> ${state.overview.usage.unlimited ? "Unlimited scans (test account)" : `${Number(state.overview.usage.remaining)} scans remaining this period`}</div>` : ""}
         <div class="dropzone-actions">
           <label class="upload-picker">
             <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18" aria-hidden="true"><path fill-rule="evenodd" d="M10 3a.75.75 0 01.75.75v5.5h5.5a.75.75 0 010 1.5h-5.5v5.5a.75.75 0 01-1.5 0v-5.5h-5.5a.75.75 0 010-1.5h5.5v-5.5A.75.75 0 0110 3z" clip-rule="evenodd" /></svg>
@@ -4162,7 +4162,7 @@ function accountBillingView() {
       </div>
       <div class="account-block billing-block billing-block-primary">
         <h3>Plan &amp; billing</h3>
-        <p class="muted"><strong>${escapeHtml(statusLabel(usage.plan || "trial"))}</strong> plan &middot; ${Number(usage.used || 0)} of ${Number(usage.limit || 0)} scans used${topupBalance ? ` &middot; ${topupBalance} extra scans remaining` : ""}.</p>
+        <p class="muted"><strong>${escapeHtml(usage.unlimited ? "Test" : statusLabel(usage.plan || "trial"))}</strong> plan &middot; ${usage.unlimited ? `${Number(usage.used || 0)} scans used (unlimited test account)` : `${Number(usage.used || 0)} of ${Number(usage.limit || 0)} scans used${topupBalance ? ` &middot; ${topupBalance} extra scans remaining` : ""}`}.</p>
         <div class="usage-meter"><span style="width:${usagePercent}%"></span></div>
         <p class="muted">${planStatusText}</p>
         ${billing.configured ? `
