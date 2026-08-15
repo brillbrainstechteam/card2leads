@@ -1359,6 +1359,10 @@ function uploadView() {
           <p>${state.selectedFiles.length ? "Add more cards or hit upload to start processing" : "Drag & drop photos here, or choose from your device"}</p>
         </div>
         <p class="dropzone-hint">One card per photo &bull; Front side first &bull; JPG, PNG or WEBP</p>
+        <p class="quality-hint" role="note">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9 9a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1zm1-4a.75.75 0 01.75.75v.01a.75.75 0 01-1.5 0V5.75A.75.75 0 0110 5zm-.75 5.75a.75.75 0 011.5 0v3.5a.75.75 0 01-1.5 0v-3.5z" clip-rule="evenodd"/></svg>
+          For the best results: fill the frame with the card, use even light, avoid glare and shadows, and hold steady until it's sharp.
+        </p>
         ${state.overview.usage ? `<div class="upload-allowance"><svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" /></svg> ${Number(state.overview.usage.remaining)} scans remaining this period</div>` : ""}
         <div class="dropzone-actions">
           <label class="upload-picker">
@@ -1601,6 +1605,10 @@ function pendingPanel() {
           <div>
             <h2>Pending cards (${pending.length})</h2>
             <p class="muted">Add a voice note or the back of a card to any of these, then process them all together. Nothing is read until you tap Start processing.</p>
+            <p class="quality-hint" role="note">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9 9a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1zm1-4a.75.75 0 01.75.75v.01a.75.75 0 01-1.5 0V5.75A.75.75 0 0110 5zm-.75 5.75a.75.75 0 011.5 0v3.5a.75.75 0 01-1.5 0v-3.5z" clip-rule="evenodd"/></svg>
+              Tip: glance over the thumbnails first. Delete and re-take any card that looks blurry, cut off or glared &mdash; a clear photo reads far more accurately.
+            </p>
           </div>
           <div class="pending-head-actions">
             <button type="button" id="startProcessing">Start processing (${pending.length})</button>

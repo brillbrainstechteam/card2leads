@@ -446,6 +446,29 @@ label {
   box-shadow: 0 14px 36px rgba(32, 34, 42, 0.07);
 }
 
+/* Calm, always-on capture guidance. Deliberately static advice rather than a
+   per-image verdict: a blur score on a card-in-hand photo measures the
+   background as much as the text, so it would wrongly reject good scans. */
+.quality-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 6px 0 0;
+  padding: 9px 12px;
+  border-radius: 9px;
+  background: var(--purple-soft, #f0e7f7);
+  color: #4a4459;
+  font-size: 12.5px;
+  line-height: 1.5;
+  text-align: left;
+}
+
+.quality-hint svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--purple, #8f63aa);
+}
+
 /* Upload sub-tabs: Scan / Upload | Pending */
 .upload-wrap {
   display: grid;
