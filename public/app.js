@@ -1673,15 +1673,52 @@ async function startPendingProcessing() {
   }
 }
 
-// Pay-to-start: on a 402 the account has no scan credits — surface the message
-// and take them to Account to choose a plan instead of a bare error toast.
+// Pay-to-start: on a 402 the account has no scan credits — prompt right there
+// with both a one-time pack and a subscription, so they can pay and continue.
 function handleScanBlocked(err) {
   if (err?.status === 402 || err?.data?.code === "payment_required") {
-    state.message = { text: err.message, bad: true };
-    navigateToView("account");
+    showPaymentPrompt(err.message);
     return true;
   }
   return false;
+}
+
+function showPaymentPrompt(message) {
+  const billing = state.overview?.billing || {};
+  const planLabel = { monthly: "1 month", quarterly: "3 months", annual: "1 year" };
+  const scansFor = { monthly: 150, quarterly: 300, annual: 1500 };
+  const priceFor = { monthly: 499, quarterly: 799, annual: 1499 };
+  const oneTime = (Array.isArray(billing.oneTimePlans) && billing.oneTimePlans.length
+    ? billing.oneTimePlans.map((p) => p.plan)
+    : ["monthly", "quarterly", "annual"]);
+  const subs = (Array.isArray(billing.availablePlans) && billing.availablePlans.length
+    ? billing.availablePlans
+    : ["monthly", "quarterly", "annual"]);
+  const optionBtn = (plan, attr, sub) =>
+    `<button type="button" class="pay-option" ${attr}="${escapeAttr(plan)}"><span class="pay-option-name">${planLabel[plan] || plan}</span><strong>&#8377;${priceFor[plan]}</strong><small>${scansFor[plan]} scans &middot; ${sub}</small></button>`;
+  state.modal = {
+    tone: "warn",
+    className: "payment-modal",
+    title: "Activate a plan to start scanning",
+    body: message || "Scanning runs on a paid plan. Choose a one-time pack or a subscription to continue.",
+    contentHtml: `
+      <div class="pay-groups">
+        <div class="pay-group">
+          <h3>Pay once <span class="pay-group-tag">no auto-renewal</span></h3>
+          <div class="pay-options">${oneTime.map((p) => optionBtn(p, "data-pay-once", "pay once")).join("")}</div>
+        </div>
+        <div class="pay-group">
+          <h3>Subscribe <span class="pay-group-tag">auto-renews &middot; cancel anytime</span></h3>
+          <div class="pay-options">${subs.map((p) => optionBtn(p, "data-subscribe-plan", "auto-renews")).join("")}</div>
+        </div>
+      </div>`,
+    actions: [{ label: "See full pricing", className: "secondary", onClick: () => navigateToView("account") }],
+    onRender: (node) => {
+      node.querySelectorAll("[data-pay-once]").forEach((b) => b.addEventListener("click", () => { closeModal(false); startOneTimePlan(b.dataset.payOnce); }));
+      node.querySelectorAll("[data-subscribe-plan]").forEach((b) => b.addEventListener("click", () => { closeModal(false); startSubscription(b.dataset.subscribePlan); }));
+    }
+  };
+  render();
 }
 
 function clearPendingCards() {

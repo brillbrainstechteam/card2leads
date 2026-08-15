@@ -2046,6 +2046,49 @@ label {
   background: #fff;
 }
 
+/* Pay-to-start prompt shown when an unpaid account tries to scan. */
+.payment-modal .dialog { max-width: 640px; }
+.pay-groups {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  text-align: left;
+  margin-top: 4px;
+}
+.pay-group h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--ink);
+}
+.pay-group-tag {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: none;
+}
+.pay-options { display: grid; gap: 8px; }
+.pay-option {
+  display: grid;
+  gap: 1px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.pay-option:hover {
+  border-color: var(--purple, #8f63aa);
+  box-shadow: 0 4px 14px rgba(143, 99, 170, 0.14);
+}
+.pay-option-name { font-size: 12px; font-weight: 600; color: var(--muted); }
+.pay-option strong { font-size: 18px; color: var(--ink); }
+.pay-option small { font-size: 11px; color: var(--muted); }
+@media (max-width: 560px) {
+  .pay-groups { grid-template-columns: 1fr; }
+}
+
 .dialog.plan-required-dialog {
   width: min(660px, 100%);
   gap: 20px;
