@@ -3129,6 +3129,13 @@ async function handleApi(req, res, pathname) {
             resetUsage: event === "subscription.charged" && isNewPeriod
           });
           audit(db, { organisationId: organisation.id }, `billing.${event}`, "organisation", organisation.id, { plan });
+          // Log the recurring charge (the whole webhook is deduped by eventId, so
+          // each subscription.charged for a cycle is recorded exactly once).
+          if (event === "subscription.charged") {
+            await recordPayment({ clientId: organisation.id, amountPaise: Number(paymentEntity?.amount) || PLAN_PRICES_PAISE[plan] || 0, plan, status: "paid", providerPaymentId: paymentEntity?.id || "", subscriptionId: subscriptionEntity?.id || "" });
+            await recordUsageLedger({ clientId: organisation.id, type: "PLAN_ALLOCATION", quantity: PLAN_LIMITS[plan] || 0, balanceEffect: PLAN_LIMITS[plan] || 0, source: "plan", referenceId: subscriptionEntity?.id || "", metadata: { plan, mode: "subscription" } });
+          }
+          await recordProductEvent({ name: "plan_activated", clientId: organisation.id, source: "webhook", idempotencyKey: `sub:${subscriptionEntity?.id}:${eventId || event}`, metadata: { plan, mode: "subscription", event } });
         }
       } else if (["subscription.halted", "subscription.cancelled", "subscription.completed", "subscription.paused"].includes(event)) {
         const organisation = db.organisations.find((o) => o.subscriptionId === subscriptionEntity?.id);
@@ -3146,16 +3153,22 @@ async function handleApi(req, res, pathname) {
         if (organisation && notes.type === "topup" && orderId) {
           organisation.grantedTopupOrders = Array.isArray(organisation.grantedTopupOrders) ? organisation.grantedTopupOrders : [];
           if (!organisation.grantedTopupOrders.includes(orderId)) {
-            grantTopupEntitlement(organisation, Number(notes.scans) || TOPUP_SCANS);
+            const scans = Number(notes.scans) || TOPUP_SCANS;
+            grantTopupEntitlement(organisation, scans);
             organisation.grantedTopupOrders.push(orderId);
             organisation.pendingTopupOrders = (organisation.pendingTopupOrders || []).filter((order) => order.orderId !== orderId);
             audit(db, { organisationId: organisation.id }, "billing.topup_charged", "organisation", organisation.id, { orderId });
+            await recordPayment({ clientId: organisation.id, amountPaise: Number(paymentEntity?.amount) || TOPUP_AMOUNT_PAISE, plan: "topup", status: "paid", providerPaymentId: paymentEntity?.id || "", providerOrderId: orderId });
+            await recordUsageLedger({ clientId: organisation.id, type: "TOPUP_PURCHASE", quantity: scans, balanceEffect: scans, source: "topup", referenceId: orderId, metadata: { scans } });
           }
         } else if (organisation && (notes.type === "one_time_plan" || pendingOneTimeOrder(organisation, orderId)) && orderId) {
           const pendingOrder = pendingOneTimeOrder(organisation, orderId);
           const plan = notes.plan || pendingOrder?.plan || "";
           if (grantOneTimePlan(organisation, plan, { orderId, paymentId: paymentEntity?.id || "" })) {
             audit(db, { organisationId: organisation.id }, "billing.one_time_charged", "organisation", organisation.id, { orderId, plan });
+            await recordPayment({ clientId: organisation.id, amountPaise: PLAN_PRICES_PAISE[plan] || Number(paymentEntity?.amount) || 0, plan, status: "paid", providerPaymentId: paymentEntity?.id || "", providerOrderId: orderId });
+            await recordUsageLedger({ clientId: organisation.id, type: "PLAN_ALLOCATION", quantity: PLAN_LIMITS[plan] || 0, balanceEffect: PLAN_LIMITS[plan] || 0, source: "plan", referenceId: orderId, metadata: { plan, mode: "one_time" } });
+            await recordProductEvent({ name: "plan_activated", clientId: organisation.id, source: "webhook", idempotencyKey: `plan:${orderId}`, metadata: { plan, mode: "one_time" } });
           }
         }
       }
@@ -3650,10 +3663,13 @@ async function handleApi(req, res, pathname) {
       }
       const pendingOrder = pendingTopupOrder(organisation, orderId);
       if (!pendingOrder) return error(res, 400, "This credit order was not found for your workspace.");
-      grantTopupEntitlement(organisation, Number(pendingOrder.scans) || TOPUP_SCANS);
+      const topupScans = Number(pendingOrder.scans) || TOPUP_SCANS;
+      grantTopupEntitlement(organisation, topupScans);
       organisation.grantedTopupOrders.push(orderId);
       organisation.pendingTopupOrders = organisation.pendingTopupOrders.filter((order) => order.orderId !== orderId);
       audit(db, user, "billing.topup_verified", "organisation", organisation.id, { orderId, paymentId });
+      await recordPayment({ clientId: organisation.id, userId: user.id, amountPaise: TOPUP_AMOUNT_PAISE, plan: "topup", status: "paid", providerPaymentId: paymentId, providerOrderId: orderId });
+      await recordUsageLedger({ clientId: organisation.id, userId: user.id, type: "TOPUP_PURCHASE", quantity: topupScans, balanceEffect: topupScans, source: "topup", referenceId: orderId, metadata: { scans: topupScans } });
       await saveDb(db);
       return send(res, 200, { ok: true, usage: planUsage(organisation), billing: billingSummary(organisation) });
     }
