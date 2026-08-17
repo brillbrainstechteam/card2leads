@@ -4576,6 +4576,14 @@ async function handleApi(req, res, pathname) {
       if (note.status === "applied") return error(res, 409, "This voice note has already been applied.");
       const body = await readJson(req);
       const targetIds = Array.isArray(body.targetIds) && body.targetIds.length ? body.targetIds.map(String) : note.targetIds;
+      // The user can correct the transcript or fill in fields the AI left blank
+      // before applying. Overrides update the stored note so the saved record and
+      // the note itself reflect exactly what the user confirmed.
+      if (typeof body.transcript === "string") note.transcript = cleanText(body.transcript);
+      if (typeof body.interest === "string") note.interest = cleanText(body.interest);
+      if (typeof body.budget === "string") note.budget = cleanText(body.budget);
+      if (typeof body.followUpDate === "string") note.followUpDate = cleanText(body.followUpDate);
+      if (typeof body.specialRequirement === "string") note.specialRequirement = cleanText(body.specialRequirement);
       let applied = 0;
       if (note.targetType === "card" || note.targetType === "batch") {
         const cards = db.cards.filter((card) => card.organisationId === user.organisationId && targetIds.includes(card.id) && !card.deletedAt && !["saved", "deleted", "skipped", "skipped_duplicate"].includes(card.status));

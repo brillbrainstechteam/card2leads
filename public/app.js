@@ -2624,12 +2624,13 @@ function showVoiceNoteModal(targetType, targetIds, targetLabel) {
         </div>
         <div id="voiceStatus" class="notice compact">Record a short voice note, ideally under 30 seconds.</div>
         <div id="voiceResult" class="voice-result hidden">
-          <label>Voice-note transcript <textarea id="voiceTranscript" rows="4" readonly></textarea></label>
+          <p class="voice-edit-hint muted">Review the transcript and fields below. You can edit anything or fill in blanks before applying.</p>
+          <label>Voice-note transcript <textarea id="voiceTranscript" rows="4" placeholder="What was said (edit if the transcription got anything wrong)"></textarea></label>
           <div class="grid two">
-            <label>Interest <input id="voiceInterest" readonly /></label>
-            <label>Budget <input id="voiceBudget" readonly /></label>
-            <label>Follow-up <input id="voiceFollowUp" readonly /></label>
-            <label>Special requirement <input id="voiceRequirement" readonly /></label>
+            <label>Interest <input id="voiceInterest" placeholder="e.g. bridal collection" /></label>
+            <label>Budget <input id="voiceBudget" placeholder="e.g. 2 lakh" /></label>
+            <label>Follow-up <input id="voiceFollowUp" placeholder="e.g. next week" /></label>
+            <label>Special requirement <input id="voiceRequirement" placeholder="e.g. custom sizing" /></label>
           </div>
           <div id="voiceAudioLink"></div>
         </div>
@@ -2960,7 +2961,14 @@ function setupVoiceRecorder(node, targetType, targetIds, targetLabel) {
     try {
       const result = await api(`/api/voice-notes/${voiceNote.id}/apply`, {
         method: "POST",
-        body: { targetIds }
+        body: {
+          targetIds,
+          transcript: node.querySelector("#voiceTranscript").value,
+          interest: node.querySelector("#voiceInterest").value,
+          budget: node.querySelector("#voiceBudget").value,
+          followUpDate: node.querySelector("#voiceFollowUp").value,
+          specialRequirement: node.querySelector("#voiceRequirement").value
+        }
       });
       await refreshAll();
       closeModal(false);
