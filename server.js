@@ -1437,7 +1437,13 @@ function currentUser(req, db) {
   if (!sessionId) return null;
   const session = db.sessions.find((s) => s.id === sessionId && new Date(s.expiresAt) > new Date());
   if (!session) return null;
-  return db.users.find((u) => u.id === session.userId && u.status === "active") || null;
+  const user = db.users.find((u) => u.id === session.userId && u.status === "active") || null;
+  if (!user) return null;
+  // Admin enforcement: a suspended / pending-deletion / deleted workspace loses
+  // access immediately, regardless of the user's own status (spec §63).
+  const org = db.organisations.find((o) => o.id === user.organisationId);
+  if (org && ["suspended", "pending_deletion", "deleted"].includes(org.status)) return null;
+  return user;
 }
 
 function currentSession(req, db) {
@@ -1646,7 +1652,9 @@ function planUsage(organisation) {
     return { plan: "demo", limit: Infinity, used, remaining: Number.MAX_SAFE_INTEGER, unlimited: true };
   }
   // Pay-to-start: everyone else needs an active paid plan; no free trial.
-  if (!orgIsPaid(organisation)) {
+  // An admin-granted allowance (goodwill credits / comped plan) also unlocks
+  // scanning, without being counted as a paid conversion in the funnel.
+  if (!orgIsPaid(organisation) && !organisation.adminGranted) {
     return { plan, limit: 0, used, remaining: 0, requiresPayment: true };
   }
   const limit = Number(organisation?.scanLimit || PLAN_LIMITS[plan] || 0);
@@ -2854,7 +2862,9 @@ function clientSummary(db, org) {
   const users = db.users.filter((u) => u.organisationId === org.id);
   const primary = users.find((u) => u.status !== "deleted") || users[0] || null;
   const activity = clientActivity(db, org);
-  const scanLimit = Number(org.scanLimit || PLAN_LIMITS[org.plan] || 0);
+  // Respect an explicit 0 allowance (pay-to-start) — only fall back to the plan
+  // default when scanLimit is genuinely unset, so a new account reads 0, not 20.
+  const scanLimit = org.scanLimit != null ? Number(org.scanLimit) : Number(PLAN_LIMITS[org.plan] || 0);
   const scansUsed = Number(org.scansUsed || 0);
   return {
     clientId: org.id,
@@ -2984,12 +2994,13 @@ async function handleAdminApi(req, res, pathname) {
     const activated = summaries.filter((s) => s.usage.used > 0).length;
     const activePaid = summaries.filter((s) => ["PAID", "RENEWED"].includes(s.lifecycle)).length;
     const usageExhausted = summaries.filter((s) => s.usage.limit > 0 && s.usage.remaining <= 0).length;
-    const [payFail, scansToday] = await Promise.all([
+    const [payFail, scansToday, pricingViewed, checkoutStarted] = await Promise.all([
       pgPool.query("select count(*)::int as n from payments where status = 'failed'"),
-      pgPool.query("select count(*)::int as n from product_events where event_name = 'card_scan_success' and created_at::date = (now() at time zone 'Asia/Kolkata')::date")
+      pgPool.query("select count(*)::int as n from product_events where event_name = 'scan_completed' and created_at::date = (now() at time zone 'Asia/Kolkata')::date"),
+      pgPool.query("select count(distinct client_id)::int as n from product_events where event_name = 'pricing_viewed'"),
+      pgPool.query("select count(distinct client_id)::int as n from product_events where event_name = 'checkout_started'")
     ]);
-    // Funnel (pay-to-start model): Registered -> Activated -> Engaged -> Paid.
-    const engaged = summaries.filter((s) => ["ENGAGED", "PAID", "RENEWED"].includes(s.lifecycle)).length;
+    // Funnel (pay-to-start model): Registered -> Activated -> Pricing Viewed -> Checkout Started -> Paid.
     const paid = activePaid;
     const attention = {
       registeredNotActivated: summaries.filter((s) => s.lifecycle === "REGISTERED").length,
@@ -3008,7 +3019,8 @@ async function handleAdminApi(req, res, pathname) {
       funnel: [
         { stage: "Registered", count: totalClients },
         { stage: "Activated", count: activated },
-        { stage: "Engaged", count: engaged },
+        { stage: "Pricing Viewed", count: pricingViewed.rows[0].n },
+        { stage: "Checkout Started", count: checkoutStarted.rows[0].n },
         { stage: "Paid", count: paid }
       ],
       attention
@@ -3070,6 +3082,249 @@ async function handleAdminApi(req, res, pathname) {
       payments: payments.rows,
       timeline: events.rows
     });
+  }
+
+  // ---- Operational actions (spec §80): each requires a reason and writes an
+  // immutable admin-audit entry. Org mutations go through readDb()->saveDb().
+  if (req.method === "POST" && pathname.startsWith("/api/admin/clients/") && pathname.split("/").length === 6) {
+    const parts = pathname.split("/");
+    const clientId = decodeURIComponent(parts[4]);
+    const action = parts[5];
+    const db = readDb();
+    const org = db.organisations.find((o) => o.id === clientId);
+    if (!org) return error(res, 404, "Client not found.");
+    const body = await readJson(req);
+    const reason = String(body.reason || "").trim();
+    const needsReason = ["credits", "change-plan", "suspend", "cancel-subscription", "initiate-deletion"].includes(action);
+    if (needsReason && !reason) return error(res, 400, "A reason is required for this action.");
+
+    if (action === "notes") {
+      const note = String(body.note || "").trim();
+      if (!note) return error(res, 400, "Note cannot be empty.");
+      const row = { id: id("note"), clientId, adminId: admin.id, adminEmail: admin.email, note, createdAt: now() };
+      await pgPool.query(
+        "insert into admin_notes (id, client_id, admin_id, admin_email, note, created_at) values ($1,$2,$3,$4,$5,$6)",
+        [row.id, clientId, admin.id, admin.email, note, row.createdAt]
+      );
+      return send(res, 200, { ok: true, note: row });
+    }
+
+    if (action === "credits") {
+      const type = body.type === "remove" ? "remove" : "add";
+      const qty = Math.floor(Number(body.quantity || 0));
+      if (!(qty > 0)) return error(res, 400, "Enter a quantity greater than zero.");
+      const prevLimit = Number(org.scanLimit || 0);
+      const used = Number(org.scansUsed || 0);
+      let applied;
+      if (type === "add") {
+        org.scanLimit = prevLimit + qty; applied = qty;
+        org.adminGranted = true; // goodwill credits unlock scanning under pay-to-start
+      } else {
+        const newLimit = Math.max(used, prevLimit - qty); applied = prevLimit - newLimit; org.scanLimit = newLimit;
+      }
+      org.updatedAt = now();
+      await saveDb(db);
+      await recordUsageLedger({
+        clientId, type: type === "add" ? "ADMIN_CREDIT" : "ADMIN_DEBIT",
+        quantity: applied, balanceEffect: type === "add" ? applied : -applied,
+        source: "admin", adminId: admin.id, reason, metadata: { by: admin.email }
+      });
+      await adminAudit(admin, { clientId, action: type === "add" ? "CREDITS_ADDED" : "CREDITS_REMOVED", previousValue: { scanLimit: prevLimit }, newValue: { scanLimit: org.scanLimit }, reason });
+      return send(res, 200, { ok: true, usage: { used, limit: org.scanLimit, remaining: Math.max(0, org.scanLimit - used) } });
+    }
+
+    if (action === "change-plan") {
+      const plan = String(body.plan || "").toLowerCase();
+      if (!PLAN_LIMITS[plan]) return error(res, 400, "Choose a valid plan.");
+      const prev = { plan: org.plan, scanLimit: Number(org.scanLimit || 0) };
+      org.plan = plan;
+      org.scanLimit = Number(PLAN_LIMITS[plan] || 0) + Number(org.topupScans || 0);
+      org.adminGranted = true; // comped plan unlocks scanning under pay-to-start
+      org.billingMode = org.billingMode && org.billingMode !== "none" ? org.billingMode : "admin";
+      if (!org.subscriptionStatus || org.subscriptionStatus === "none") org.subscriptionStatus = "active";
+      org.updatedAt = now();
+      await saveDb(db);
+      await recordUsageLedger({ clientId, type: "PLAN_ALLOCATION", quantity: PLAN_LIMITS[plan] || 0, balanceEffect: org.scanLimit - prev.scanLimit, source: "admin", adminId: admin.id, reason, metadata: { plan, adminChange: true } });
+      await adminAudit(admin, { clientId, action: "PLAN_CHANGED", previousValue: prev, newValue: { plan, scanLimit: org.scanLimit }, reason });
+      return send(res, 200, { ok: true });
+    }
+
+    if (action === "suspend") {
+      const prev = org.status || "active";
+      org.status = "suspended"; org.updatedAt = now();
+      await saveDb(db);
+      await adminAudit(admin, { clientId, action: "ACCOUNT_SUSPENDED", previousValue: { status: prev }, newValue: { status: "suspended" }, reason });
+      return send(res, 200, { ok: true });
+    }
+
+    if (action === "reactivate") {
+      const prev = org.status || "active";
+      org.status = "active"; delete org.pendingDeletionAt; org.updatedAt = now();
+      await saveDb(db);
+      await adminAudit(admin, { clientId, action: "ACCOUNT_REACTIVATED", previousValue: { status: prev }, newValue: { status: "active" }, reason });
+      return send(res, 200, { ok: true });
+    }
+
+    if (action === "cancel-subscription") {
+      const prev = org.subscriptionStatus || "none";
+      if (org.subscriptionId && billingConfigured()) {
+        try { await razorpayApi(`/subscriptions/${org.subscriptionId}/cancel`, { method: "POST", body: { cancel_at_cycle_end: 0 } }); }
+        catch (err) { console.error("[admin] razorpay cancel failed:", err.message); }
+      }
+      org.subscriptionStatus = "cancelled"; org.updatedAt = now();
+      await saveDb(db);
+      await adminAudit(admin, { clientId, action: "SUBSCRIPTION_CANCELLED", previousValue: { subscriptionStatus: prev }, newValue: { subscriptionStatus: "cancelled" }, reason });
+      return send(res, 200, { ok: true });
+    }
+
+    if (action === "disconnect-google") {
+      const connection = db.googleConnections.find((g) => g.organisationId === org.id && g.status === "active");
+      if (connection) {
+        connection.status = "disconnected";
+        connection.encryptedToken = "";
+        connection.encryptedRefreshToken = "";
+        connection.tokenExpiry = "";
+        connection.updatedAt = now();
+      }
+      await saveDb(db);
+      await adminAudit(admin, { clientId, action: "INTEGRATION_DISCONNECTED", newValue: { integration: "google" }, reason });
+      return send(res, 200, { ok: true });
+    }
+
+    if (action === "initiate-deletion") {
+      const prev = org.status || "active";
+      org.status = "pending_deletion";
+      org.pendingDeletionAt = now();
+      org.updatedAt = now();
+      await saveDb(db);
+      await adminAudit(admin, { clientId, action: "ACCOUNT_DELETION_INITIATED", previousValue: { status: prev }, newValue: { status: "pending_deletion", purgeAfterDays: 30 }, reason });
+      return send(res, 200, { ok: true });
+    }
+
+    return error(res, 400, "Unknown client action.");
+  }
+
+  // ---- ADM-05 Analytics ----
+  if (req.method === "GET" && pathname === "/api/admin/analytics") {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const range = String(url.searchParams.get("range") || "30d");
+    const startMs = { today: 0, "7d": 7, "30d": 30, "90d": 90 };
+    let startIso = null;
+    if (range === "today") {
+      const d = new Date(); d.setHours(0, 0, 0, 0); startIso = d.toISOString();
+    } else if (startMs[range] != null) {
+      startIso = new Date(Date.now() - startMs[range] * 24 * 60 * 60 * 1000).toISOString();
+    }
+    const db = readDb();
+    const orgsInRange = db.organisations.filter((o) => !startIso || String(o.createdAt || "") >= startIso);
+    const registered = orgsInRange.length;
+    // Registrations-by-date series (IST) from in-memory orgs.
+    const seriesMap = {};
+    orgsInRange.forEach((o) => {
+      if (!o.createdAt) return;
+      const d = new Date(o.createdAt).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+      seriesMap[d] = (seriesMap[d] || 0) + 1;
+    });
+    const series = Object.keys(seriesMap).sort().map((d) => ({ date: d, count: seriesMap[d] }));
+    const cond = startIso ? "and created_at >= $1" : "";
+    const args = startIso ? [startIso] : [];
+    const distinct = (ev) => pgPool.query(`select count(distinct client_id)::int as n from product_events where event_name = '${ev}' ${cond}`, args).then((r) => r.rows[0].n);
+    const countEv = (ev) => pgPool.query(`select count(*)::int as n from product_events where event_name = '${ev}' ${cond}`, args).then((r) => r.rows[0].n);
+    const [firstLogin, activated, pricingViewed, checkoutStarted, paid, scans, exportsCount, googleConnects] = await Promise.all([
+      distinct("first_login"), distinct("scan_completed"), distinct("pricing_viewed"),
+      distinct("checkout_started"), distinct("plan_activated"), countEv("scan_completed"),
+      pgPool.query(`select count(*)::int as n from product_events where event_name in ('export_excel','export_csv','export_vcf') ${cond}`, args).then((r) => r.rows[0].n),
+      distinct("google_connected")
+    ]);
+    const activeClients = await pgPool.query(`select count(distinct client_id)::int as n from product_events where event_name in ('scan_completed','export_excel','export_csv','export_vcf','google_contacts_sync') ${cond}`, args).then((r) => r.rows[0].n);
+    const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : 0);
+    return send(res, 200, {
+      range,
+      acquisition: { newAccounts: registered, series },
+      activation: { registered, firstLogin, firstScan: activated, activated, signupToActivationPct: pct(activated, registered) },
+      conversion: {
+        pricingViewed, checkoutStarted, paid,
+        signupToPaidPct: pct(paid, registered), activationToPaidPct: pct(paid, activated),
+        pricingToCheckoutPct: pct(checkoutStarted, pricingViewed), checkoutToPaidPct: pct(paid, checkoutStarted)
+      },
+      engagement: { activeClients, scans, exports: exportsCount, googleConnects }
+    });
+  }
+
+  // ---- ADM-06 Payments ----
+  if (req.method === "GET" && pathname === "/api/admin/payments") {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const statusFilter = String(url.searchParams.get("status") || "").toLowerCase();
+    const page = Math.max(1, Number(url.searchParams.get("page") || 1));
+    const pageSize = Math.min(100, Math.max(1, Number(url.searchParams.get("pageSize") || 25)));
+    const where = statusFilter ? "where status = $1" : "";
+    const wargs = statusFilter ? [statusFilter] : [];
+    const total = (await pgPool.query(`select count(*)::int as n from payments ${where}`, wargs)).rows[0].n;
+    const rows = (await pgPool.query(
+      `select * from payments ${where} order by created_at desc limit ${pageSize} offset ${(page - 1) * pageSize}`, wargs
+    )).rows;
+    const db = readDb();
+    const nameById = new Map(db.organisations.map((o) => [o.id, o.name]));
+    const payments = rows.map((p) => ({ ...p, clientName: nameById.get(p.client_id) || p.client_id }));
+    return send(res, 200, { total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)), payments });
+  }
+
+  // ---- ADM-07 Activity / Audit ----
+  if (req.method === "GET" && pathname === "/api/admin/audit") {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const page = Math.max(1, Number(url.searchParams.get("page") || 1));
+    const pageSize = Math.min(100, Math.max(1, Number(url.searchParams.get("pageSize") || 40)));
+    const total = (await pgPool.query("select count(*)::int as n from admin_audit_logs")).rows[0].n;
+    const rows = (await pgPool.query(
+      `select * from admin_audit_logs order by created_at desc limit ${pageSize} offset ${(page - 1) * pageSize}`
+    )).rows;
+    const db = readDb();
+    const nameById = new Map(db.organisations.map((o) => [o.id, o.name]));
+    const logs = rows.map((r) => ({ ...r, clientName: r.client_id ? (nameById.get(r.client_id) || r.client_id) : null }));
+    return send(res, 200, { total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)), logs });
+  }
+
+  // ---- ADM-08 Settings: plans + admin users ----
+  if (req.method === "GET" && pathname === "/api/admin/settings") {
+    const plans = ["monthly", "quarterly", "annual"].map((p) => ({
+      name: p, scans: PLAN_LIMITS[p], pricePaise: PLAN_PRICES_PAISE[p], months: PLAN_DURATIONS_MONTHS[p], status: "active"
+    }));
+    const admins = (await pgPool.query("select id, name, email, role, status, last_login_at, created_at from admin_users order by created_at")).rows;
+    return send(res, 200, { plans, admins, me: admin });
+  }
+
+  if (req.method === "POST" && pathname === "/api/admin/admins") {
+    if (admin.role !== "super_admin") return error(res, 403, "Only a super admin can manage administrators.");
+    const body = await readJson(req);
+    const name = String(body.name || "").trim();
+    const email = String(body.email || "").trim().toLowerCase();
+    const password = String(body.password || "");
+    if (!name || !email || password.length < 8) return error(res, 400, "Name, email, and a password of at least 8 characters are required.");
+    const existing = await pgPool.query("select id from admin_users where email = $1", [email]);
+    if (existing.rowCount) return error(res, 409, "An admin with this email already exists.");
+    const newId = id("adm");
+    await pgPool.query(
+      `insert into admin_users (id, name, email, password_hash, role, status, created_at, updated_at)
+       values ($1,$2,$3,$4,'super_admin','active',$5,$5)`,
+      [newId, name, email, hashPassword(password), now()]
+    );
+    await adminAudit(admin, { action: "ADMIN_CREATED", newValue: { email } });
+    return send(res, 201, { ok: true, admin: { id: newId, name, email, role: "super_admin", status: "active" } });
+  }
+
+  if (req.method === "POST" && pathname.startsWith("/api/admin/admins/") && pathname.split("/").length === 6) {
+    if (admin.role !== "super_admin") return error(res, 403, "Only a super admin can manage administrators.");
+    const parts = pathname.split("/");
+    const targetId = decodeURIComponent(parts[4]);
+    const op = parts[5];
+    if (!["disable", "reactivate"].includes(op)) return error(res, 400, "Unknown admin operation.");
+    if (op === "disable" && targetId === admin.id) return error(res, 400, "You cannot disable your own account.");
+    const newStatus = op === "disable" ? "disabled" : "active";
+    const r = await pgPool.query("update admin_users set status = $2, updated_at = $3 where id = $1 returning email", [targetId, newStatus, now()]);
+    if (!r.rowCount) return error(res, 404, "Admin not found.");
+    if (op === "disable") await pgPool.query("delete from admin_sessions where admin_id = $1", [targetId]);
+    await adminAudit(admin, { action: op === "disable" ? "ADMIN_DISABLED" : "ADMIN_REACTIVATED", newValue: { adminId: targetId, email: r.rows[0].email } });
+    return send(res, 200, { ok: true });
   }
 
   return error(res, 404, "Unknown admin endpoint.");
@@ -3171,6 +3426,20 @@ async function handleApi(req, res, pathname) {
             await recordProductEvent({ name: "plan_activated", clientId: organisation.id, source: "webhook", idempotencyKey: `plan:${orderId}`, metadata: { plan, mode: "one_time" } });
           }
         }
+      } else if (event === "payment.failed") {
+        const pe = paymentEntity || {};
+        const failNotes = pe.notes || {};
+        const organisation = db.organisations.find((o) => o.id === failNotes.organisationId)
+          || db.organisations.find((o) => o.subscriptionId === pe.subscription_id);
+        if (organisation) {
+          await recordPayment({ clientId: organisation.id, amountPaise: Number(pe.amount) || 0, plan: failNotes.plan || "", status: "failed", providerPaymentId: pe.id || "", providerOrderId: pe.order_id || "", failureReason: pe.error_description || pe.error_reason || "" });
+          await recordProductEvent({ name: "payment_failed", clientId: organisation.id, source: "webhook", metadata: { reason: pe.error_reason || "" } });
+          // A failed recurring charge becomes past_due so it surfaces in the admin attention queue.
+          if (pe.subscription_id && organisation.subscriptionId === pe.subscription_id) {
+            organisation.subscriptionStatus = "past_due";
+            organisation.updatedAt = now();
+          }
+        }
       }
       if (eventId) {
         db.webhookEvents.push(eventId);
@@ -3221,6 +3490,7 @@ async function handleApi(req, res, pathname) {
       db.users.push(user);
       audit(db, user, "user.registered", "user", user.id);
       await saveDb(db);
+      await recordProductEvent({ name: "account_created", clientId: org.id, userId: user.id, source: "register", idempotencyKey: `account_created:${org.id}`, metadata: { demo: demoAccount } });
       const verificationLink = buildLink(req, `/api/auth/verify-email?token=${encodeURIComponent(verificationToken)}`);
       await deliverAccountEmail("verify-email", email, verificationLink);
       return send(res, 201, {
@@ -3527,6 +3797,18 @@ async function handleApi(req, res, pathname) {
     const csrfProtected = ["POST", "PATCH", "DELETE"].includes(req.method) || pathname.startsWith("/api/export.");
     if (csrfProtected && !["/api/auth/logout"].includes(pathname) && !validateCsrf(req, res, session)) return;
 
+    // Client-side funnel beacon. Only a small whitelist of front-end-observable
+    // events is accepted; everything else is recorded server-side at its source.
+    if (req.method === "POST" && pathname === "/api/events") {
+      const body = await readJson(req);
+      const ALLOWED_CLIENT_EVENTS = new Set(["pricing_viewed", "plan_selected"]);
+      const name = String(body.name || "");
+      if (!ALLOWED_CLIENT_EVENTS.has(name)) return error(res, 400, "Unsupported event.");
+      const meta = (body.metadata && typeof body.metadata === "object") ? body.metadata : {};
+      await recordProductEvent({ name, clientId: user.organisationId, userId: user.id, source: "client", metadata: meta });
+      return send(res, 200, { ok: true });
+    }
+
     if (req.method === "POST" && pathname === "/api/billing/subscribe") {
       if (!billingConfigured()) return error(res, 400, "Online payments are not set up yet. Please try again later.");
       const body = await readJson(req);
@@ -3548,6 +3830,7 @@ async function handleApi(req, res, pathname) {
       organisation.updatedAt = now();
       audit(db, user, "billing.subscription_created", "organisation", organisation.id, { plan });
       await saveDb(db);
+      await recordProductEvent({ name: "checkout_started", clientId: organisation.id, userId: user.id, source: "billing", metadata: { plan, mode: "subscription" } });
       return send(res, 200, { subscriptionId: subscription.id, keyId: RAZORPAY_KEY_ID, plan });
     }
 
@@ -3586,6 +3869,7 @@ async function handleApi(req, res, pathname) {
       organisation.updatedAt = now();
       audit(db, user, "billing.one_time_order_created", "organisation", organisation.id, { orderId: order.id, plan });
       await saveDb(db);
+      await recordProductEvent({ name: "checkout_started", clientId: organisation.id, userId: user.id, source: "billing", metadata: { plan, mode: "one_time" } });
       return send(res, 200, {
         orderId: order.id,
         amount: order.amount,
@@ -3645,6 +3929,7 @@ async function handleApi(req, res, pathname) {
       organisation.updatedAt = now();
       audit(db, user, "billing.topup_order_created", "organisation", organisation.id, { orderId: order.id });
       await saveDb(db);
+      await recordProductEvent({ name: "checkout_started", clientId: organisation.id, userId: user.id, source: "billing", metadata: { mode: "topup", scans: TOPUP_SCANS } });
       return send(res, 200, { orderId: order.id, amount: order.amount, currency: order.currency, keyId: RAZORPAY_KEY_ID, scans: TOPUP_SCANS });
     }
 
@@ -3746,6 +4031,7 @@ async function handleApi(req, res, pathname) {
       delete session.googleOAuthFeature;
       audit(db, user, "google.connected", "google_connection", connection.id, { googleEmail: connection.googleEmail });
       await saveDb(db);
+      await recordProductEvent({ name: "google_connected", clientId: user.organisationId, userId: user.id, source: "google", metadata: { feature } });
       return redirect(res, feature === "contacts" ? "/?google_contacts=connected#contacts" : "/?google=connected#contacts/sheets");
     }
 
@@ -4591,6 +4877,7 @@ async function handleApi(req, res, pathname) {
       const fileName = `${baseName}.xlsx`;
       audit(db, user, "excel.downloaded", "collection", collection?.id || "", { contacts: contacts.length, all: exportAll });
       await saveDb(db);
+      await recordProductEvent({ name: "export_excel", clientId: user.organisationId, userId: user.id, source: "export", metadata: { contacts: contacts.length, all: exportAll } });
       return send(res, 200, xlsx, {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "Content-Disposition": `attachment; filename="${fileName}"`
@@ -4606,6 +4893,7 @@ async function handleApi(req, res, pathname) {
       const fileName = `${baseName}.csv`;
       audit(db, user, "csv.downloaded", "collection", collection?.id || "", { contacts: contacts.length, all: exportAll });
       await saveDb(db);
+      await recordProductEvent({ name: "export_csv", clientId: user.organisationId, userId: user.id, source: "export", metadata: { contacts: contacts.length, all: exportAll } });
       return send(res, 200, csv, {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="${fileName}"`
@@ -4620,6 +4908,7 @@ async function handleApi(req, res, pathname) {
       const fileName = `${baseName}.vcf`;
       audit(db, user, "vcf.downloaded", "collection", collection?.id || "", { contacts: contacts.length, all: exportAll, assigneeId });
       await saveDb(db);
+      await recordProductEvent({ name: "export_vcf", clientId: user.organisationId, userId: user.id, source: "export", metadata: { contacts: contacts.length, all: exportAll } });
       return send(res, 200, vcf, {
         "Content-Type": "text/vcard; charset=utf-8",
         "Content-Disposition": `attachment; filename="${fileName}"`
@@ -4646,6 +4935,7 @@ async function handleApi(req, res, pathname) {
         audit(db, user, "google.disconnected", "google_connection", connection.id);
       }
       await saveDb(db);
+      await recordProductEvent({ name: "google_disconnected", clientId: user.organisationId, userId: user.id, source: "google" });
       return send(res, 200, { ok: true, google: googleStatus(db, user) });
     }
 
@@ -4678,6 +4968,7 @@ async function handleApi(req, res, pathname) {
       db.users = db.users.filter((item) => item.organisationId !== organisationId);
       db.organisations = db.organisations.filter((item) => item.id !== organisationId);
       await saveDb(db);
+      await recordProductEvent({ name: "account_deletion", clientId: organisationId, userId: user.id, source: "customer", idempotencyKey: `account_deletion:${organisationId}`, metadata: { self_service: true } });
       return send(res, 200, { ok: true }, { "Set-Cookie": sessionCookie(req, "", 0) });
     }
 
@@ -4837,6 +5128,9 @@ async function createSession(req, res, db, user, redirectTo = "", extraCookies =
   };
   db.sessions.push(session);
   await saveDb(db);
+  // Funnel: every entry into the product, plus a once-per-user first_login milestone.
+  await recordProductEvent({ name: "login_success", clientId: user.organisationId, userId: user.id, source: "auth" });
+  await recordProductEvent({ name: "first_login", clientId: user.organisationId, userId: user.id, source: "auth", idempotencyKey: `first_login:${user.id}` });
   const cookies = [sessionCookie(req, signSession(session.id), 7 * 24 * 60 * 60), ...extraCookies];
   if (redirectTo) {
     res.writeHead(302, { Location: redirectTo, "Set-Cookie": cookies });

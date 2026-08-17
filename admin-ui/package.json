@@ -1,0 +1,13 @@
+{
+  "name": "card2leads-admin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Card2Leads Admin Panel — internal operations & analytics console (zero-build SPA).",
+  "scripts": {
+    "dev": "node dev-server.js",
+    "check": "node --check public/app.js && node --check dev-server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

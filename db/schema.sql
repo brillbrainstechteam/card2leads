@@ -274,3 +274,140 @@ create index if not exists contacts_search_idx on contacts (organisation_id, nam
 create index if not exists voice_notes_org_created_idx on voice_notes (organisation_id, created_at desc);
 create index if not exists sync_records_contact_idx on sync_records (contact_id);
 create index if not exists audit_logs_org_created_idx on audit_logs (organisation_id, created_at desc);
+
+-- ---------------------------------------------------------------------------
+-- Card2Leads Admin Panel — Phase 1 foundation.
+-- These tables are INDEPENDENT of the customer app's in-memory persistence
+-- (server.js persistPostgresDb never touches them), so admin data is never
+-- clobbered by a customer-app save. They are read/written via direct SQL.
+-- See F:\Card2leadsAdmin\docs\PHASE-0-TECHNICAL-AUDIT.md.
+-- ---------------------------------------------------------------------------
+
+-- Account-holder phone, for admin search (D3). Populated by the main app at signup.
+alter table users add column if not exists phone text;
+
+-- Internal administrators (D8). Separate from customer `users`.
+create table if not exists admin_users (
+  id text primary key,
+  name text not null,
+  email text not null unique,
+  password_hash text not null,
+  role text not null default 'super_admin',
+  status text not null default 'active',
+  last_login_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  data jsonb not null default '{}'::jsonb
+);
+
+-- Admin login sessions (separate cookie from customer sessions).
+create table if not exists admin_sessions (
+  id text primary key,
+  admin_id text not null references admin_users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  last_seen_at timestamptz not null default now(),
+  ip text,
+  user_agent text
+);
+
+-- Immutable record of every admin action (spec §60-61).
+create table if not exists admin_audit_logs (
+  id text primary key,
+  admin_id text not null,
+  admin_email text,
+  client_id text,
+  action text not null,
+  previous_value jsonb,
+  new_value jsonb,
+  reason text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+-- Internal notes on a client (spec §35). Never shown in the customer app.
+create table if not exists admin_notes (
+  id text primary key,
+  client_id text not null,
+  admin_id text not null,
+  admin_email text,
+  note text not null,
+  created_at timestamptz not null default now()
+);
+
+-- Usage ledger (spec §30-31, D1/D2) — the source of truth for scan credits.
+create table if not exists usage_ledger (
+  id text primary key,
+  client_id text not null,
+  user_id text,
+  transaction_type text not null,   -- PLAN_ALLOCATION | SCAN_CONSUMED | TOPUP_PURCHASE | ADMIN_CREDIT | ADMIN_DEBIT | REFUND_ADJUSTMENT | SYSTEM_CORRECTION
+  quantity integer not null,
+  balance_effect integer not null,  -- +quantity or -quantity
+  source text,                      -- 'plan' | 'scan' | 'topup' | 'admin' | 'system'
+  reference_id text,                -- e.g. card_files.id, payment id
+  admin_id text,
+  reason text,
+  created_at timestamptz not null default now(),
+  metadata jsonb not null default '{}'::jsonb
+);
+
+-- Product / funnel events (spec §37-44). Idempotency key dedupes milestone events.
+create table if not exists product_events (
+  id text primary key,
+  event_name text not null,
+  client_id text,
+  user_id text,
+  session_id text,
+  idempotency_key text unique,
+  source text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+-- Payment records (spec §54-56), written from the Razorpay webhook/verify paths.
+create table if not exists payments (
+  id text primary key,               -- internal id
+  client_id text not null,
+  user_id text,
+  amount_paise bigint not null default 0,
+  currency text not null default 'INR',
+  plan text,
+  status text not null,              -- paid | pending | failed | refunded
+  provider text not null default 'razorpay',
+  provider_payment_id text,
+  provider_order_id text,
+  provider_reference text,
+  subscription_id text,
+  failure_reason text,
+  created_at timestamptz not null default now(),
+  completed_at timestamptz,
+  metadata jsonb not null default '{}'::jsonb
+);
+
+-- Subscription records (spec §58), derived from billing state.
+create table if not exists subscriptions (
+  id text primary key,
+  client_id text not null,
+  plan text,
+  status text not null,              -- trial | active | past_due | expired | cancelled
+  billing_mode text,                 -- subscription | one_time
+  provider text default 'razorpay',
+  provider_reference text,
+  start_date timestamptz,
+  current_period_end timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  metadata jsonb not null default '{}'::jsonb
+);
+
+create index if not exists admin_sessions_admin_idx on admin_sessions (admin_id, expires_at);
+create index if not exists admin_audit_client_idx on admin_audit_logs (client_id, created_at desc);
+create index if not exists admin_audit_created_idx on admin_audit_logs (created_at desc);
+create index if not exists admin_notes_client_idx on admin_notes (client_id, created_at desc);
+create index if not exists usage_ledger_client_idx on usage_ledger (client_id, created_at desc);
+create index if not exists product_events_client_idx on product_events (client_id, created_at desc);
+create index if not exists product_events_name_idx on product_events (event_name, created_at desc);
+create index if not exists payments_client_idx on payments (client_id, created_at desc);
+create index if not exists payments_created_idx on payments (created_at desc);
+create index if not exists subscriptions_client_idx on subscriptions (client_id, created_at desc);
+create index if not exists users_phone_idx on users (phone);

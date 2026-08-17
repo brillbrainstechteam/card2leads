@@ -38,6 +38,9 @@ temp/
 artifacts/
 .codex_gitignore_preview.txt
 
+# abandoned Tesseract OCR trial data (LLM vision is the extractor)
+*.traineddata
+
 # mobile app assets (mobile lives in a separate project)
 assets/
 

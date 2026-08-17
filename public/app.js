@@ -276,7 +276,11 @@ function render() {
   if (state.view === "upload") slot.appendChild(uploadView());
   if (state.view === "review") slot.appendChild(reviewView());
   if (state.view === "contacts") slot.appendChild(contactsWorkspaceView());
-  if (state.view === "account") slot.appendChild(accountBillingView());
+  if (state.view === "account") {
+    slot.appendChild(accountBillingView());
+    // Funnel beacon: an authenticated user looking at plans/billing (best-effort).
+    if (state.csrfToken) api("/api/events", { method: "POST", body: { name: "pricing_viewed" } }).catch(() => {});
+  }
   if (state.modal) app.appendChild(modalView());
   ensureQueuePolling();
 }
