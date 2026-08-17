@@ -68,6 +68,70 @@ const DEMO_ACCOUNT_SCANS = Math.max(0, Number(process.env.DEMO_ACCOUNT_SCANS || 
 // How long a login stays valid before another sign-in (kept long so SMEs — and
 // phone-OTP users — aren't re-authenticating constantly).
 const SESSION_DAYS = Math.max(1, Number(process.env.SESSION_DAYS || 30));
+
+// WhatsApp OTP login via Meta Cloud API (existing WhatsApp Business number).
+const WHATSAPP_API_VERSION = process.env.WHATSAPP_API_VERSION || "v21.0";
+const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || "";
+const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN || "";
+const WHATSAPP_OTP_TEMPLATE = process.env.WHATSAPP_OTP_TEMPLATE || "";       // approved Authentication template name
+const WHATSAPP_OTP_LANG = process.env.WHATSAPP_OTP_LANG || "en_US";         // template language code
+const WHATSAPP_OTP_INCLUDE_BUTTON = String(process.env.WHATSAPP_OTP_INCLUDE_BUTTON ?? "true") === "true"; // standard auth templates carry a copy-code button
+const DEFAULT_PHONE_COUNTRY = process.env.DEFAULT_PHONE_COUNTRY || "91";     // India
+const OTP_TTL_MS = 5 * 60 * 1000;
+const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
+const OTP_MAX_SENDS_PER_HOUR = 5;
+const OTP_MAX_ATTEMPTS = 5;
+const otpStore = new Map(); // phone(E.164) -> { hash, expiresAt, attempts, lastSentAt, sends: number[] }
+
+function whatsappOtpConfigured() {
+  return Boolean(WHATSAPP_PHONE_NUMBER_ID && WHATSAPP_ACCESS_TOKEN && WHATSAPP_OTP_TEMPLATE);
+}
+
+// Normalise a user-entered number to E.164 (+<country><number>), defaulting a
+// bare 10-digit number to the configured country (India).
+function normalizePhoneE164(raw) {
+  const trimmed = String(raw || "").trim();
+  if (trimmed.startsWith("+")) {
+    const digits = trimmed.slice(1).replace(/\D/g, "");
+    return digits ? "+" + digits : "";
+  }
+  let digits = trimmed.replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.length === 11 && digits.startsWith("0")) digits = digits.slice(1);
+  if (digits.length === 10) return `+${DEFAULT_PHONE_COUNTRY}${digits}`;
+  return "+" + digits;
+}
+
+function isPlausiblePhone(e164) {
+  const digits = String(e164 || "").replace(/\D/g, "");
+  return digits.length >= 10 && digits.length <= 15;
+}
+
+function hashOtp(phone, code) {
+  return crypto.createHmac("sha256", ENCRYPTION_SECRET).update(`${phone}:${code}`).digest("hex");
+}
+
+// Sends a 6-digit code via a Meta Cloud API Authentication-category template.
+async function sendWhatsappOtp(phone, code) {
+  const to = String(phone).replace(/^\+/, ""); // Meta expects digits only
+  const components = [{ type: "body", parameters: [{ type: "text", text: code }] }];
+  if (WHATSAPP_OTP_INCLUDE_BUTTON) {
+    components.push({ type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: code }] });
+  }
+  const res = await fetch(`https://graph.facebook.com/${WHATSAPP_API_VERSION}/${WHATSAPP_PHONE_NUMBER_ID}/messages`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to,
+      type: "template",
+      template: { name: WHATSAPP_OTP_TEMPLATE, language: { code: WHATSAPP_OTP_LANG }, components }
+    })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error?.message || `WhatsApp send failed (${res.status}).`);
+  return data;
+}
 function isDemoEmail(email) {
   return Boolean(DEMO_ACCOUNT_EMAIL) && String(email || "").trim().toLowerCase() === DEMO_ACCOUNT_EMAIL;
 }
@@ -3525,6 +3589,91 @@ async function handleApi(req, res, pathname) {
         });
       }
       audit(db, user, "user.logged_in", "user", user.id);
+      return await createSession(req, res, db, user);
+    }
+
+    // Phone (WhatsApp) OTP — step 1: send a code to the number.
+    if (req.method === "POST" && pathname === "/api/auth/otp/request") {
+      if (!rateLimit(req, res, "otp-request", 20, 60 * 60 * 1000)) return; // per-IP guard
+      const body = await readJson(req);
+      const phone = normalizePhoneE164(body.phone);
+      if (!isPlausiblePhone(phone)) return error(res, 400, "Enter a valid mobile number with country code.");
+      if (!whatsappOtpConfigured()) return error(res, 503, "Phone login isn't available right now. Please sign in with email.");
+      const nowMs = Date.now();
+      const rec = otpStore.get(phone) || { sends: [] };
+      rec.sends = (rec.sends || []).filter((t) => nowMs - t < 60 * 60 * 1000);
+      if (rec.lastSentAt && nowMs - rec.lastSentAt < OTP_RESEND_COOLDOWN_MS) {
+        return error(res, 429, "Please wait a minute before requesting another code.");
+      }
+      if (rec.sends.length >= OTP_MAX_SENDS_PER_HOUR) {
+        return error(res, 429, "Too many codes requested for this number. Try again later.");
+      }
+      const code = String(crypto.randomInt(100000, 1000000));
+      rec.hash = hashOtp(phone, code);
+      rec.expiresAt = nowMs + OTP_TTL_MS;
+      rec.attempts = 0;
+      rec.lastSentAt = nowMs;
+      rec.sends.push(nowMs);
+      otpStore.set(phone, rec);
+      try {
+        await sendWhatsappOtp(phone, code);
+      } catch (err) {
+        console.error("[otp] send failed:", err.message);
+        return error(res, 502, "We couldn't send the code. Check the number and try again.");
+      }
+      return send(res, 200, { ok: true, cooldownSeconds: OTP_RESEND_COOLDOWN_MS / 1000 });
+    }
+
+    // Phone (WhatsApp) OTP — step 2: verify the code, then log in (or sign up).
+    if (req.method === "POST" && pathname === "/api/auth/otp/verify") {
+      if (!rateLimit(req, res, "otp-verify", 30, 60 * 60 * 1000)) return;
+      const body = await readJson(req);
+      const phone = normalizePhoneE164(body.phone);
+      const code = String(body.code || "").replace(/\D/g, "");
+      const rec = otpStore.get(phone);
+      if (!rec || !rec.hash) return error(res, 400, "Request a code first.");
+      if (Date.now() > rec.expiresAt) { otpStore.delete(phone); return error(res, 400, "That code has expired. Request a new one."); }
+      if (rec.attempts >= OTP_MAX_ATTEMPTS) { otpStore.delete(phone); return error(res, 429, "Too many attempts. Request a new code."); }
+      rec.attempts += 1;
+      if (hashOtp(phone, code) !== rec.hash) return error(res, 401, "Incorrect code. Please try again.");
+      otpStore.delete(phone); // one-time use
+      // Log in the existing account for this number, or create a new one.
+      let user = db.users.find((u) => u.phone && normalizePhoneE164(u.phone) === phone && !u.deletedAt);
+      if (!user) {
+        const org = {
+          id: id("org"),
+          name: "My Workspace",
+          plan: "trial",
+          scanLimit: 0,
+          scansUsed: 0,
+          isDemoAccount: false,
+          topupScans: 0,
+          retentionPolicy: "90-days",
+          setupComplete: false,
+          createdAt: now(),
+          updatedAt: now()
+        };
+        db.organisations.push(org);
+        user = {
+          id: id("usr"),
+          organisationId: org.id,
+          name: "",
+          email: "",
+          phone,
+          passwordHash: "",
+          authProvider: "phone",
+          role: "owner",
+          emailVerified: true,
+          status: "active",
+          createdAt: now(),
+          updatedAt: now()
+        };
+        db.users.push(user);
+        audit(db, user, "user.phone_registered", "user", user.id, { phone });
+        await recordProductEvent({ name: "registered", clientId: org.id, userId: user.id, source: "otp", idempotencyKey: `registered:${user.id}` });
+      } else {
+        audit(db, user, "user.phone_logged_in", "user", user.id);
+      }
       return await createSession(req, res, db, user);
     }
 

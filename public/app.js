@@ -26,6 +26,8 @@ const state = {
   modal: null,
   authOpen: false,
   authMode: "login",
+  phoneStep: "",
+  phoneNumber: "",
   authError: "",
   authInfo: "",
   authActionLink: "",
@@ -694,6 +696,7 @@ function authScreen() {
 }
 
 function authFormMarkup(isSignup, isForgot, isReset) {
+  if (state.phoneStep === "phone" || state.phoneStep === "otp") return phoneAuthMarkup();
   const title = isReset ? "Set a new password" : isForgot ? "Reset your password" : isSignup ? "Create account" : "Log in";
   return `
     <form class="auth-form" id="authForm">
@@ -704,7 +707,7 @@ function authFormMarkup(isSignup, isForgot, isReset) {
       <h1>${title}</h1>
       ${state.authInfo ? `<div class="notice compact">${escapeHtml(state.authInfo)}</div>` : ""}
       ${state.authError ? `<div class="notice bad compact">${escapeHtml(state.authError)}</div>` : ""}
-      ${!isForgot && !isReset ? `<a class="google-login" href="/api/auth/google/start">Continue with Google</a><div class="divider"><span>or use email</span></div>` : ""}
+      ${!isForgot && !isReset ? `<a class="google-login" href="/api/auth/google/start">Continue with Google</a><button type="button" class="whatsapp-login" data-phone-start><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><path d="M17.5 14.4c-.3-.15-1.77-.87-2.04-.97-.27-.1-.47-.15-.67.15-.2.3-.77.97-.94 1.17-.17.2-.35.22-.65.07-.3-.15-1.26-.46-2.4-1.48-.89-.79-1.49-1.77-1.66-2.07-.17-.3-.02-.46.13-.61.13-.13.3-.35.45-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.02-.52-.07-.15-.67-1.62-.92-2.22-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.52.07-.79.37-.27.3-1.04 1.02-1.04 2.49s1.07 2.89 1.22 3.09c.15.2 2.1 3.2 5.08 4.49.71.31 1.26.49 1.69.63.71.22 1.36.19 1.87.12.57-.09 1.77-.72 2.02-1.42.25-.7.25-1.3.17-1.42-.07-.12-.27-.2-.57-.35zM12.05 21.5h-.01a9.4 9.4 0 0 1-4.79-1.31l-.34-.2-3.56.93.95-3.47-.22-.36a9.38 9.38 0 0 1-1.44-5c0-5.18 4.22-9.4 9.41-9.4 2.51 0 4.87.98 6.64 2.76a9.34 9.34 0 0 1 2.75 6.65c0 5.18-4.22 9.4-9.41 9.4zM20.4 3.6A11.34 11.34 0 0 0 12.04.14C5.8.14.72 5.22.72 11.46c0 2 .52 3.94 1.51 5.66L.63 23l6.02-1.58a11.31 11.31 0 0 0 5.4 1.38h.01c6.24 0 11.32-5.08 11.32-11.32 0-3.03-1.18-5.87-3.32-8.01z"/></svg> Continue with WhatsApp</button><div class="divider"><span>or use email</span></div>` : ""}
       ${isSignup ? `<label>Full name <input name="name" autocomplete="name" required /></label>` : ""}
       ${isReset ? `<input name="token" type="hidden" value="${escapeAttr(state.resetToken)}" />` : `<label>Email <input name="email" type="email" autocomplete="email" required /></label>`}
       ${isForgot ? "" : `<label>Password <input name="password" type="password" autocomplete="${isSignup || isReset ? "new-password" : "current-password"}" required />${isSignup || isReset ? `<span class="field-help">Use at least 10 characters with uppercase, lowercase, number, and symbol.</span>` : ""}</label>`}
@@ -718,6 +721,65 @@ function authFormMarkup(isSignup, isForgot, isReset) {
       ${state.authActionLink ? `<a class="notice-action" href="${escapeAttr(state.authActionLink)}">${escapeHtml(state.authActionText || "Open link")}</a>` : ""}
     </form>
   `;
+}
+
+function phoneAuthMarkup() {
+  const otp = state.phoneStep === "otp";
+  return `
+    <h1>${otp ? "Enter your code" : "Sign in with WhatsApp"}</h1>
+    ${state.authInfo ? `<div class="notice compact">${escapeHtml(state.authInfo)}</div>` : ""}
+    ${state.authError ? `<div class="notice bad compact">${escapeHtml(state.authError)}</div>` : ""}
+    <form class="auth-form" id="phoneForm">
+      ${otp ? `
+        <p class="field-help">We sent a 6-digit code to <strong>${escapeHtml(state.phoneNumber || "your number")}</strong> on WhatsApp. It expires in 5 minutes.</p>
+        <label>Verification code <input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*" placeholder="6-digit code" required /></label>
+        <div class="actions"><button type="submit">Verify &amp; continue</button></div>
+        <button type="button" class="link-button" data-phone-resend>Resend code</button>
+        <button type="button" class="link-button" data-phone-back>Use a different number</button>
+      ` : `
+        <p class="field-help">We'll send a one-time code to your number on WhatsApp.</p>
+        <label>Mobile number <input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="e.g. 98765 43210" required /></label>
+        <div class="actions"><button type="submit">Send code on WhatsApp</button></div>
+        <button type="button" class="link-button" data-phone-back>Back to email login</button>
+      `}
+    </form>`;
+}
+
+async function requestPhoneOtp(phone) {
+  const number = String(phone || "").trim();
+  if (!number) { state.authError = "Enter your mobile number."; render(); return; }
+  try {
+    await api("/api/auth/otp/request", { method: "POST", body: { phone: number } });
+    state.phoneNumber = number;
+    state.phoneStep = "otp";
+    state.authError = "";
+    state.authInfo = "Code sent on WhatsApp.";
+    render();
+  } catch (err) {
+    state.authError = err.message;
+    render();
+  }
+}
+
+async function verifyPhoneOtp(phone, code) {
+  const trimmed = String(code || "").trim();
+  if (!trimmed) { state.authError = "Enter the code from WhatsApp."; render(); return; }
+  try {
+    const result = await api("/api/auth/otp/verify", { method: "POST", body: { phone, code: trimmed } });
+    state.user = result.user;
+    state.csrfToken = result.csrfToken || "";
+    state.phoneStep = "";
+    state.phoneNumber = "";
+    state.authOpen = false;
+    state.authError = "";
+    state.authInfo = "";
+    await refreshAll();
+    navigateToView("upload", { replace: true });
+    resumePendingPlanCheckout();
+  } catch (err) {
+    state.authError = err.message;
+    render();
+  }
 }
 
 function wireAuth(node) {
@@ -734,6 +796,23 @@ function wireAuth(node) {
     if (state.authMode === "reset") return resetPassword(form);
     await authenticate(state.authMode === "signup" ? "register" : "login", form);
   });
+  // Phone / WhatsApp OTP login
+  node.querySelector("[data-phone-start]")?.addEventListener("click", () => {
+    state.phoneStep = "phone"; state.authError = ""; state.authInfo = ""; render();
+  });
+  node.querySelector("[data-phone-back]")?.addEventListener("click", () => {
+    state.phoneStep = state.phoneStep === "otp" ? "phone" : ""; state.authError = ""; state.authInfo = ""; render();
+  });
+  node.querySelector("[data-phone-resend]")?.addEventListener("click", () => requestPhoneOtp(state.phoneNumber));
+  const phoneForm = node.querySelector("#phoneForm");
+  phoneForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (state.phoneStep === "otp") {
+      await verifyPhoneOtp(state.phoneNumber, phoneForm.querySelector("[name=code]").value);
+    } else {
+      await requestPhoneOtp(phoneForm.querySelector("[name=phone]").value);
+    }
+  });
 }
 
 function openAuth(mode, plan, billingMode = "one_time") {
@@ -743,6 +822,8 @@ function openAuth(mode, plan, billingMode = "one_time") {
   state.authInfo = "";
   state.authActionLink = "";
   state.authActionText = "";
+  state.phoneStep = "";
+  state.phoneNumber = "";
   state.pendingVerificationEmail = "";
   if (plan) {
     try { localStorage.setItem("c2l_pending_plan", JSON.stringify({ plan, billingMode })); } catch {}

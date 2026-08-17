@@ -3535,6 +3535,27 @@ label {
   font-weight: 500;
 }
 
+.whatsapp-login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  margin-top: 8px;
+  border: 1px solid #cbe9d3;
+  border-radius: 6px;
+  background: #f2fbf5;
+  color: #128c46;
+  font-weight: 600;
+  cursor: pointer;
+}
+.whatsapp-login:hover {
+  border-color: #25d366;
+  background: #eafaef;
+}
+.whatsapp-login svg { color: #25d366; }
+
 .divider {
   display: flex;
   align-items: center;
