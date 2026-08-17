@@ -5986,6 +5986,34 @@ function serveStatic(req, res, pathname) {
   send(res, 200, fs.readFileSync(filePath), { "Content-Type": contentType });
 }
 
+// Serve the admin UI (admin-ui/public) at /admin so the panel is reachable on the
+// same origin as the API — no separate subdomain/proxy needed. The SPA is static;
+// all sensitive data still requires admin auth on the backend.
+function serveAdminUi(req, res, pathname) {
+  const ADMIN_UI_DIR = path.join(ROOT, "admin-ui", "public");
+  let rel = pathname.replace(/^\/admin\/?/, "");
+  if (!rel || rel === "/") rel = "index.html";
+  let filePath = path.normalize(path.join(ADMIN_UI_DIR, rel));
+  if (!filePath.startsWith(ADMIN_UI_DIR)) return error(res, 403, "Forbidden.");
+  // SPA fallback: unknown non-file paths serve index.html.
+  if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+    if (path.extname(rel)) return error(res, 404, "Not found.");
+    filePath = path.join(ADMIN_UI_DIR, "index.html");
+    if (!fs.existsSync(filePath)) return error(res, 404, "Admin UI is not installed.");
+  }
+  const contentType = {
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".webp": "image/webp",
+    ".ico": "image/x-icon",
+    ".json": "application/json; charset=utf-8"
+  }[path.extname(filePath)] || "application/octet-stream";
+  send(res, 200, fs.readFileSync(filePath), { "Content-Type": contentType });
+}
+
 function serveIllustrationFromDirectory(res, pathname, routePrefix, directory) {
   const name = decodeURIComponent(pathname.replace(routePrefix, ""));
   const filePath = path.normalize(path.join(directory, name));
@@ -6068,6 +6096,7 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   if (url.pathname.startsWith("/api/admin/")) return handleAdminApi(req, res, url.pathname);
   if (url.pathname.startsWith("/api/")) return handleApi(req, res, url.pathname);
+  if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) return serveAdminUi(req, res, url.pathname);
   if (url.pathname.startsWith("/illustrations-final/")) return serveFinalIllustration(req, res, url.pathname);
   if (url.pathname.startsWith("/illustrations/")) return serveIllustration(req, res, url.pathname);
   // Clean, crawlable URLs for the public legal/contact pages. These return the
