@@ -5991,6 +5991,9 @@ function serveStatic(req, res, pathname) {
 // all sensitive data still requires admin auth on the backend.
 function serveAdminUi(req, res, pathname) {
   const ADMIN_UI_DIR = path.join(ROOT, "admin-ui", "public");
+  // Redirect /admin -> /admin/ so the index.html's relative asset paths
+  // (app.js, styles.css) resolve under /admin/ and not the customer app root.
+  if (pathname === "/admin") return redirect(res, "/admin/");
   let rel = pathname.replace(/^\/admin\/?/, "");
   if (!rel || rel === "/") rel = "index.html";
   let filePath = path.normalize(path.join(ADMIN_UI_DIR, rel));
