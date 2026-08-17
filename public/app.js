@@ -1698,22 +1698,27 @@ function showPaymentPrompt(message) {
   const subs = (Array.isArray(billing.availablePlans) && billing.availablePlans.length
     ? billing.availablePlans
     : ["monthly", "quarterly", "annual"]);
-  const optionBtn = (plan, attr, sub) =>
-    `<button type="button" class="pay-option" ${attr}="${escapeAttr(plan)}"><span class="pay-option-name">${planLabel[plan] || plan}</span><strong>&#8377;${priceFor[plan]}</strong><small>${scansFor[plan]} scans &middot; ${sub}</small></button>`;
+  const optionBtn = (plan, attr) =>
+    `<button type="button" class="pay-option${plan === "quarterly" ? " recommended" : ""}" ${attr}="${escapeAttr(plan)}">
+      ${plan === "quarterly" ? `<span class="pay-option-badge">Most popular</span>` : ""}
+      <span class="pay-option-name">${planLabel[plan] || plan}</span>
+      <strong class="pay-option-price">&#8377;${priceFor[plan]}</strong>
+      <span class="pay-option-scans">${scansFor[plan]} scans</span>
+    </button>`;
   state.modal = {
     tone: "warn",
     className: "payment-modal",
     title: "Activate a plan to start scanning",
-    body: message || "Scanning runs on a paid plan. Choose a one-time pack or a subscription to continue.",
+    body: message || "You've used up your free access. Choose a one-time pack or a subscription to keep scanning.",
     contentHtml: `
       <div class="pay-groups">
         <div class="pay-group">
-          <h3>Pay once <span class="pay-group-tag">no auto-renewal</span></h3>
-          <div class="pay-options">${oneTime.map((p) => optionBtn(p, "data-pay-once", "pay once")).join("")}</div>
+          <div class="pay-group-head"><span class="pay-group-name">Pay once</span><span class="pay-group-tag">no auto-renewal</span></div>
+          <div class="pay-options">${oneTime.map((p) => optionBtn(p, "data-pay-once")).join("")}</div>
         </div>
         <div class="pay-group">
-          <h3>Subscribe <span class="pay-group-tag">auto-renews &middot; cancel anytime</span></h3>
-          <div class="pay-options">${subs.map((p) => optionBtn(p, "data-subscribe-plan", "auto-renews")).join("")}</div>
+          <div class="pay-group-head"><span class="pay-group-name">Subscribe</span><span class="pay-group-tag">auto-renews &middot; cancel anytime</span></div>
+          <div class="pay-options">${subs.map((p) => optionBtn(p, "data-subscribe-plan")).join("")}</div>
         </div>
       </div>`,
     actions: [{ label: "See full pricing", className: "secondary", onClick: () => navigateToView("account") }],
@@ -3275,6 +3280,7 @@ function contactsView() {
         </div>
         <span class="contact-card-line" title="${escapeAttr(companyLine)}">${escapeHtml(companyLine)}</span>
         <span class="contact-card-line" title="${escapeAttr(placeLine)}">${escapeHtml(placeLine)}</span>
+        ${contact.voiceTranscript ? `<span class="contact-card-voice" title="${escapeAttr(contact.voiceTranscript)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" width="12" height="12" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>${escapeHtml(contact.voiceTranscript)}</span>` : ""}
       </div>
       ${contact.exhibitionName ? `<span class="contact-card-tag">${escapeHtml(contact.exhibitionName)}</span>` : `<span></span>`}
       <div class="contact-meta">
