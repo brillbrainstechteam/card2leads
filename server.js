@@ -60,10 +60,14 @@ const PLAN_LIMITS = Object.freeze({
 });
 
 // Pay-to-start (D4): new accounts get zero scan access until they subscribe.
-// The single demo account is exempt — set DEMO_ACCOUNT_EMAIL in .env to the
-// address that should scan without paying, with an optional scan allowance.
-const DEMO_ACCOUNT_EMAIL = String(process.env.DEMO_ACCOUNT_EMAIL || "").trim().toLowerCase();
+// The single demo account is exempt — it scans without paying. Defaults to the
+// team's test email so the bypass works out of the box; override with
+// DEMO_ACCOUNT_EMAIL in .env (set it empty to disable the demo account).
+const DEMO_ACCOUNT_EMAIL = String(process.env.DEMO_ACCOUNT_EMAIL ?? "tech@brillbrainsconsultants.com").trim().toLowerCase();
 const DEMO_ACCOUNT_SCANS = Math.max(0, Number(process.env.DEMO_ACCOUNT_SCANS || 500));
+// How long a login stays valid before another sign-in (kept long so SMEs — and
+// phone-OTP users — aren't re-authenticating constantly).
+const SESSION_DAYS = Math.max(1, Number(process.env.SESSION_DAYS || 30));
 function isDemoEmail(email) {
   return Boolean(DEMO_ACCOUNT_EMAIL) && String(email || "").trim().toLowerCase() === DEMO_ACCOUNT_EMAIL;
 }
@@ -5132,14 +5136,14 @@ async function createSession(req, res, db, user, redirectTo = "", extraCookies =
     userId: user.id,
     csrfToken: randomToken("csrf"),
     createdAt: now(),
-    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    expiresAt: new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000).toISOString()
   };
   db.sessions.push(session);
   await saveDb(db);
   // Funnel: every entry into the product, plus a once-per-user first_login milestone.
   await recordProductEvent({ name: "login_success", clientId: user.organisationId, userId: user.id, source: "auth" });
   await recordProductEvent({ name: "first_login", clientId: user.organisationId, userId: user.id, source: "auth", idempotencyKey: `first_login:${user.id}` });
-  const cookies = [sessionCookie(req, signSession(session.id), 7 * 24 * 60 * 60), ...extraCookies];
+  const cookies = [sessionCookie(req, signSession(session.id), SESSION_DAYS * 24 * 60 * 60), ...extraCookies];
   if (redirectTo) {
     res.writeHead(302, { Location: redirectTo, "Set-Cookie": cookies });
     return res.end();
