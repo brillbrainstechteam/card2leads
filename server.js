@@ -4816,10 +4816,12 @@ async function handleApi(req, res, pathname) {
         }
         const checksum = hash(`${file.dataUrl || file.name}|${file.backDataUrl || ""}`);
         const duplicateInBatchId = batchChecksums.get(checksum);
-        // Only a still-live card blocks a re-upload. Once its contact is deleted
-        // the card is soft-deleted too (see contact delete handlers), so the same
-        // card can be scanned again — e.g. to re-test extraction.
-        const duplicateImage = db.cards.find((c) => c.organisationId === user.organisationId && c.checksum === checksum && !c.deletedAt && c.status !== "deleted");
+        // Only a still-live, real card blocks a re-upload. Deleted cards (freed
+        // when their contact is deleted — see the contact delete handlers) and
+        // marker cards that never held their own extraction (a previous
+        // skipped-duplicate or a failed upload) must not anchor the match, or the
+        // same image could never be scanned again after its contact is removed.
+        const duplicateImage = db.cards.find((c) => c.organisationId === user.organisationId && c.checksum === checksum && !c.deletedAt && !["deleted", "skipped_duplicate", "failed"].includes(c.status));
         const duplicateImageId = duplicateInBatchId || duplicateImage?.id || "";
         // An identical image never needs a second AI extraction call — skip it
         // outright instead of queueing and paying for it, so cost only scales
