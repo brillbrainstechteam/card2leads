@@ -77,6 +77,17 @@ button.slim {
   font-size: 13px;
 }
 
+/* Keep the leading message icon centred with the label instead of sitting on
+   the text baseline. */
+button.editWhatsappSettings {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+button.editWhatsappSettings svg {
+  flex-shrink: 0;
+}
+
 .link-button {
   padding: 0;
   background: transparent;

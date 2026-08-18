@@ -3847,7 +3847,7 @@ function contactsView() {
               <input id="searchBox" aria-label="Search contacts" placeholder="Search name, number, or company" value="${escapeAttr(state.contactSearchQuery)}" />
               ${state.contactSearchQuery ? `<button type="button" class="search-clear" id="clearSearchBox" aria-label="Clear search">&times;</button>` : ""}
             </div>
-            <button type="button" class="secondary slim editWhatsappSettings" id="contactsEditMessages" title="Edit the WhatsApp / email messages sent to contacts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Edit messages</button>
+            <button type="button" class="secondary slim editWhatsappSettings" id="contactsEditMessages" title="Edit the WhatsApp / email messages sent to contacts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Edit messages</button>
           </div>
         </div>
         ${state.contactSearchQuery ? `<p class="search-active-note">Showing results for "${escapeHtml(state.contactSearchQuery)}" &middot; <button type="button" class="link-button" id="clearSearchLink">Clear search</button></p>` : ""}
@@ -3971,11 +3971,17 @@ function contactsView() {
     const initials = contactInitials(contact.name);
     const synced = contact.googleContactsSyncStatus === "synced";
     const syncFailed = contact.googleContactsSyncStatus === "failed";
-    const sameAsName = String(contact.companyName || "").trim().toLowerCase() === String(contact.name || "").trim().toLowerCase();
-    const companyLine = [sameAsName ? "" : contact.companyName, contact.designation].filter(Boolean).join(" · ");
-    // Original-script line, shown only when the card actually carried one.
-    const nativeSame = String(contact.companyNameNative || "").trim() === String(contact.nameNative || "").trim();
-    const nativeLine = [contact.nameNative, nativeSame ? "" : contact.companyNameNative].filter(Boolean).join(" · ");
+    // Primary line shows the name exactly as extracted from the card — in its
+    // original script when the card was not in Latin — so the user can match a
+    // row back to the physical card. The English transliteration sits below it.
+    const originalName = String(contact.nameNative || "").trim() || String(contact.name || "").trim();
+    const originalCompany = String(contact.companyNameNative || "").trim() || String(contact.companyName || "").trim();
+    const companySameAsName = originalCompany.toLowerCase() === originalName.toLowerCase();
+    const companyLine = [companySameAsName ? "" : originalCompany, contact.designation].filter(Boolean).join(" · ");
+    // English (transliterated) name, shown only when the card's original name
+    // was in another script and so differs from the English version.
+    const englishName = String(contact.name || "").trim();
+    const englishLine = englishName && englishName !== originalName ? englishName : "";
     const nativeLang = NATIVE_LANG_TAGS[String(contact.cardLanguage || "").toLowerCase()] || "";
     const voiceText = String(contact.voiceTranscript || "").trim();
     const hasVoice = Boolean(voiceText);
@@ -3991,11 +3997,11 @@ function contactsView() {
           <span class="contact-avatar" aria-hidden="true">${escapeHtml(initials)}</span>
           <span class="cell-contact-text">
             <span class="cell-contact-head">
-              <strong title="${escapeAttr(contact.name)}">${escapeHtml(contact.name)}</strong>
+              <strong lang="${escapeAttr(nativeLang)}" title="${escapeAttr(originalName)}">${escapeHtml(originalName)}</strong>
               ${contact.needsReview ? `<span class="review-dot" title="${escapeAttr(contact.reviewReasons || "Needs a quick review")}" aria-label="Needs review"></span>` : ""}
             </span>
-            ${companyLine ? `<span class="cell-sub" title="${escapeAttr(companyLine)}">${escapeHtml(companyLine)}</span>` : ""}
-            ${nativeLine ? `<span class="cell-native" lang="${escapeAttr(nativeLang)}" title="${escapeAttr(nativeLine)}">${escapeHtml(nativeLine)}</span>` : ""}
+            ${companyLine ? `<span class="cell-sub" lang="${escapeAttr(nativeLang)}" title="${escapeAttr(companyLine)}">${escapeHtml(companyLine)}</span>` : ""}
+            ${englishLine ? `<span class="cell-native" lang="en" title="${escapeAttr(englishLine)}">${escapeHtml(englishLine)}</span>` : ""}
           </span>
         </div>
       </td>
