@@ -301,16 +301,20 @@ function ensureQueuePolling() {
   const hasQueued = state.cards.some((card) => card.status === "queued");
   if (!hasQueued) {
     if (queuePollTimer) {
-      clearInterval(queuePollTimer);
+      clearTimeout(queuePollTimer);
       queuePollTimer = null;
     }
     return;
   }
   if (queuePollTimer) return;
   let lastQueuedCount = state.cards.filter((card) => card.status === "queued").length;
-  queuePollTimer = setInterval(async () => {
+  // A single card is extracted server-side in well under a second, so a fixed
+  // 4s poll made a one-card scan at the stall feel slow. Poll quickly for small
+  // batches (the stall case) and back off for bulk uploads.
+  const pollDelay = () => (state.cards.filter((card) => card.status === "queued").length <= 3 ? 900 : 4000);
+  const tick = async () => {
     if (!state.user || !state.cards.some((card) => card.status === "queued")) {
-      clearInterval(queuePollTimer);
+      clearTimeout(queuePollTimer);
       queuePollTimer = null;
       return;
     }
@@ -335,9 +339,11 @@ function ensureQueuePolling() {
       // under an open form, a recording, or a modal.
       if (!isTyping && !isRecording && !hasModal) render();
     } catch {
-      // Transient network hiccup — the interval will just try again.
+      // Transient network hiccup — the next tick will just try again.
     }
-  }, 4000);
+    if (queuePollTimer) queuePollTimer = setTimeout(tick, pollDelay());
+  };
+  queuePollTimer = setTimeout(tick, pollDelay());
 }
 
 function authView() {
@@ -1232,16 +1238,42 @@ const WHATSAPP_STARTER_TEMPLATES = [
   }
 ];
 
+// Templates and the catalogue link live on the organisation so every user and
+// device shares them. Anything previously saved in this browser is migrated up
+// the first time the settings are opened.
 function whatsappTemplateLibrary() {
+  const saved = state.overview?.organisation?.whatsappTemplates;
+  if (Array.isArray(saved) && saved.length) return saved.map((t) => ({ ...t }));
   try {
-    const saved = JSON.parse(localStorage.getItem(WHATSAPP_LIBRARY_KEY) || "null");
-    if (Array.isArray(saved) && saved.length) return saved;
+    const legacy = JSON.parse(localStorage.getItem(WHATSAPP_LIBRARY_KEY) || "null");
+    if (Array.isArray(legacy) && legacy.length) return legacy;
   } catch { /* fall through to the starters */ }
-  return WHATSAPP_STARTER_TEMPLATES.slice();
+  return WHATSAPP_STARTER_TEMPLATES.map((t) => ({ ...t }));
 }
 
-function saveWhatsappTemplateLibrary(list) {
-  localStorage.setItem(WHATSAPP_LIBRARY_KEY, JSON.stringify(list));
+function whatsappCatalogueUrl() {
+  const saved = state.overview?.organisation?.whatsappCatalogueUrl;
+  if (typeof saved === "string" && saved) return saved;
+  return localStorage.getItem(WHATSAPP_CATALOGUE_KEY) || "";
+}
+
+function whatsappDefaultTemplate() {
+  const library = whatsappTemplateLibrary();
+  const wantedId = state.overview?.organisation?.whatsappDefaultTemplateId;
+  return library.find((t) => t.id === wantedId) || library[0];
+}
+
+async function saveWhatsappSettings({ templates, catalogueUrl, defaultTemplateId }) {
+  const result = await api("/api/settings/whatsapp", {
+    method: "PUT",
+    body: { templates, catalogueUrl, defaultTemplateId }
+  });
+  if (state.overview?.organisation) {
+    state.overview.organisation.whatsappTemplates = result.templates;
+    state.overview.organisation.whatsappCatalogueUrl = result.catalogueUrl;
+    state.overview.organisation.whatsappDefaultTemplateId = result.defaultTemplateId;
+  }
+  return result;
 }
 
 // {name} {firstName} {company} {city} {exhibition} are replaced per contact so
@@ -1262,6 +1294,152 @@ function whatsappLink(number, message) {
   return `https://wa.me/${number}${message ? `?text=${encodeURIComponent(message)}` : ""}`;
 }
 
+// Standalone editor reachable from Account, so the messages can be set up
+// before any contact exists — the campaign dialog is only reachable once you
+// have selected contacts.
+function showWhatsappSettingsModal() {
+  let library = whatsappTemplateLibrary();
+  const sample = { name: "there", companyName: "Their Company", city: "Amravati", exhibitionName: "IIJS 2026" };
+  state.modal = {
+    title: "WhatsApp messages",
+    body: "Write the messages your team sends after scanning a card. Saved for the whole workspace, on every device.",
+    className: "wide-dialog",
+    contentHtml: `
+      <div class="wa-campaign">
+        <div class="wa-template-bar">
+          <label class="wa-field wa-field-grow">
+            <span>Saved message</span>
+            <select id="waTemplateSelect">
+              ${library.map((t) => `<option value="${escapeAttr(t.id)}">${escapeHtml(t.name)}</option>`).join("")}
+            </select>
+          </label>
+          <label class="wa-field wa-field-grow">
+            <span>Name</span>
+            <input id="waTemplateName" type="text" placeholder="e.g. Diwali greeting" />
+          </label>
+          <div class="wa-template-actions">
+            <button type="button" class="secondary compact-action" id="waSaveTemplate">Save</button>
+            <button type="button" class="secondary compact-action" id="waSaveAsTemplate">Save as new</button>
+            <button type="button" class="danger compact-action" id="waDeleteTemplate">Delete</button>
+          </div>
+          <span class="wa-template-status" id="waTplStatus" role="status"></span>
+        </div>
+        <label class="wa-field">
+          <span>Message</span>
+          <textarea id="waTemplate" rows="9" placeholder="Hi {name}, ..."></textarea>
+          <small class="wa-tokens">Tags: <button type="button" class="wa-token" data-token="{name}">{name}</button><button type="button" class="wa-token" data-token="{firstName}">{firstName}</button><button type="button" class="wa-token" data-token="{company}">{company}</button><button type="button" class="wa-token" data-token="{city}">{city}</button><button type="button" class="wa-token" data-token="{exhibition}">{exhibition}</button></small>
+        </label>
+        <label class="wa-field">
+          <span>Catalogue link</span>
+          <input id="waCatalogue" type="url" placeholder="https://drive.google.com/..." value="${escapeAttr(whatsappCatalogueUrl())}" />
+          <small class="wa-hint">WhatsApp cannot attach a PDF from a link, so paste a link to the catalogue. It is added at the end of every message.</small>
+        </label>
+        <div class="wa-preview-box">
+          <span class="wa-preview-label">Preview</span>
+          <div class="wa-preview" id="waPreview"></div>
+        </div>
+      </div>`,
+    cancelText: "Close",
+    confirmText: "Save",
+    confirmClass: "",
+    keepOpenOnConfirm: true,
+    onRender: (node) => {
+      const templateEl = node.querySelector("#waTemplate");
+      const nameEl = node.querySelector("#waTemplateName");
+      const catalogueEl = node.querySelector("#waCatalogue");
+      const previewEl = node.querySelector("#waPreview");
+      const selectEl = node.querySelector("#waTemplateSelect");
+      const statusEl = node.querySelector("#waTplStatus");
+      const say = (text, bad = false) => {
+        statusEl.textContent = text;
+        statusEl.classList.toggle("bad", Boolean(bad));
+      };
+      const refresh = () => {
+        previewEl.textContent = fillWhatsappTemplate(templateEl.value, sample, catalogueEl.value);
+      };
+      const redrawSelect = (selectedId) => {
+        selectEl.innerHTML = library.map((t) => `<option value="${escapeAttr(t.id)}"${t.id === selectedId ? " selected" : ""}>${escapeHtml(t.name)}</option>`).join("");
+      };
+      const load = (id) => {
+        const chosen = library.find((t) => t.id === id) || library[0];
+        templateEl.value = chosen.body;
+        nameEl.value = chosen.name;
+        refresh();
+      };
+      const persist = (defaultId, message) => {
+        say("Saving…");
+        saveWhatsappSettings({ templates: library, catalogueUrl: catalogueEl.value, defaultTemplateId: defaultId })
+          .then(() => say(message))
+          .catch((err) => say(err.message, true));
+      };
+
+      selectEl.addEventListener("change", () => load(selectEl.value));
+      templateEl.addEventListener("input", refresh);
+      catalogueEl.addEventListener("input", refresh);
+
+      node.querySelector("#waSaveTemplate").addEventListener("click", () => {
+        const chosen = library.find((t) => t.id === selectEl.value);
+        if (!chosen) return;
+        chosen.body = templateEl.value;
+        chosen.name = String(nameEl.value || "").trim() || chosen.name;
+        redrawSelect(chosen.id);
+        persist(chosen.id, `Saved "${chosen.name}" for the whole workspace.`);
+      });
+      node.querySelector("#waSaveAsTemplate").addEventListener("click", () => {
+        const name = String(nameEl.value || "").trim();
+        if (!name) { say("Give the message a name first.", true); nameEl.focus(); return; }
+        if (library.some((t) => t.name.toLowerCase() === name.toLowerCase())) {
+          say("A saved message already uses that name — change it or press Save to update.", true);
+          nameEl.focus();
+          return;
+        }
+        const entry = { id: `tpl_${Date.now()}`, name, body: templateEl.value };
+        library = [...library, entry];
+        redrawSelect(entry.id);
+        persist(entry.id, `Saved "${entry.name}" for the whole workspace.`);
+      });
+      node.querySelector("#waDeleteTemplate").addEventListener("click", () => {
+        if (library.length <= 1) { say("Keep at least one saved message.", true); return; }
+        const chosen = library.find((t) => t.id === selectEl.value);
+        if (!chosen) return;
+        library = library.filter((t) => t.id !== chosen.id);
+        redrawSelect(library[0].id);
+        load(library[0].id);
+        persist(library[0].id, `Deleted "${chosen.name}".`);
+      });
+      node.querySelectorAll(".wa-token").forEach((btn) => btn.addEventListener("click", () => {
+        const start = templateEl.selectionStart ?? templateEl.value.length;
+        const end = templateEl.selectionEnd ?? start;
+        templateEl.value = `${templateEl.value.slice(0, start)}${btn.dataset.token}${templateEl.value.slice(end)}`;
+        templateEl.focus();
+        templateEl.setSelectionRange(start + btn.dataset.token.length, start + btn.dataset.token.length);
+        refresh();
+      }));
+
+      const initial = whatsappDefaultTemplate() || library[0];
+      redrawSelect(initial.id);
+      load(initial.id);
+    },
+    onConfirm: () => {
+      const catalogueEl = document.querySelector("#waCatalogue");
+      const selectEl = document.querySelector("#waTemplateSelect");
+      const statusEl = document.querySelector("#waTplStatus");
+      const templateEl = document.querySelector("#waTemplate");
+      const nameEl = document.querySelector("#waTemplateName");
+      const chosen = library.find((t) => t.id === selectEl?.value);
+      if (chosen && templateEl) {
+        chosen.body = templateEl.value;
+        chosen.name = String(nameEl?.value || "").trim() || chosen.name;
+      }
+      if (statusEl) statusEl.textContent = "Saving…";
+      saveWhatsappSettings({ templates: library, catalogueUrl: catalogueEl?.value || "", defaultTemplateId: chosen?.id || "" })
+        .then(() => { closeModal(false); setMessage("WhatsApp messages saved for the workspace."); render(); })
+        .catch((err) => { if (statusEl) { statusEl.textContent = err.message; statusEl.classList.add("bad"); } });
+    }
+  };
+  render();
+}
+
 let waCampaignIndex = 0;
 
 // WhatsApp click-to-chat cannot attach a file, so the catalogue travels as a
@@ -1269,8 +1447,8 @@ let waCampaignIndex = 0;
 function showWhatsappCampaignModal(targets, skipped) {
   waCampaignIndex = 0;
   let library = whatsappTemplateLibrary();
-  const savedCatalogue = localStorage.getItem(WHATSAPP_CATALOGUE_KEY) || "";
-  const lastBody = localStorage.getItem(WHATSAPP_TEMPLATE_KEY) || library[0].body;
+  const savedCatalogue = whatsappCatalogueUrl();
+  const lastBody = (whatsappDefaultTemplate() || library[0]).body;
   const total = targets.length;
   const collectionId = state.overview?.activeCollection?.id || "";
   const vcfHref = collectionId
@@ -1367,9 +1545,11 @@ function showWhatsappCampaignModal(targets, skipped) {
         if (!chosen) return;
         chosen.body = templateEl.value;
         chosen.name = String(nameEl.value || "").trim() || chosen.name;
-        saveWhatsappTemplateLibrary(library);
         redrawSelect(chosen.id);
-        say(`Saved "${chosen.name}".`);
+        say("Saving…");
+        saveWhatsappSettings({ templates: library, catalogueUrl: catalogueEl.value, defaultTemplateId: chosen.id })
+          .then(() => say(`Saved "${chosen.name}" for everyone in the workspace.`))
+          .catch((err) => say(err.message, true));
       });
       node.querySelector("#waSaveAsTemplate").addEventListener("click", () => {
         const name = String(nameEl.value || "").trim();
@@ -1381,21 +1561,25 @@ function showWhatsappCampaignModal(targets, skipped) {
         }
         const entry = { id: `tpl_${Date.now()}`, name, body: templateEl.value };
         library = [...library, entry];
-        saveWhatsappTemplateLibrary(library);
         redrawSelect(entry.id);
-        say(`Saved "${entry.name}".`);
+        say("Saving…");
+        saveWhatsappSettings({ templates: library, catalogueUrl: catalogueEl.value, defaultTemplateId: entry.id })
+          .then(() => say(`Saved "${entry.name}" for everyone in the workspace.`))
+          .catch((err) => say(err.message, true));
       });
       node.querySelector("#waDeleteTemplate").addEventListener("click", () => {
         if (library.length <= 1) { say("Keep at least one saved message.", true); return; }
         const chosen = library.find((t) => t.id === selectEl.value);
         if (!chosen) return;
         library = library.filter((t) => t.id !== chosen.id);
-        saveWhatsappTemplateLibrary(library);
         redrawSelect(library[0].id);
         templateEl.value = library[0].body;
         nameEl.value = library[0].name;
         refresh();
-        say(`Deleted "${chosen.name}".`);
+        say("Saving…");
+        saveWhatsappSettings({ templates: library, catalogueUrl: catalogueEl.value, defaultTemplateId: library[0].id })
+          .then(() => say(`Deleted "${chosen.name}".`))
+          .catch((err) => say(err.message, true));
       });
 
       node.querySelectorAll(".wa-token").forEach((btn) => btn.addEventListener("click", () => {
@@ -1421,6 +1605,10 @@ function showWhatsappCampaignModal(targets, skipped) {
       if (!entry || !templateEl) return;
       localStorage.setItem(WHATSAPP_TEMPLATE_KEY, templateEl.value);
       localStorage.setItem(WHATSAPP_CATALOGUE_KEY, catalogueEl.value);
+      if (catalogueEl.value !== savedCatalogue) {
+        const currentId = document.querySelector("#waTemplateSelect")?.value || "";
+        saveWhatsappSettings({ templates: library, catalogueUrl: catalogueEl.value, defaultTemplateId: currentId }).catch(() => {});
+      }
       window.open(
         whatsappLink(entry.number, fillWhatsappTemplate(templateEl.value, entry.contact, catalogueEl.value)),
         "_blank",
@@ -1505,6 +1693,15 @@ function contactSavedDisplayName(contact) {
   return [label, business, String(contact.stateCode || "").trim(), String(contact.city || "").trim()]
     .filter(Boolean)
     .join(". ");
+}
+
+// Used by both the contacts table and the Review quick-send strip, so it lives
+// at module scope rather than inside contactsView().
+function contactInitials(name) {
+  // Use the first two word-initials, ignoring punctuation-only tokens like ".SR".
+  const words = String(name || "").replace(/[^\p{L}\p{N}\s]/gu, " ").trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return "?";
+  return words.slice(0, 2).map((w) => w[0].toUpperCase()).join("");
 }
 
 function contactWhatsappNumber(contact) {
@@ -2532,6 +2729,52 @@ function pendingCards() {
   return state.cards.filter((card) => card.status === "staged");
 }
 
+// After a card is scanned it is auto-saved and leaves the review queue, so the
+// send action has to live here or the user has to go hunting in Contacts.
+// One tap opens WhatsApp with the workspace's default message already filled.
+function recentScansPanelHtml() {
+  const recent = state.contacts
+    .filter((c) => contactWhatsappNumber(c))
+    .slice()
+    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+    .slice(0, 8);
+  if (!recent.length) return "";
+  const tpl = whatsappDefaultTemplate();
+  return `
+    <div class="recent-scans">
+      <div class="recent-scans-head">
+        <div>
+          <strong>Just scanned</strong>
+          <span class="muted">Tap to open WhatsApp with your message ready${tpl ? ` &middot; "${escapeHtml(tpl.name)}"` : ""}.</span>
+        </div>
+        <button type="button" class="secondary slim" id="recentScansSettings">Edit message</button>
+      </div>
+      <ul class="recent-scans-list">
+        ${recent.map((c) => `
+          <li>
+            <span class="recent-scan-avatar" aria-hidden="true">${escapeHtml(contactInitials(c.name))}</span>
+            <span class="recent-scan-text">
+              <strong title="${escapeAttr(c.name)}">${escapeHtml(c.name)}</strong>
+              <span class="muted">${escapeHtml([c.companyName, c.city].filter(Boolean).join(" · "))}</span>
+            </span>
+            <button type="button" class="row-btn whatsapp" data-quick-wa="${c.id}" title="Message ${escapeAttr(c.name)} on WhatsApp"><svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M17.47 14.38c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.3-.77.96-.94 1.16-.17.2-.35.22-.65.08-.3-.15-1.25-.46-2.39-1.47-.88-.79-1.48-1.76-1.65-2.06-.17-.3-.02-.46.13-.61.14-.14.3-.35.45-.53.15-.18.2-.3.3-.5.1-.2.05-.38-.02-.53-.08-.15-.67-1.61-.92-2.21-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.53.07-.8.38-.28.3-1.05 1.02-1.05 2.5s1.08 2.9 1.23 3.1c.15.2 2.12 3.24 5.14 4.54.72.31 1.28.5 1.71.63.72.23 1.37.2 1.89.12.58-.09 1.76-.72 2.01-1.42.25-.7.25-1.3.17-1.42-.07-.13-.27-.2-.57-.35z"/><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.46 1.32 4.96L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2zm0 18.15h-.01a8.23 8.23 0 0 1-4.19-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.2 8.2 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.25-8.24a8.2 8.2 0 0 1 5.83 2.42 8.19 8.19 0 0 1 2.41 5.83c0 4.54-3.7 8.23-8.24 8.23z"/></svg>WhatsApp</button>
+          </li>`).join("")}
+      </ul>
+    </div>`;
+}
+
+function wireRecentScans(node) {
+  node.querySelector("#recentScansSettings")?.addEventListener("click", showWhatsappSettingsModal);
+  node.querySelectorAll("[data-quick-wa]").forEach((btn) => btn.addEventListener("click", () => {
+    const contact = state.contacts.find((c) => c.id === btn.dataset.quickWa);
+    if (!contact) return;
+    const number = contactWhatsappNumber(contact);
+    if (!number) { setMessage("This contact has no usable WhatsApp number.", true); return; }
+    const tpl = whatsappDefaultTemplate();
+    window.open(whatsappLink(number, fillWhatsappTemplate(tpl ? tpl.body : "", contact, whatsappCatalogueUrl())), "_blank", "noopener");
+  }));
+}
+
 function reviewView() {
   const cards = reviewCards();
   const validCount = cards.filter((card) => card.status === "completed" && card.extraction?.name && card.extraction?.mobileNumber).length;
@@ -2565,8 +2808,10 @@ function reviewView() {
             Upload more cards
           </button>
         </div>
+        ${recentScansPanelHtml()}
       </section>
     `);
+    wireRecentScans(emptyNode);
     emptyNode.querySelectorAll("[data-empty-review-view]").forEach((button) => {
       button.addEventListener("click", () => {
         clearMessage(false);
@@ -2608,6 +2853,7 @@ function reviewView() {
         </div>
         <button type="button" class="secondary slim" id="reviewLimitUpgradeBtn">Upgrade now</button>
       </div>` : ""}
+      ${recentScansPanelHtml()}
       <div class="review-list"></div>
       <div class="review-footer">
         <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M15.988 3.012A2.25 2.25 0 0018 5.25v6.5A2.25 2.25 0 0015.75 14H13.5l-3.72 3.72a.75.75 0 01-1.28-.53v-3.19H5.25A2.25 2.25 0 013 11.75v-6.5A2.25 2.25 0 015.25 3h10.5c.085 0 .17.004.238.012z" clip-rule="evenodd"/></svg>
@@ -2708,6 +2954,7 @@ function queuedCardReview(card, rowNum) {
     };
     render();
   });
+  wireRecentScans(node);
   return node;
 }
 
@@ -3517,12 +3764,6 @@ function contactsView() {
     </details>
   ` : "";
   const assignedCount = state.contacts.filter((c) => c.assignedToId).length;
-  const contactInitials = (name) => {
-    // Use the first two word-initials, ignoring punctuation-only tokens like ".SR".
-    const words = String(name || "").replace(/[^\p{L}\p{N}\s]/gu, " ").trim().split(/\s+/).filter(Boolean);
-    if (!words.length) return "?";
-    return words.slice(0, 2).map((w) => w[0].toUpperCase()).join("");
-  };
   const extendedView = state.contactsTableView === "extended";
   const syncedCount = state.contacts.filter((c) => c.googleContactsSyncStatus === "synced").length;
   const exhibitionLabel = activeCollection?.exhibitionName || activeCollection?.name || exhibitionNames[0] || "";
@@ -4685,6 +4926,16 @@ function accountView() {
           </div>
         </div>
         <div class="account-block">
+          <h3>WhatsApp messages</h3>
+          <p class="muted">${(() => {
+            const count = whatsappTemplateLibrary().length;
+            return `${count} saved message${count === 1 ? "" : "s"}${whatsappCatalogueUrl() ? " · catalogue link set" : " · no catalogue link yet"}. Shared with everyone in this workspace, on every device.`;
+          })()}</p>
+          <div class="actions">
+            <button class="secondary editWhatsappSettings" type="button">Edit messages &amp; catalogue</button>
+          </div>
+        </div>
+        <div class="account-block">
           <h3>Privacy documents</h3>
           <p class="muted">Use these as starter pages before selling. Replace with lawyer-reviewed terms for production.</p>
           <div class="actions">
@@ -4716,6 +4967,7 @@ function accountView() {
     };
     render();
   });
+  node.querySelectorAll(".editWhatsappSettings").forEach((btn) => btn.addEventListener("click", showWhatsappSettingsModal));
   node.querySelector("#deleteAccount").addEventListener("click", () => {
     state.modal = {
       tone: "danger",
@@ -4852,6 +5104,16 @@ function accountBillingView() {
           </div>
         </div>
         <div class="account-block">
+          <h3>WhatsApp messages</h3>
+          <p class="muted">${(() => {
+            const count = whatsappTemplateLibrary().length;
+            return `${count} saved message${count === 1 ? "" : "s"}${whatsappCatalogueUrl() ? " · catalogue link set" : " · no catalogue link yet"}. Shared with everyone in this workspace, on every device.`;
+          })()}</p>
+          <div class="actions">
+            <button class="secondary editWhatsappSettings" type="button">Edit messages &amp; catalogue</button>
+          </div>
+        </div>
+        <div class="account-block">
           <h3>Privacy documents</h3>
           <p class="muted">Use these as starter pages before selling. Replace with lawyer-reviewed terms for production.</p>
           <div class="actions">
@@ -4885,6 +5147,7 @@ function accountBillingView() {
     };
     render();
   });
+  node.querySelectorAll(".editWhatsappSettings").forEach((btn) => btn.addEventListener("click", showWhatsappSettingsModal));
   node.querySelector("#deleteAccount").addEventListener("click", () => {
     state.modal = {
       tone: "danger",

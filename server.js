@@ -5198,6 +5198,41 @@ async function handleApi(req, res, pathname) {
       return send(res, 200, { members: teamMembers(organisation) });
     }
 
+    // WhatsApp outreach settings live on the organisation, not in the browser,
+    // so a template written on the office laptop is there for every user on the
+    // stall — and on every device they pick up.
+    if (req.method === "PUT" && pathname === "/api/settings/whatsapp") {
+      const organisation = db.organisations.find((o) => o.id === user.organisationId);
+      if (!organisation) return error(res, 404, "Workspace not found.");
+      const body = await readJson(req);
+      const rawTemplates = Array.isArray(body.templates) ? body.templates : [];
+      if (rawTemplates.length > 40) return error(res, 400, "You can save up to 40 messages.");
+      const templates = [];
+      for (const entry of rawTemplates) {
+        const name = String(entry?.name || "").trim().slice(0, 80);
+        const messageBody = String(entry?.body || "").slice(0, 4000);
+        if (!name || !messageBody.trim()) continue;
+        templates.push({ id: String(entry?.id || id("tpl")).slice(0, 40), name, body: messageBody });
+      }
+      const catalogueUrl = String(body.catalogueUrl || "").trim().slice(0, 500);
+      if (catalogueUrl && !/^https?:\/\//i.test(catalogueUrl)) {
+        return error(res, 400, "The catalogue link must start with http:// or https://");
+      }
+      organisation.whatsappTemplates = templates;
+      organisation.whatsappCatalogueUrl = catalogueUrl;
+      organisation.whatsappDefaultTemplateId = templates.some((t) => t.id === body.defaultTemplateId)
+        ? body.defaultTemplateId
+        : (templates[0]?.id || "");
+      organisation.updatedAt = now();
+      audit(db, user, "whatsapp.settings_updated", "organisation", organisation.id, { templates: templates.length });
+      await saveDb(db);
+      return send(res, 200, {
+        templates: organisation.whatsappTemplates,
+        catalogueUrl: organisation.whatsappCatalogueUrl,
+        defaultTemplateId: organisation.whatsappDefaultTemplateId
+      });
+    }
+
     if (req.method === "POST" && pathname === "/api/team") {
       const organisation = db.organisations.find((o) => o.id === user.organisationId);
       if (!organisation) return error(res, 404, "Workspace not found.");
