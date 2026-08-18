@@ -51,7 +51,19 @@
     </script>
 
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="stylesheet" href="/styles.css?v=20260813-29" />
+    <link rel="stylesheet" href="/styles.css?v=20260813-46" />
+    <style>
+      /* The static fallback below stays in the HTML for crawlers that do not run
+         JavaScript, but is hidden for real visitors so it does not flash before
+         app.js paints the real page. The <noscript> override re-shows it when
+         scripting is unavailable, which is exactly the crawler case. */
+      .static-home { display: none; }
+    </style>
+    <noscript>
+      <style>
+        .static-home { display: block !important; }
+      </style>
+    </noscript>
     <style>
       /* Styles for the static, crawlable homepage fallback below. It is present
          in the raw HTML for search engines and Google's OAuth verification
@@ -113,6 +125,6 @@
         <p>&copy; 2026 BrillBrains Consultants Pvt. Ltd. All rights reserved.</p>
       </main>
     </div>
-    <script src="/app.js?v=20260813-29"></script>
+    <script src="/app.js?v=20260813-46"></script>
   </body>
 </html>

@@ -1,8 +1,19 @@
-const CACHE_NAME = "smartscan-shell-v44";
-const SHELL_ASSETS = ["/", "/index.html", "/styles.css?v=20260806-7", "/app.js?v=20260806-7", "/manifest.webmanifest"];
+// Bump this whenever the cached shell needs to be thrown away.
+const CACHE_NAME = "smartscan-shell-v45";
+
+// Only unversioned paths belong here. Listing "?v=..." URLs pinned the cache to
+// one release: every deploy left them pointing at a stale build, and because
+// cache.addAll() rejects atomically a single missing entry failed the whole
+// service-worker install.
+const SHELL_ASSETS = ["/", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_ASSETS)));
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) =>
+      // Cache each asset independently so one failure cannot abort the install.
+      Promise.all(SHELL_ASSETS.map((asset) => cache.add(asset).catch(() => {})))
+    )
+  );
   self.skipWaiting();
 });
 
@@ -25,8 +36,12 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        // Only store successful same-origin responses; caching an error page is
+        // what made a stale shell reappear on later loads.
+        if (response.ok && requestUrl.origin === self.location.origin) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
         return response;
       })
       .catch(() => caches.match(event.request).then((cached) => cached || caches.match("/")))

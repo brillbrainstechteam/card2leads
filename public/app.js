@@ -8,6 +8,8 @@ const state = {
   teamMembers: [],
   contactFilters: { exhibition: "", assignee: "", city: "", state: "" },
   contactSearchQuery: "",
+  // "compact" shows the everyday columns; "extended" adds every extracted field.
+  contactsTableView: localStorage.getItem("card2leads.contactsTableView") === "extended" ? "extended" : "compact",
   selectedFiles: [],
   processingCards: new Set(),
   selectedContactIds: new Set(),
@@ -90,12 +92,15 @@ function navigateToView(view, options = {}) {
 
 const fieldLabels = {
   name: "Name",
+  nameNative: "Name (Original Script)",
   mobileNumber: "Mobile Number",
+  whatsappNumber: "WhatsApp Number (optional)",
   secondaryName: "Secondary Name (optional)",
   secondaryMobileNumber: "Secondary Mobile Number (optional)",
   tertiaryName: "Tertiary Name (optional)",
   tertiaryMobileNumber: "Tertiary Mobile Number (optional)",
   companyName: "Company Name",
+  companyNameNative: "Company Name (Original Script)",
   designation: "Designation",
   officeNumber: "Office Number",
   emailAddress: "Email Address",
@@ -1129,8 +1134,11 @@ function shell() {
               : state.view === "review"
                 ? "Cards are scanned automatically here, then moved to Contacts &amp; Exports once ready."
                 : state.view === "contacts"
-                  ? `Manage contacts, assign them to your team, sync to Google, and export files easily.${state.overview?.activeCollection?.name ? ` <span class="topbar-chip">${escapeHtml(state.overview.activeCollection.name)}</span>` : ""}`
+                  ? "Manage contacts, assign them to your team, sync to Google, and export files easily."
                   : escapeHtml(state.overview?.activeCollection?.name || "")}</span>
+            ${state.view === "contacts" && state.overview?.activeCollection?.name
+              ? `<span class="topbar-chip">${escapeHtml(state.overview.activeCollection.name)}</span>`
+              : ""}
           </div>
           <div class="topbar-actions">
             ${state.view === "account" ? "" : topbarUpgradeButtonHtml()}
@@ -1179,6 +1187,341 @@ function navButton(view, label) {
 // Builds an export URL. Pass `useFilters` to make the download match exactly
 // what the Contacts screen is currently showing (assignee, exhibition, city,
 // state and search); omit it for a deliberate "everything" download.
+// BCP-47 tags so browsers pick the right font/shaping for original-script text.
+const NATIVE_LANG_TAGS = {
+  hindi: "hi", marathi: "mr", gujarati: "gu", telugu: "te", tamil: "ta",
+  kannada: "kn", malayalam: "ml", bengali: "bn", punjabi: "pa", odia: "or",
+  arabic: "ar", urdu: "ur", chinese: "zh", japanese: "ja", korean: "ko",
+  thai: "th", russian: "ru", nepali: "ne", sinhala: "si"
+};
+
+// Mirrors the server's whatsappDigits(): prefers a number explicitly marked as
+// WhatsApp on the card, else the mobile, normalised to international digits.
+const WHATSAPP_TEMPLATE_KEY = "card2leads.whatsappTemplate";
+const WHATSAPP_CATALOGUE_KEY = "card2leads.whatsappCatalogue";
+const WHATSAPP_LIBRARY_KEY = "card2leads.whatsappTemplateLibrary";
+const DEFAULT_WHATSAPP_TEMPLATE =
+  "Hi {name}, it was great meeting you at {exhibition}. Sharing our latest catalogue below — do take a look and let me know what interests you.";
+
+// Starter templates. The long one mirrors a real post-exhibition thank-you so
+// there is a working example of a multi-line message with a {name} tag.
+const WHATSAPP_STARTER_TEMPLATES = [
+  { id: "tpl_intro", name: "Catalogue intro", body: DEFAULT_WHATSAPP_TEMPLATE },
+  {
+    id: "tpl_thankyou",
+    name: "Post-exhibition thank you",
+    body: [
+      "Hi {name},",
+      "",
+      "Built with passion.",
+      "Celebrated with trust.",
+      "Made iconic by you.",
+      "",
+      "To everyone who stopped by our booth—",
+      "thank you for your time, your appreciation, and your belief in Maa Silver.",
+      "",
+      "Your presence made every moment worthwhile.",
+      "",
+      "{exhibition} may be over...",
+      "But the Iconic Journey Continues.",
+      "",
+      "See you again, with bigger ideas, better collections, and even stronger partnerships.",
+      "",
+      "Until next time... Thank You! ✨"
+    ].join("\n")
+  }
+];
+
+function whatsappTemplateLibrary() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(WHATSAPP_LIBRARY_KEY) || "null");
+    if (Array.isArray(saved) && saved.length) return saved;
+  } catch { /* fall through to the starters */ }
+  return WHATSAPP_STARTER_TEMPLATES.slice();
+}
+
+function saveWhatsappTemplateLibrary(list) {
+  localStorage.setItem(WHATSAPP_LIBRARY_KEY, JSON.stringify(list));
+}
+
+// {name} {firstName} {company} {city} {exhibition} are replaced per contact so
+// one template produces a personalised message for everybody in the selection.
+function fillWhatsappTemplate(template, contact, catalogueUrl) {
+  const firstName = String(contact.name || "").trim().split(/\s+/)[0] || "there";
+  const text = String(template || "")
+    .replace(/\{name\}/gi, String(contact.name || "there").trim())
+    .replace(/\{firstname\}/gi, firstName)
+    .replace(/\{company\}/gi, String(contact.companyName || "").trim())
+    .replace(/\{city\}/gi, String(contact.city || "").trim())
+    .replace(/\{exhibition\}/gi, String(contact.exhibitionName || "the exhibition").trim());
+  const link = String(catalogueUrl || "").trim();
+  return link ? `${text}\n\n${link}` : text;
+}
+
+function whatsappLink(number, message) {
+  return `https://wa.me/${number}${message ? `?text=${encodeURIComponent(message)}` : ""}`;
+}
+
+let waCampaignIndex = 0;
+
+// WhatsApp click-to-chat cannot attach a file, so the catalogue travels as a
+// link. Chats open one at a time and the user presses send.
+function showWhatsappCampaignModal(targets, skipped) {
+  waCampaignIndex = 0;
+  let library = whatsappTemplateLibrary();
+  const savedCatalogue = localStorage.getItem(WHATSAPP_CATALOGUE_KEY) || "";
+  const lastBody = localStorage.getItem(WHATSAPP_TEMPLATE_KEY) || library[0].body;
+  const total = targets.length;
+  const collectionId = state.overview?.activeCollection?.id || "";
+  const vcfHref = collectionId
+    ? exportHref("vcf", collectionId, targets.map((t) => t.contact.id))
+    : "";
+
+  state.modal = {
+    title: `WhatsApp ${total} contact${total === 1 ? "" : "s"}`,
+    body: "Pick or write a message — each contact gets their own name filled in. WhatsApp opens with the text ready; you press send.",
+    className: "wide-dialog",
+    contentHtml: `
+      <div class="wa-campaign">
+        <div class="wa-template-bar">
+          <label class="wa-field wa-field-grow">
+            <span>Saved message</span>
+            <select id="waTemplateSelect">
+              ${library.map((t) => `<option value="${escapeAttr(t.id)}">${escapeHtml(t.name)}</option>`).join("")}
+            </select>
+          </label>
+          <label class="wa-field wa-field-grow">
+            <span>Name</span>
+            <input id="waTemplateName" type="text" placeholder="e.g. Diwali greeting" />
+          </label>
+          <div class="wa-template-actions">
+            <button type="button" class="secondary compact-action" id="waSaveTemplate">Save</button>
+            <button type="button" class="secondary compact-action" id="waSaveAsTemplate">Save as new</button>
+            <button type="button" class="danger compact-action" id="waDeleteTemplate">Delete</button>
+          </div>
+          <span class="wa-template-status" id="waTplStatus" role="status"></span>
+        </div>
+        <label class="wa-field">
+          <span>Message</span>
+          <textarea id="waTemplate" rows="9" placeholder="Hi {name}, ...">${escapeHtml(lastBody)}</textarea>
+          <small class="wa-tokens">Tags: <button type="button" class="wa-token" data-token="{name}">{name}</button><button type="button" class="wa-token" data-token="{firstName}">{firstName}</button><button type="button" class="wa-token" data-token="{company}">{company}</button><button type="button" class="wa-token" data-token="{city}">{city}</button><button type="button" class="wa-token" data-token="{exhibition}">{exhibition}</button></small>
+        </label>
+        <label class="wa-field">
+          <span>Catalogue link (optional)</span>
+          <input id="waCatalogue" type="url" placeholder="https://drive.google.com/..." value="${escapeAttr(savedCatalogue)}" />
+          <small class="wa-hint">WhatsApp cannot attach a PDF from a link, so paste a link to the catalogue (Drive, Dropbox, your website). It is added at the end of every message.</small>
+        </label>
+        ${vcfHref ? `<div class="wa-vcf-note">
+          <span>WhatsApp shows whatever name is in your phone's contacts. Save these first and each chat will show the saved contact name.</span>
+          <a class="secondary button-link compact-action" href="${vcfHref}" download>Save ${total} contact${total === 1 ? "" : "s"} to phone (.vcf)</a>
+        </div>` : ""}
+        <div class="wa-preview-box">
+          <span class="wa-preview-label">Preview — ${escapeHtml(targets[0].contact.name || "first contact")}</span>
+          <div class="wa-preview" id="waPreview"></div>
+        </div>
+        ${skipped ? `<p class="wa-skipped">${skipped} selected contact(s) have no usable number and will be skipped.</p>` : ""}
+        <div class="wa-progress" id="waProgress">Ready to open ${total} chat${total === 1 ? "" : "s"}, one at a time.</div>
+      </div>`,
+    cancelText: "Close",
+    confirmText: `Open chat 1 of ${total}`,
+    confirmClass: "",
+    keepOpenOnConfirm: true,
+    onRender: (node) => {
+      const templateEl = node.querySelector("#waTemplate");
+      const catalogueEl = node.querySelector("#waCatalogue");
+      const previewEl = node.querySelector("#waPreview");
+      const selectEl = node.querySelector("#waTemplateSelect");
+
+      const refresh = () => {
+        const contact = targets[Math.min(waCampaignIndex, total - 1)].contact;
+        previewEl.textContent = fillWhatsappTemplate(templateEl.value, contact, catalogueEl.value);
+        const labelEl = node.querySelector(".wa-preview-label");
+        if (labelEl) labelEl.textContent = `Preview — ${contact.name || "contact"}`;
+      };
+      const redrawSelect = (selectedId) => {
+        selectEl.innerHTML = library.map((t) => `<option value="${escapeAttr(t.id)}"${t.id === selectedId ? " selected" : ""}>${escapeHtml(t.name)}</option>`).join("");
+      };
+
+      const nameEl = node.querySelector("#waTemplateName");
+      const statusEl = node.querySelector("#waTplStatus");
+      // setMessage() re-renders the app, which would rebuild this modal from its
+      // static contentHtml and discard the edited template list.
+      const say = (text, bad = false) => {
+        statusEl.textContent = text;
+        statusEl.classList.toggle("bad", Boolean(bad));
+      };
+      const syncName = () => {
+        const chosen = library.find((t) => t.id === selectEl.value);
+        if (chosen) nameEl.value = chosen.name;
+      };
+
+      selectEl.addEventListener("change", () => {
+        const chosen = library.find((t) => t.id === selectEl.value);
+        if (chosen) { templateEl.value = chosen.body; nameEl.value = chosen.name; refresh(); }
+      });
+      templateEl.addEventListener("input", refresh);
+      catalogueEl.addEventListener("input", refresh);
+
+      node.querySelector("#waSaveTemplate").addEventListener("click", () => {
+        const chosen = library.find((t) => t.id === selectEl.value);
+        if (!chosen) return;
+        chosen.body = templateEl.value;
+        chosen.name = String(nameEl.value || "").trim() || chosen.name;
+        saveWhatsappTemplateLibrary(library);
+        redrawSelect(chosen.id);
+        say(`Saved "${chosen.name}".`);
+      });
+      node.querySelector("#waSaveAsTemplate").addEventListener("click", () => {
+        const name = String(nameEl.value || "").trim();
+        if (!name) { say("Give the message a name first.", true); nameEl.focus(); return; }
+        if (library.some((t) => t.name.toLowerCase() === name.toLowerCase())) {
+          say("A saved message already uses that name — change it or press Save to update.", true);
+          nameEl.focus();
+          return;
+        }
+        const entry = { id: `tpl_${Date.now()}`, name, body: templateEl.value };
+        library = [...library, entry];
+        saveWhatsappTemplateLibrary(library);
+        redrawSelect(entry.id);
+        say(`Saved "${entry.name}".`);
+      });
+      node.querySelector("#waDeleteTemplate").addEventListener("click", () => {
+        if (library.length <= 1) { say("Keep at least one saved message.", true); return; }
+        const chosen = library.find((t) => t.id === selectEl.value);
+        if (!chosen) return;
+        library = library.filter((t) => t.id !== chosen.id);
+        saveWhatsappTemplateLibrary(library);
+        redrawSelect(library[0].id);
+        templateEl.value = library[0].body;
+        nameEl.value = library[0].name;
+        refresh();
+        say(`Deleted "${chosen.name}".`);
+      });
+
+      node.querySelectorAll(".wa-token").forEach((btn) => btn.addEventListener("click", () => {
+        const start = templateEl.selectionStart ?? templateEl.value.length;
+        const end = templateEl.selectionEnd ?? start;
+        templateEl.value = `${templateEl.value.slice(0, start)}${btn.dataset.token}${templateEl.value.slice(end)}`;
+        templateEl.focus();
+        templateEl.setSelectionRange(start + btn.dataset.token.length, start + btn.dataset.token.length);
+        refresh();
+      }));
+
+      const match = library.find((t) => t.body === lastBody);
+      redrawSelect(match ? match.id : library[0].id);
+      syncName();
+      refresh();
+    },
+    onConfirm: () => {
+      const templateEl = document.querySelector("#waTemplate");
+      const catalogueEl = document.querySelector("#waCatalogue");
+      const progressEl = document.querySelector("#waProgress");
+      const confirmBtn = document.querySelector("[data-modal-confirm]");
+      const entry = targets[waCampaignIndex];
+      if (!entry || !templateEl) return;
+      localStorage.setItem(WHATSAPP_TEMPLATE_KEY, templateEl.value);
+      localStorage.setItem(WHATSAPP_CATALOGUE_KEY, catalogueEl.value);
+      window.open(
+        whatsappLink(entry.number, fillWhatsappTemplate(templateEl.value, entry.contact, catalogueEl.value)),
+        "_blank",
+        "noopener"
+      );
+      waCampaignIndex += 1;
+      if (waCampaignIndex >= total) {
+        if (progressEl) progressEl.textContent = `Opened all ${total} chat(s). Send each one from WhatsApp.`;
+        if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = "All chats opened"; }
+        return;
+      }
+      const next = targets[waCampaignIndex];
+      if (progressEl) progressEl.textContent = `Opened ${waCampaignIndex} of ${total}. Next: ${next.contact.name || next.number}`;
+      if (confirmBtn) confirmBtn.textContent = `Open chat ${waCampaignIndex + 1} of ${total}`;
+      const previewEl = document.querySelector("#waPreview");
+      const labelEl = document.querySelector(".wa-preview-label");
+      if (previewEl) previewEl.textContent = fillWhatsappTemplate(templateEl.value, next.contact, catalogueEl.value);
+      if (labelEl) labelEl.textContent = `Preview — ${next.contact.name || "contact"}`;
+    }
+  };
+  render();
+}
+
+// Mirrors the server's googleContactDisplayName(): the name that actually gets
+// written to Google Contacts, the VCF and the export files. Shown in its own
+// column so it is visible before exporting rather than only after.
+// For cards where no city was printed (or it could not be read). The server
+// derives the state from the city on save, so entering just the city is enough.
+function showSetCityModal(contact) {
+  state.modal = {
+    title: "Add city",
+    body: "Type the city and the state fills in automatically for known Indian towns. You can also set the state yourself.",
+    detail: contact.name || "",
+    contentHtml: `
+      <div class="set-city-form">
+        <label class="wa-field">
+          <span>City</span>
+          <input id="setCityInput" type="text" placeholder="e.g. Amravati" value="${escapeAttr(contact.city || "")}" />
+        </label>
+        <label class="wa-field">
+          <span>State (optional)</span>
+          <input id="setStateInput" type="text" placeholder="Left blank, we work it out from the city" value="${escapeAttr(contact.state || "")}" />
+        </label>
+      </div>`,
+    cancelText: "Cancel",
+    confirmText: "Save city",
+    confirmClass: "",
+    keepOpenOnConfirm: true,
+    onRender: (node) => node.querySelector("#setCityInput")?.focus(),
+    onConfirm: async () => {
+      const city = String(document.querySelector("#setCityInput")?.value || "").trim();
+      const stateValue = String(document.querySelector("#setStateInput")?.value || "").trim();
+      if (!city && !stateValue) {
+        setMessage("Enter a city (or a state) first.", true);
+        return;
+      }
+      // cleanContactFields() rebuilds the whole record, so send every existing
+      // field alongside the change or the untouched ones would be wiped.
+      const fields = { ...contact, city, state: stateValue };
+      try {
+        await api(`/api/contacts/${contact.id}`, { method: "PATCH", body: { fields } });
+        closeModal(false);
+        await refreshAll();
+        setMessage(`City saved for ${contact.name || "contact"}.`);
+      } catch (err) {
+        setMessage(err.message, true);
+      }
+    }
+  };
+  render();
+}
+
+function contactSavedDisplayName(contact) {
+  const stored = String(contact.contactDisplayName || "").trim();
+  if (stored) return stored;
+  const exhibition = String(contact.exhibitionName || "").trim();
+  const year = String(contact.exhibitionDate || "").match(/^(\d{4})/)?.[1] || "";
+  const label = exhibition && year && !new RegExp(`\\b${year}\\b`).test(exhibition)
+    ? `${exhibition} ${year}`
+    : exhibition || year;
+  const business = String(contact.companyName || "").trim() || String(contact.name || "").trim();
+  return [label, business, String(contact.stateCode || "").trim(), String(contact.city || "").trim()]
+    .filter(Boolean)
+    .join(". ");
+}
+
+function contactWhatsappNumber(contact) {
+  const explicit = String(contact.whatsappNumber || "").replace(/\D/g, "");
+  if (explicit.length >= 8) return explicit;
+  const raw = String(contact.mobileNumber || "").trim();
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return "";
+  if (/^\+/.test(raw)) return digits;
+  if (/^00/.test(digits)) return digits.replace(/^00/, "");
+  const cc = String(contact.phoneCountryCode || "").replace(/\D/g, "");
+  const national = digits.replace(/^0+/, "");
+  if (cc) return national.startsWith(cc) && national.length > cc.length ? national : `${cc}${national}`;
+  if (/^[6-9]\d{9}$/.test(national)) return `91${national}`;
+  return national.length >= 8 ? national : "";
+}
+
 function exportHref(format, collectionId, ids = [], all = false, useFilters = false) {
   const params = new URLSearchParams({ collectionId, csrf: state.csrfToken || "" });
   if (ids.length) params.set("ids", ids.join(","));
@@ -3143,15 +3486,20 @@ function contactsView() {
     <details class="export-sync-menu">
       <summary><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download files</summary>
       <div class="export-sync-popover">
-        <span class="export-sync-heading">${downloadFilterActive ? `Matching your filters (${visibleContacts.length})` : `Download (${state.contacts.length})`}</span>
-        <a href="${exportHref("xlsx", activeCollectionId, [], true, downloadFilterActive)}">Excel spreadsheet</a>
-        <a href="${exportHref("csv", activeCollectionId, [], true, downloadFilterActive)}">CSV file</a>
-        <a href="${exportHref("vcf", activeCollectionId, [], true, downloadFilterActive)}">VCF (phone contacts)</a>
-        ${downloadFilterActive ? `
-        <span class="export-sync-heading">All contacts (${state.contacts.length})</span>
-        <a href="${exportHref("xlsx", activeCollectionId, [], true, false)}">Excel spreadsheet</a>
-        <a href="${exportHref("csv", activeCollectionId, [], true, false)}">CSV file</a>
-        <a href="${exportHref("vcf", activeCollectionId, [], true, false)}">VCF (phone contacts)</a>` : ""}
+        <span class="export-sync-heading">Download</span>
+        <select class="export-member-select" id="exportScopeSelect" aria-label="Choose which contacts to download">
+          ${downloadFilterActive ? `<option value="filters" selected>Matching current filters (${visibleContacts.length})</option>` : ""}
+          <option value="all"${downloadFilterActive ? "" : " selected"}>All contacts (${state.contacts.length})</option>
+          ${state.teamMembers.map((m) => {
+            const count = state.contacts.filter((c) => c.assignedToId === m.id).length;
+            return `<option value="member:${m.id}">${escapeHtml(m.name)} (${count})</option>`;
+          }).join("")}
+          ${state.contacts.some((c) => !c.assignedToId) ? `<option value="unassigned">Unassigned (${state.contacts.filter((c) => !c.assignedToId).length})</option>` : ""}
+        </select>
+        <span class="export-member-hint" id="exportScopeHint"></span>
+        <a data-scope-export="xlsx" href="${exportHref("xlsx", activeCollectionId, [], true, downloadFilterActive)}">Excel spreadsheet</a>
+        <a data-scope-export="csv" href="${exportHref("csv", activeCollectionId, [], true, downloadFilterActive)}">CSV file</a>
+        <a data-scope-export="vcf" href="${exportHref("vcf", activeCollectionId, [], true, downloadFilterActive)}">VCF (phone contacts)</a>
         <span class="export-sync-heading">Google</span>
         ${!google.configured
           ? `<span class="export-sync-note">Google integration is not configured.</span>`
@@ -3175,6 +3523,7 @@ function contactsView() {
     if (!words.length) return "?";
     return words.slice(0, 2).map((w) => w[0].toUpperCase()).join("");
   };
+  const extendedView = state.contactsTableView === "extended";
   const syncedCount = state.contacts.filter((c) => c.googleContactsSyncStatus === "synced").length;
   const exhibitionLabel = activeCollection?.exhibitionName || activeCollection?.name || exhibitionNames[0] || "";
   const googleGlyph = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="#4285F4" d="M23 12.27c0-.79-.07-1.54-.2-2.27H12v4.51h6.16a5.27 5.27 0 0 1-2.28 3.46v2.88h3.7C21.7 18.89 23 15.9 23 12.27z"/><path fill="#34A853" d="M12 23.5c3.08 0 5.66-1.02 7.55-2.77l-3.7-2.87c-1.02.69-2.33 1.1-3.85 1.1-2.96 0-5.47-2-6.37-4.69H1.8v2.95A11.42 11.42 0 0 0 12 23.5z"/><path fill="#FBBC05" d="M5.63 14.27a6.85 6.85 0 0 1 0-4.38V6.94H1.8a11.44 11.44 0 0 0 0 10.28l3.83-2.95z"/><path fill="#EA4335" d="M12 5.32c1.67 0 3.17.58 4.35 1.71l3.26-3.26C17.65 1.9 15.07.8 12 .8A11.42 11.42 0 0 0 1.8 6.94l3.83 2.95c.9-2.69 3.41-4.57 6.37-4.57z"/></svg>`;
@@ -3320,12 +3669,45 @@ function contactsView() {
           <label class="selectall-label"><input id="selectAllContacts" type="checkbox" ${allVisibleSelected ? "checked" : ""} /> <span>${selectedIds.length ? `${selectedIds.length} selected` : "Select all"}</span></label>
           <span class="muted contacts-count">${visibleContacts.length} contact${visibleContacts.length === 1 ? "" : "s"}${filtersActive ? ` of ${state.contacts.length}` : ""}</span>
           <div class="selectbar-actions ${selectedIds.length ? "" : "hidden"}">
+            <button class="secondary compact-action" id="bulkWhatsappContacts">WhatsApp</button>
             <button class="secondary compact-action" id="bulkVoiceContacts"><span class="button-mic-icon" aria-hidden="true"></span>Voice note</button>
             ${activeCollectionId ? `<a href="${exportHref("xlsx", activeCollectionId, selectedIds)}"><button type="button" class="secondary compact-action">Excel</button></a><a href="${exportHref("csv", activeCollectionId, selectedIds)}"><button type="button" class="secondary compact-action">CSV</button></a><a href="${exportHref("vcf", activeCollectionId, selectedIds)}"><button type="button" class="secondary compact-action">VCF</button></a>` : ""}
             <button class="danger compact-action" id="bulkDeleteContacts">Delete</button>
           </div>
+          <div class="view-toggle" role="group" aria-label="Table columns">
+            <button type="button" class="view-toggle-btn ${extendedView ? "" : "active"}" data-table-view="compact">Compact</button>
+            <button type="button" class="view-toggle-btn ${extendedView ? "active" : ""}" data-table-view="extended">Extended</button>
+          </div>
         </div>
-        <ul class="contact-list"></ul>
+        <div class="c2l-table-wrap">
+          <table class="c2l-table ${extendedView ? "is-extended" : ""}">
+            <thead><tr>
+              <th class="col-check sticky-l1"><span class="sr-only">Select</span></th>
+              <th class="col-name sticky-l2">Contact</th>
+              <th class="col-saved">Saved contact name</th>
+              <th class="col-mobile">Mobile</th>
+              ${extendedView ? `
+              <th>Country code</th>
+              <th>WhatsApp no.</th>
+              <th>Designation</th>
+              <th>Email</th>
+              <th>Website</th>
+              <th>Address</th>
+              <th>State code</th>
+              <th>Country</th>
+              <th>Card language</th>
+              <th>Tags</th>
+              <th>Remarks</th>` : ""}
+              <th class="col-place">City / State</th>
+              <th class="col-exhibition">Exhibition</th>
+              <th class="col-voice">Voice note</th>
+              <th class="col-sync">Google sync</th>
+              <th class="col-team">Team member</th>
+              <th class="col-actions sticky-r">Actions</th>
+            </tr></thead>
+            <tbody class="c2l-tbody"></tbody>
+          </table>
+        </div>
         ${visibleContacts.length ? "" : `<p class="contact-empty">No contacts match these filters.</p>`}`}
       </div>
         </div>
@@ -3342,56 +3724,90 @@ function contactsView() {
     // the menu fell back to the generic export-menu styling instead.
     exportSlot.appendChild(wrapper.firstElementChild);
   }
-  const tbody = node.querySelector(".contact-list");
+  const tbody = node.querySelector(".c2l-tbody");
   if (tbody) tbody.innerHTML = visibleContacts.map((contact) => {
     const initials = contactInitials(contact.name);
     const synced = contact.googleContactsSyncStatus === "synced";
     const syncFailed = contact.googleContactsSyncStatus === "failed";
     const sameAsName = String(contact.companyName || "").trim().toLowerCase() === String(contact.name || "").trim().toLowerCase();
     const companyLine = [sameAsName ? "" : contact.companyName, contact.designation].filter(Boolean).join(" · ");
-    const placeLine = [[contact.city, contact.state].filter(Boolean).join(", "), contact.mobileNumber].filter(Boolean).join(" · ");
+    // Original-script line, shown only when the card actually carried one.
+    const nativeSame = String(contact.companyNameNative || "").trim() === String(contact.nameNative || "").trim();
+    const nativeLine = [contact.nameNative, nativeSame ? "" : contact.companyNameNative].filter(Boolean).join(" · ");
+    const nativeLang = NATIVE_LANG_TAGS[String(contact.cardLanguage || "").toLowerCase()] || "";
+    const voiceText = String(contact.voiceTranscript || "").trim();
+    const hasVoice = Boolean(voiceText);
+    const waNumber = contactWhatsappNumber(contact);
+    const place = [contact.city, contact.state].filter(Boolean).join(", ");
+    const savedName = contactSavedDisplayName(contact);
+    const cell = (value) => `<td class="cell-text" title="${escapeAttr(value || "")}">${escapeHtml(value || "")}</td>`;
     return `
-    <li class="contact-card">
-      <label class="contact-card-check"><input aria-label="Select ${escapeAttr(contact.name)}" type="checkbox" data-select-contact="${contact.id}" ${state.selectedContactIds.has(contact.id) ? "checked" : ""} /></label>
-      <div class="contact-avatar" aria-hidden="true">${escapeHtml(initials)}</div>
-      <div class="contact-card-info">
-        <div class="contact-card-head">
-          <strong title="${escapeAttr(contact.name)}">${escapeHtml(contact.name)}</strong>
-          ${contact.needsReview ? `<span class="review-dot" title="${escapeAttr(contact.reviewReasons || "Needs a quick review")}" aria-label="Needs review"></span>` : ""}
+    <tr class="c2l-row">
+      <td class="col-check sticky-l1"><input aria-label="Select ${escapeAttr(contact.name)}" type="checkbox" data-select-contact="${contact.id}" ${state.selectedContactIds.has(contact.id) ? "checked" : ""} /></td>
+      <td class="col-name sticky-l2">
+        <div class="cell-contact">
+          <span class="contact-avatar" aria-hidden="true">${escapeHtml(initials)}</span>
+          <span class="cell-contact-text">
+            <span class="cell-contact-head">
+              <strong title="${escapeAttr(contact.name)}">${escapeHtml(contact.name)}</strong>
+              ${contact.needsReview ? `<span class="review-dot" title="${escapeAttr(contact.reviewReasons || "Needs a quick review")}" aria-label="Needs review"></span>` : ""}
+            </span>
+            ${companyLine ? `<span class="cell-sub" title="${escapeAttr(companyLine)}">${escapeHtml(companyLine)}</span>` : ""}
+            ${nativeLine ? `<span class="cell-native" lang="${escapeAttr(nativeLang)}" title="${escapeAttr(nativeLine)}">${escapeHtml(nativeLine)}</span>` : ""}
+          </span>
         </div>
-        <span class="contact-card-line" title="${escapeAttr(companyLine)}">${escapeHtml(companyLine)}</span>
-        <span class="contact-card-line" title="${escapeAttr(placeLine)}">${escapeHtml(placeLine)}</span>
-        ${contact.voiceTranscript ? `<span class="contact-card-voice" title="${escapeAttr(contact.voiceTranscript)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" width="12" height="12" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>${escapeHtml(contact.voiceTranscript)}</span>` : ""}
-      </div>
-      ${contact.exhibitionName ? `<span class="contact-card-tag">${escapeHtml(contact.exhibitionName)}</span>` : `<span></span>`}
-      <div class="contact-meta">
-      <div class="contact-col">
-        <span class="contact-col-label">Google sync status</span>
+      </td>
+      <td class="col-saved"><span class="saved-name" title="${escapeAttr(savedName)}">${escapeHtml(savedName)}</span></td>
+      <td class="col-mobile cell-text">${escapeHtml(contact.mobileNumber || "")}</td>
+      ${extendedView ? `
+      ${cell(contact.phoneCountryCode)}
+      ${cell(contact.whatsappNumber || waNumber)}
+      ${cell(contact.designation)}
+      ${cell(contact.emailAddress)}
+      ${cell(contact.website)}
+      ${cell(contact.address)}
+      ${cell(contact.stateCode)}
+      ${cell(contact.country)}
+      ${cell(contact.cardLanguage)}
+      ${cell(contact.tags)}
+      ${cell(contact.notes)}` : ""}
+      <td class="col-place">${place
+        ? `<span class="cell-text" title="${escapeAttr(place)}">${escapeHtml(place)}</span>`
+        : `<button type="button" class="add-city-btn" data-set-city="${contact.id}" title="No city was found on this card — add it and the state is filled in automatically">+ Add city</button>`}</td>
+      <td class="col-exhibition">${contact.exhibitionName ? `<span class="contact-card-tag">${escapeHtml(contact.exhibitionName)}</span>` : ""}</td>
+      <td class="col-voice">
+        ${hasVoice
+          ? `<button type="button" class="voice-badge has-note" data-voice-view="${contact.id}" title="${escapeAttr(voiceText)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>Added</button>`
+          : `<span class="voice-badge none">Not added</span>`}
+      </td>
+      <td class="col-sync">
         <span class="sync-badge ${synced ? "ok" : syncFailed ? "bad" : "idle"}">
           ${synced
-            ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><polyline points="20 6 9 17 4 12"/></svg>Google synced`
+            ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><polyline points="20 6 9 17 4 12"/></svg>Synced`
             : syncFailed
-              ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>Sync failed`
+              ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>Failed`
               : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/></svg>Not synced`}
         </span>
-        <span class="contact-col-sub">${synced && contact.googleContactsSyncedAt ? `Synced on ${escapeHtml(displayDate(contact.googleContactsSyncedAt))}` : ""}</span>
-      </div>
-      <div class="contact-col">
-        <span class="contact-col-label">Team member</span>
+      </td>
+      <td class="col-team">
         <select class="assign-select" data-assign="${contact.id}" aria-label="Assign ${escapeAttr(contact.name)} to a team member">
           <option value="">Unassigned</option>
           ${state.teamMembers.map((m) => `<option value="${m.id}"${contact.assignedToId === m.id ? " selected" : ""}>${escapeHtml(m.name)}</option>`).join("")}
           ${contact.assignedToId && !state.teamMembers.some((m) => m.id === contact.assignedToId) ? `<option value="${contact.assignedToId}" selected>${escapeHtml(contact.assignedToName || "Assigned")}</option>` : ""}
           <option value="__add">+ Add a team member…</option>
         </select>
-      </div>
-      </div>
-      <div class="contact-card-actions">
-        <button class="row-btn" data-voice-contact="${contact.id}" data-contact-name="${escapeAttr(contact.name)}" title="Add or replace voice note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>Voice note</button>
-        <button class="row-btn" data-edit="${contact.id}" title="Edit contact"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Edit</button>
-        <button class="row-btn danger" data-delete="${contact.id}" data-contact-name="${escapeAttr(contact.name)}" title="Delete contact"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>Delete</button>
-      </div>
-    </li>`;
+      </td>
+      <td class="col-actions sticky-r">
+        <div class="row-actions">
+          ${waNumber
+            ? `<a class="row-btn whatsapp" href="https://wa.me/${escapeAttr(waNumber)}" target="_blank" rel="noopener noreferrer" data-wa-contact="${contact.id}" title="Message ${escapeAttr(contact.name)} on WhatsApp"><svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M17.47 14.38c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.3-.77.96-.94 1.16-.17.2-.35.22-.65.08-.3-.15-1.25-.46-2.39-1.47-.88-.79-1.48-1.76-1.65-2.06-.17-.3-.02-.46.13-.61.14-.14.3-.35.45-.53.15-.18.2-.3.3-.5.1-.2.05-.38-.02-.53-.08-.15-.67-1.61-.92-2.21-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.53.07-.8.38-.28.3-1.05 1.02-1.05 2.5s1.08 2.9 1.23 3.1c.15.2 2.12 3.24 5.14 4.54.72.31 1.28.5 1.71.63.72.23 1.37.2 1.89.12.58-.09 1.76-.72 2.01-1.42.25-.7.25-1.3.17-1.42-.07-.13-.27-.2-.57-.35z"/><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.46 1.32 4.96L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2zm0 18.15h-.01a8.23 8.23 0 0 1-4.19-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.2 8.2 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.25-8.24a8.2 8.2 0 0 1 5.83 2.42 8.19 8.19 0 0 1 2.41 5.83c0 4.54-3.7 8.23-8.24 8.23z"/></svg><span>WhatsApp</span></a>`
+            : ""}
+          <button class="row-btn icon-only" data-voice-contact="${contact.id}" data-contact-name="${escapeAttr(contact.name)}" title="Add or replace voice note" aria-label="Voice note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
+          <button class="row-btn icon-only" data-edit="${contact.id}" title="Edit contact" aria-label="Edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          <button class="row-btn icon-only danger" data-delete="${contact.id}" data-contact-name="${escapeAttr(contact.name)}" title="Delete contact" aria-label="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+        </div>
+      </td>
+    </tr>`;
   }).join("");
   node.querySelector("#selectAllContacts")?.addEventListener("change", (event) => {
     if (event.target.checked) visibleContacts.forEach((contact) => state.selectedContactIds.add(contact.id));
@@ -3436,6 +3852,47 @@ function contactsView() {
     assignContact(select.dataset.assign, select.value);
   }));
   node.querySelector("#manageTeamButton")?.addEventListener("click", showManageTeamModal);
+  // One set of download links; the scope picker re-points them. The server
+  // builds the file name from whichever scope is applied.
+  const scopeSelect = node.querySelector("#exportScopeSelect");
+  const applyExportScope = () => {
+    if (!scopeSelect) return;
+    const value = scopeSelect.value;
+    const params = new URLSearchParams({ collectionId: activeCollectionId, csrf: state.csrfToken || "", all: "true" });
+    let count = state.contacts.length;
+    let label = "All contacts";
+    if (value === "filters") {
+      const f = state.contactFilters || {};
+      if (f.assignee) params.set("assigneeId", f.assignee);
+      if (f.exhibition) params.set("exhibition", f.exhibition);
+      if (f.city) params.set("city", f.city);
+      if (f.state) params.set("state", f.state);
+      if (state.contactSearchQuery) params.set("q", state.contactSearchQuery);
+      count = visibleContacts.length;
+      label = "Current filters";
+    } else if (value === "unassigned") {
+      params.set("assigneeId", "__unassigned");
+      count = state.contacts.filter((c) => !c.assignedToId).length;
+      label = "Unassigned";
+    } else if (value.startsWith("member:")) {
+      const memberId = value.slice("member:".length);
+      params.set("assigneeId", memberId);
+      count = state.contacts.filter((c) => c.assignedToId === memberId).length;
+      label = state.teamMembers.find((m) => m.id === memberId)?.name || "Team member";
+    }
+    node.querySelectorAll("[data-scope-export]").forEach((link) => {
+      link.href = `/api/export.${link.dataset.scopeExport}?${params.toString()}`;
+    });
+    const hint = node.querySelector("#exportScopeHint");
+    if (hint) hint.textContent = `${count} contact(s) · file name starts with ${label.replace(/\s+/g, "_")}`;
+  };
+  scopeSelect?.addEventListener("change", applyExportScope);
+  applyExportScope();
+  node.querySelectorAll("[data-table-view]").forEach((btn) => btn.addEventListener("click", () => {
+    state.contactsTableView = btn.dataset.tableView;
+    localStorage.setItem("card2leads.contactsTableView", state.contactsTableView);
+    render();
+  }));
   node.querySelector("#workflowAddTeam")?.addEventListener("click", showManageTeamModal);
   node.querySelector("#workflowSyncContacts")?.addEventListener("click", async (event) => {
     await prepareGoogleContactsSync(event.currentTarget, selectedIds, activeCollectionId, activeCollection);
@@ -3461,6 +3918,34 @@ function contactsView() {
   node.querySelector("#contactsEmptyUpload")?.addEventListener("click", () => navigateToView("upload"));
   tbody && tbody.querySelectorAll("[data-voice-contact]").forEach((btn) => btn.addEventListener("click", () => {
     showVoiceNoteModal("contact", [btn.dataset.voiceContact], btn.dataset.contactName || "this contact");
+  }));
+  // Single-row WhatsApp: reuse the saved campaign template so the message is
+  // already personalised rather than opening an empty chat.
+  tbody && tbody.querySelectorAll("[data-wa-contact]").forEach((link) => link.addEventListener("click", (event) => {
+    const contact = state.contacts.find((item) => item.id === link.dataset.waContact);
+    const template = localStorage.getItem(WHATSAPP_TEMPLATE_KEY);
+    if (!contact || !template) return;
+    event.preventDefault();
+    const number = contactWhatsappNumber(contact);
+    if (!number) return;
+    window.open(whatsappLink(number, fillWhatsappTemplate(template, contact, localStorage.getItem(WHATSAPP_CATALOGUE_KEY) || "")), "_blank", "noopener");
+  }));
+  tbody && tbody.querySelectorAll("[data-set-city]").forEach((btn) => btn.addEventListener("click", () => {
+    const contact = state.contacts.find((item) => item.id === btn.dataset.setCity);
+    if (contact) showSetCityModal(contact);
+  }));
+  tbody && tbody.querySelectorAll("[data-voice-view]").forEach((btn) => btn.addEventListener("click", () => {
+    const contact = state.contacts.find((item) => item.id === btn.dataset.voiceView);
+    if (!contact) return;
+    state.modal = {
+      title: "Voice note",
+      body: contact.voiceTranscript || "",
+      detail: [contact.name, contact.voiceLanguage ? `Language: ${contact.voiceLanguage}` : ""].filter(Boolean).join(" · "),
+      cancelText: "Close",
+      confirmText: "Replace note",
+      onConfirm: () => showVoiceNoteModal("contact", [contact.id], contact.name || "this contact")
+    };
+    render();
   }));
   tbody && tbody.querySelectorAll("[data-delete]").forEach((btn) => btn.addEventListener("click", () => {
     state.modal = {
@@ -3515,6 +4000,18 @@ function contactsView() {
       }
     };
     render();
+  });
+  node.querySelector("#bulkWhatsappContacts")?.addEventListener("click", () => {
+    const targets = state.contacts
+      .filter((contact) => selectedIds.includes(contact.id))
+      .map((contact) => ({ contact, number: contactWhatsappNumber(contact) }))
+      .filter((entry) => entry.number);
+    const skipped = selectedIds.length - targets.length;
+    if (!targets.length) {
+      setMessage("None of the selected contacts have a usable WhatsApp number.", true);
+      return;
+    }
+    showWhatsappCampaignModal(targets, skipped);
   });
   node.querySelector("#bulkVoiceContacts")?.addEventListener("click", () => {
     showVoiceNoteModal("contacts", selectedIds, `${selectedIds.length} selected contact(s)`);

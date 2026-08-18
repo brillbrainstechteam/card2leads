@@ -159,20 +159,29 @@ const rateLimitBuckets = new Map();
 const mobileAuthCodes = new Map();
 
 const EXPORT_COLUMNS = [
+  "Saved Contact Name",
   "Name",
+  "Name (Original Script)",
   "Mobile Number",
+  "Country Code",
+  "Phone Country",
+  "WhatsApp Number",
   "Secondary Mobile Number",
   "Company Name",
+  "Company Name (Original Script)",
   "Designation",
   "Office Number",
   "Email Address",
   "Secondary Email",
   "Website",
   "Address",
+  "Address (Original Script)",
   "City",
   "State",
+  "State Code",
   "Postal Code",
   "Country",
+  "Card Language",
   "Exhibition Name",
   "Exhibition Date",
   "Remarks",
@@ -208,8 +217,178 @@ const OPTIONAL_FIELDS = [
   "voiceTranscript",
   "voiceLanguage",
   "notes",
-  "tags"
+  "tags",
+  // Original-script values, kept alongside the Latin/transliterated ones above so
+  // a Marathi/Gujarati/Telugu/Arabic card keeps exactly what was printed on it.
+  "nameNative",
+  "companyNameNative",
+  "designationNative",
+  "addressNative",
+  "cityNative",
+  "stateNative",
+  "cardLanguage",
+  "cardScript",
+  // Derived on save (see applyDerivedContactFields).
+  "stateCode",
+  "phoneCountryCode",
+  "phoneCountry",
+  "whatsappNumber",
+  "contactDisplayName"
 ];
+
+// Two-letter codes for Indian states/UTs. Used for the "State Code" part of the
+// saved-contact display name; non-Indian addresses fall back to the ISO country
+// code (see stateCodeFor).
+const INDIA_STATE_CODES = {
+  "andhra pradesh": "AP", "arunachal pradesh": "AR", "assam": "AS", "bihar": "BR",
+  "chhattisgarh": "CG", "chattisgarh": "CG", "goa": "GA", "gujarat": "GJ",
+  "haryana": "HR", "himachal pradesh": "HP", "jharkhand": "JH", "karnataka": "KA",
+  "kerala": "KL", "madhya pradesh": "MP", "maharashtra": "MH", "manipur": "MN",
+  "meghalaya": "ML", "mizoram": "MZ", "nagaland": "NL", "odisha": "OD",
+  "orissa": "OD", "punjab": "PB", "rajasthan": "RJ", "sikkim": "SK",
+  "tamil nadu": "TN", "tamilnadu": "TN", "telangana": "TS", "tripura": "TR",
+  "uttar pradesh": "UP", "uttarakhand": "UK", "uttaranchal": "UK",
+  "west bengal": "WB", "delhi": "DL", "new delhi": "DL", "nct of delhi": "DL",
+  "jammu and kashmir": "JK", "jammu & kashmir": "JK", "ladakh": "LA",
+  "puducherry": "PY", "pondicherry": "PY", "chandigarh": "CH",
+  "andaman and nicobar islands": "AN", "lakshadweep": "LD",
+  "dadra and nagar haveli and daman and diu": "DN"
+};
+
+// Dial code -> { iso, name }. Longest prefix wins, so +971 beats +97.
+const DIAL_CODES = {
+  "971": { iso: "AE", name: "United Arab Emirates" }, "966": { iso: "SA", name: "Saudi Arabia" },
+  "965": { iso: "KW", name: "Kuwait" }, "974": { iso: "QA", name: "Qatar" },
+  "973": { iso: "BH", name: "Bahrain" }, "968": { iso: "OM", name: "Oman" },
+  "972": { iso: "IL", name: "Israel" }, "962": { iso: "JO", name: "Jordan" },
+  "961": { iso: "LB", name: "Lebanon" }, "98": { iso: "IR", name: "Iran" },
+  "91": { iso: "IN", name: "India" }, "92": { iso: "PK", name: "Pakistan" },
+  "880": { iso: "BD", name: "Bangladesh" }, "94": { iso: "LK", name: "Sri Lanka" },
+  "977": { iso: "NP", name: "Nepal" }, "95": { iso: "MM", name: "Myanmar" },
+  "86": { iso: "CN", name: "China" }, "852": { iso: "HK", name: "Hong Kong" },
+  "886": { iso: "TW", name: "Taiwan" }, "65": { iso: "SG", name: "Singapore" },
+  "66": { iso: "TH", name: "Thailand" }, "60": { iso: "MY", name: "Malaysia" },
+  "62": { iso: "ID", name: "Indonesia" }, "63": { iso: "PH", name: "Philippines" },
+  "84": { iso: "VN", name: "Vietnam" }, "81": { iso: "JP", name: "Japan" },
+  "82": { iso: "KR", name: "South Korea" }, "44": { iso: "GB", name: "United Kingdom" },
+  "49": { iso: "DE", name: "Germany" }, "33": { iso: "FR", name: "France" },
+  "39": { iso: "IT", name: "Italy" }, "34": { iso: "ES", name: "Spain" },
+  "31": { iso: "NL", name: "Netherlands" }, "32": { iso: "BE", name: "Belgium" },
+  "41": { iso: "CH", name: "Switzerland" }, "43": { iso: "AT", name: "Austria" },
+  "46": { iso: "SE", name: "Sweden" }, "47": { iso: "NO", name: "Norway" },
+  "45": { iso: "DK", name: "Denmark" }, "358": { iso: "FI", name: "Finland" },
+  "351": { iso: "PT", name: "Portugal" }, "30": { iso: "GR", name: "Greece" },
+  "90": { iso: "TR", name: "Turkey" }, "7": { iso: "RU", name: "Russia" },
+  "380": { iso: "UA", name: "Ukraine" }, "48": { iso: "PL", name: "Poland" },
+  "420": { iso: "CZ", name: "Czechia" }, "36": { iso: "HU", name: "Hungary" },
+  "40": { iso: "RO", name: "Romania" }, "61": { iso: "AU", name: "Australia" },
+  "64": { iso: "NZ", name: "New Zealand" }, "27": { iso: "ZA", name: "South Africa" },
+  "234": { iso: "NG", name: "Nigeria" }, "254": { iso: "KE", name: "Kenya" },
+  "20": { iso: "EG", name: "Egypt" }, "212": { iso: "MA", name: "Morocco" },
+  "216": { iso: "TN", name: "Tunisia" }, "55": { iso: "BR", name: "Brazil" },
+  "52": { iso: "MX", name: "Mexico" }, "54": { iso: "AR", name: "Argentina" },
+  "56": { iso: "CL", name: "Chile" }, "57": { iso: "CO", name: "Colombia" },
+  "51": { iso: "PE", name: "Peru" }, "1": { iso: "US", name: "United States/Canada" }
+};
+
+const DIAL_CODE_PREFIXES = Object.keys(DIAL_CODES).sort((a, b) => b.length - a.length);
+
+const COUNTRY_NAME_TO_ISO = {
+  "india": "IN", "united arab emirates": "AE", "uae": "AE", "kuwait": "KW",
+  "saudi arabia": "SA", "qatar": "QA", "bahrain": "BH", "oman": "OM",
+  "singapore": "SG", "united kingdom": "GB", "uk": "GB", "usa": "US",
+  "united states": "US", "china": "CN", "hong kong": "HK", "thailand": "TH",
+  "malaysia": "MY", "sri lanka": "LK", "bangladesh": "BD", "nepal": "NP",
+  "pakistan": "PK", "australia": "AU", "germany": "DE", "france": "FR",
+  "italy": "IT", "spain": "ES", "turkey": "TR", "south africa": "ZA"
+};
+
+// Resolves the dialling country for a printed number. Indian cards very often
+// omit +91 and print a bare 10-digit mobile or an 11-digit "0" trunk form, so
+// those are inferred rather than left blank.
+function phoneCountryInfo(rawNumber, fallbackCountry = "") {
+  const raw = String(rawNumber || "").trim();
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return { code: "", iso: "", name: "" };
+  if (/^\+/.test(raw) || /^00/.test(digits)) {
+    const national = digits.replace(/^00/, "");
+    for (const prefix of DIAL_CODE_PREFIXES) {
+      if (national.startsWith(prefix) && national.length > prefix.length) {
+        const entry = DIAL_CODES[prefix];
+        return { code: `+${prefix}`, iso: entry.iso, name: entry.name };
+      }
+    }
+    return { code: "", iso: "", name: "" };
+  }
+  if (/^[6-9]\d{9}$/.test(digits)) return { code: "+91", iso: "IN", name: "India" };
+  if (/^0[6-9]\d{9}$/.test(digits)) return { code: "+91", iso: "IN", name: "India" };
+  const iso = COUNTRY_NAME_TO_ISO[String(fallbackCountry || "").trim().toLowerCase()];
+  if (iso) {
+    const prefix = DIAL_CODE_PREFIXES.find((p) => DIAL_CODES[p].iso === iso);
+    if (prefix) return { code: `+${prefix}`, iso, name: DIAL_CODES[prefix].name };
+  }
+  return { code: "", iso: "", name: "" };
+}
+
+function stateCodeFor(stateName, countryName, phoneIso, cityName = "") {
+  const state = String(stateName || "").trim().toLowerCase();
+  if (state && INDIA_STATE_CODES[state]) return INDIA_STATE_CODES[state];
+  // The state may be a district/region, or missing with only a city given.
+  const resolved = String(normalizeIndianState(stateName) || inferStateFromCity(cityName) || "").toLowerCase();
+  if (resolved && INDIA_STATE_CODES[resolved]) return INDIA_STATE_CODES[resolved];
+  const country = String(countryName || "").trim().toLowerCase();
+  const iso = COUNTRY_NAME_TO_ISO[country];
+  // "IN" is never a useful state code on an Indian card — better to leave it
+  // out of the saved name than to print the country where a state belongs.
+  if (iso && iso !== "IN") return iso;
+  if (phoneIso && phoneIso !== "IN") return phoneIso;
+  return "";
+}
+
+function exhibitionWithYear(exhibitionName, exhibitionDate) {
+  const name = String(exhibitionName || "").trim();
+  const year = String(exhibitionDate || "").match(/^(\d{4})/)?.[1] || "";
+  if (!name) return year;
+  return year && !new RegExp(`\\b${year}\\b`).test(name) ? `${name} ${year}` : name;
+}
+
+// "GJEPC 2026. Ritesh Jewellers. MH. Amravati"
+// Business name falls back to the person's name for individual cards. Any part
+// that is unknown is dropped rather than leaving an empty gap between periods.
+function buildContactDisplayName(contact) {
+  const business = String(contact.companyName || "").trim() || String(contact.name || "").trim();
+  return [
+    exhibitionWithYear(contact.exhibitionName, contact.exhibitionDate),
+    business,
+    String(contact.stateCode || "").trim(),
+    String(contact.city || "").trim()
+  ].filter(Boolean).join(". ");
+}
+
+// Digits-only international form for wa.me links.
+function whatsappDigits(rawNumber, fallbackCountry = "") {
+  const raw = String(rawNumber || "").trim();
+  if (!raw) return "";
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return "";
+  if (/^\+/.test(raw)) return digits;
+  if (/^00/.test(digits)) return digits.replace(/^00/, "");
+  const info = phoneCountryInfo(raw, fallbackCountry);
+  if (!info.code) return digits;
+  const national = digits.replace(/^0+/, "");
+  const cc = info.code.replace("+", "");
+  return national.startsWith(cc) && national.length > cc.length ? national : `${cc}${national}`;
+}
+
+function applyDerivedContactFields(contact) {
+  const info = phoneCountryInfo(contact.mobileNumber, contact.country);
+  contact.phoneCountryCode = info.code;
+  contact.phoneCountry = info.name;
+  contact.stateCode = stateCodeFor(contact.state, contact.country, info.iso, contact.city);
+  contact.whatsappNumber = whatsappDigits(contact.whatsappNumber || contact.mobileNumber, contact.country);
+  contact.contactDisplayName = buildContactDisplayName(contact);
+  return contact;
+}
 
 const EMPTY_DB = {
   users: [],
@@ -2294,7 +2473,20 @@ function extractionSystemPrompt() {
     "If the image is blank, unreadable, too small, a screenshot of an app, or not clearly a business card, leave contact fields blank and add a warning.",
     "If a field is unclear or missing, return an empty string and add a warning.",
     "The business card can be horizontal, vertical, upside down, or rotated; read it in the correct orientation before extracting. Do this silently — never add a warning stating that the card was rotated, upside down, or reoriented.",
-    "Name and mobileNumber are critical fields."
+    "Name and mobileNumber are critical fields.",
+    // Multilingual handling. Cards are frequently Marathi, Hindi, Gujarati,
+    // Telugu, Tamil, Kannada, Bengali, Punjabi or Arabic — often mixed with
+    // English on the same card.
+    "Cards may be written in any language or script, including Devanagari (Hindi/Marathi), Gujarati, Telugu, Tamil, Kannada, Malayalam, Bengali, Punjabi, Odia, Arabic, Chinese, Japanese, Korean, Thai or Cyrillic.",
+    "For every card, fill BOTH sets of fields:",
+    "1) name, companyName, designation, address, city and state must ALWAYS be in Latin script (English). If the card prints them in another script, transliterate the sound into Latin letters (for example Devanagari 'रितेश ज्वेलर्स' becomes 'Ritesh Jewellers', Gujarati 'શ્રી આભૂષણ જ્વેલર્સ' becomes 'Shree Aabhushan Jewellers', Arabic 'فيكي بافناني' becomes 'Vicky Bhavnani'). Translate descriptive business words such as 'ज्वेलर्स' to 'Jewellers'. Never leave these fields in a non-Latin script.",
+    "2) nameNative, companyNameNative, designationNative, addressNative, cityNative and stateNative must contain the exact original text as printed on the card, in its original script, with no transliteration. Leave them blank when the card is already in Latin script.",
+    "If the card shows the same information in two scripts (common on Arabic and Indian cards), use the Latin version for the Latin fields and the non-Latin version for the Native fields — do not treat them as two different people or companies.",
+    "Set cardLanguage to the English name of the main non-English language on the card (for example 'Marathi', 'Gujarati', 'Telugu', 'Hindi', 'Arabic'), or 'English' when the card is entirely in English.",
+    "Set cardScript to the script name (for example 'Devanagari', 'Gujarati', 'Telugu', 'Arabic', 'Latin').",
+    "Write phone numbers, emails and websites using Western digits and Latin letters even when the card prints them in another numeral system.",
+    "Keep the country dial code in mobileNumber when the card shows one (for example '+971 555805118'). Do not add a dial code that is not printed on the card.",
+    "If the card shows a WhatsApp number or a WhatsApp icon next to a number, put that number in whatsappNumber. Leave it blank if no number is specifically marked as WhatsApp."
   ].join(" ");
 }
 
@@ -2302,22 +2494,31 @@ function extractionUserPrompt() {
   return `Extract this business card into this JSON shape:
 {
   "name": "",
+  "nameNative": "",
   "mobileNumber": "",
+  "whatsappNumber": "",
   "secondaryName": "",
   "secondaryMobileNumber": "",
   "tertiaryName": "",
   "tertiaryMobileNumber": "",
   "companyName": "",
+  "companyNameNative": "",
   "designation": "",
+  "designationNative": "",
   "officeNumber": "",
   "emailAddress": "",
   "secondaryEmail": "",
   "website": "",
   "address": "",
+  "addressNative": "",
   "city": "",
+  "cityNative": "",
   "state": "",
+  "stateNative": "",
   "postalCode": "",
   "country": "",
+  "cardLanguage": "",
+  "cardScript": "",
   "notes": "",
   "tags": "",
   "rawVisibleText": "",
@@ -2396,6 +2597,17 @@ function normalizeExtraction(raw, collection) {
     state: toTitleCase(raw.state),
     postalCode: cleanText(raw.postalCode),
     country: cleanText(raw.country),
+    // Original-script values, preserved exactly as printed (no title-casing —
+    // it would corrupt Devanagari/Gujarati/Arabic text).
+    nameNative: cleanText(raw.nameNative),
+    companyNameNative: cleanText(raw.companyNameNative),
+    designationNative: cleanText(raw.designationNative),
+    addressNative: cleanText(raw.addressNative),
+    cityNative: cleanText(raw.cityNative),
+    stateNative: cleanText(raw.stateNative),
+    cardLanguage: cleanText(raw.cardLanguage),
+    cardScript: cleanText(raw.cardScript),
+    whatsappNumber: cleanText(raw.whatsappNumber),
     exhibitionName: collection.exhibitionName || "",
     exhibitionDate: collection.exhibitionDate || "",
     interest: cleanText(raw.interest),
@@ -2513,12 +2725,89 @@ const INDIA_CITY_STATE_MAP = {
   ranchi: "Jharkhand", jamshedpur: "Jharkhand",
   shimla: "Himachal Pradesh",
   panaji: "Goa", goa: "Goa", margao: "Goa",
-  vapi: "Gujarat", ankleshwar: "Gujarat", morbi: "Gujarat"
+  vapi: "Gujarat", ankleshwar: "Gujarat", morbi: "Gujarat",
+  // Smaller trade towns seen on real exhibition cards. The big-city list above
+  // misses these, which left the state blank and the state code falling back
+  // to the country.
+  amravati: "Maharashtra", gondia: "Maharashtra", amgaon: "Maharashtra",
+  akola: "Maharashtra", jalgaon: "Maharashtra", latur: "Maharashtra", nanded: "Maharashtra",
+  ahmednagar: "Maharashtra", satara: "Maharashtra", sangli: "Maharashtra", chandrapur: "Maharashtra",
+  wardha: "Maharashtra", yavatmal: "Maharashtra", beed: "Maharashtra", parbhani: "Maharashtra",
+  dhule: "Maharashtra", ratnagiri: "Maharashtra", ichalkaranji: "Maharashtra", bhiwandi: "Maharashtra",
+  vasai: "Maharashtra", virar: "Maharashtra", panvel: "Maharashtra", kalyan: "Maharashtra", dombivli: "Maharashtra",
+  bhachau: "Gujarat", bhuj: "Gujarat", gandhidham: "Gujarat", adipur: "Gujarat", anjar: "Gujarat",
+  mundra: "Gujarat", nadiad: "Gujarat", bharuch: "Gujarat", navsari: "Gujarat", valsad: "Gujarat",
+  mehsana: "Gujarat", palanpur: "Gujarat", patan: "Gujarat", junagadh: "Gujarat", porbandar: "Gujarat",
+  veraval: "Gujarat", amreli: "Gujarat", botad: "Gujarat", surendranagar: "Gujarat", godhra: "Gujarat",
+  himatnagar: "Gujarat", deesa: "Gujarat", jetpur: "Gujarat", gondal: "Gujarat", dhoraji: "Gujarat",
+  saraipali: "Chhattisgarh", mahasamund: "Chhattisgarh", bilaspur: "Chhattisgarh",
+  korba: "Chhattisgarh", durg: "Chhattisgarh", rajnandgaon: "Chhattisgarh", jagdalpur: "Chhattisgarh",
+  ambikapur: "Chhattisgarh", dhamtari: "Chhattisgarh",
+  bhilwara: "Rajasthan", alwar: "Rajasthan", sikar: "Rajasthan", pali: "Rajasthan",
+  sriganganagar: "Rajasthan", bharatpur: "Rajasthan", chittorgarh: "Rajasthan", nagaur: "Rajasthan",
+  banswara: "Rajasthan", jhunjhunu: "Rajasthan", makrana: "Rajasthan",
+  ratlam: "Madhya Pradesh", dewas: "Madhya Pradesh", sagar: "Madhya Pradesh", satna: "Madhya Pradesh",
+  rewa: "Madhya Pradesh", khandwa: "Madhya Pradesh", burhanpur: "Madhya Pradesh", chhindwara: "Madhya Pradesh",
+  mandsaur: "Madhya Pradesh", neemuch: "Madhya Pradesh", katni: "Madhya Pradesh",
+  erode: "Tamil Nadu", vellore: "Tamil Nadu", thanjavur: "Tamil Nadu", tirunelveli: "Tamil Nadu",
+  thoothukudi: "Tamil Nadu", karur: "Tamil Nadu", namakkal: "Tamil Nadu", dindigul: "Tamil Nadu",
+  kumbakonam: "Tamil Nadu", hosur: "Tamil Nadu",
+  davangere: "Karnataka", shivamogga: "Karnataka", shimoga: "Karnataka", tumkur: "Karnataka",
+  bellary: "Karnataka", gulbarga: "Karnataka", kalaburagi: "Karnataka", udupi: "Karnataka", hassan: "Karnataka",
+  nizamabad: "Telangana", karimnagar: "Telangana", khammam: "Telangana", ramagundam: "Telangana",
+  rajahmundry: "Andhra Pradesh", tirupati: "Andhra Pradesh", nellore: "Andhra Pradesh",
+  kurnool: "Andhra Pradesh", kadapa: "Andhra Pradesh", anantapur: "Andhra Pradesh", eluru: "Andhra Pradesh",
+  kollam: "Kerala", alappuzha: "Kerala", palakkad: "Kerala", kannur: "Kerala", kottayam: "Kerala",
+  malappuram: "Kerala", pathanamthitta: "Kerala",
+  asansol: "West Bengal", durgapur: "West Bengal", bardhaman: "West Bengal", malda: "West Bengal",
+  kharagpur: "West Bengal", darjeeling: "West Bengal",
+  bhagalpur: "Bihar", darbhanga: "Bihar", purnia: "Bihar", chhapra: "Bihar", bihar: "Bihar",
+  rourkela: "Odisha", sambalpur: "Odisha", berhampur: "Odisha", puri: "Odisha", balasore: "Odisha",
+  dibrugarh: "Assam", silchar: "Assam", jorhat: "Assam", tezpur: "Assam",
+  bathinda: "Punjab", mohali: "Punjab", pathankot: "Punjab", moga: "Punjab", hoshiarpur: "Punjab",
+  ambala: "Haryana", hisar: "Haryana", karnal: "Haryana", rohtak: "Haryana", sonipat: "Haryana",
+  yamunanagar: "Haryana", sirsa: "Haryana",
+  haldwani: "Uttarakhand", rudrapur: "Uttarakhand", roorkee: "Uttarakhand", rishikesh: "Uttarakhand",
+  dhanbad: "Jharkhand", bokaro: "Jharkhand", deoghar: "Jharkhand", hazaribagh: "Jharkhand",
+  aligarh: "Uttar Pradesh", bareilly: "Uttar Pradesh", gorakhpur: "Uttar Pradesh", jhansi: "Uttar Pradesh",
+  saharanpur: "Uttar Pradesh", mathura: "Uttar Pradesh", firozabad: "Uttar Pradesh", muzaffarnagar: "Uttar Pradesh",
+  greaternoida: "Uttar Pradesh", ayodhya: "Uttar Pradesh", faizabad: "Uttar Pradesh",
+  jammu: "Jammu and Kashmir", srinagar: "Jammu and Kashmir",
+  imphal: "Manipur", shillong: "Meghalaya", aizawl: "Mizoram", kohima: "Nagaland",
+  agartala: "Tripura", itanagar: "Arunachal Pradesh", gangtok: "Sikkim",
+  solan: "Himachal Pradesh", mandi: "Himachal Pradesh", dharamshala: "Himachal Pradesh",
+  vasco: "Goa", mapusa: "Goa", ponda: "Goa",
+  puducherry: "Puducherry", pondicherry: "Puducherry"
+};
+
+// Districts and regions that people print where a state is expected
+// ("Bhachau, Kutch"). Mapped so the state code still resolves.
+const INDIA_REGION_TO_STATE = {
+  kutch: "Gujarat", kachchh: "Gujarat", saurashtra: "Gujarat", kathiawar: "Gujarat",
+  vidarbha: "Maharashtra", marathwada: "Maharashtra", konkan: "Maharashtra",
+  malwa: "Madhya Pradesh", bundelkhand: "Uttar Pradesh", marwar: "Rajasthan",
+  mewar: "Rajasthan", shekhawati: "Rajasthan", telangana: "Telangana",
+  ncr: "Delhi", nct: "Delhi"
 };
 
 function inferStateFromCity(city) {
   const key = String(city || "").toLowerCase().replace(/[^a-z]/g, "");
   return INDIA_CITY_STATE_MAP[key] || "";
+}
+
+// Turns whatever was printed in the "state" position into a real state name:
+// passes real states through, maps districts/regions, and otherwise treats the
+// value as a city name (cards often print only a town there).
+function normalizeIndianState(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const key = raw.toLowerCase().replace(/[^a-z]/g, "");
+  if (INDIA_STATE_CODES[raw.toLowerCase()]) return raw;
+  const byExactState = Object.keys(INDIA_STATE_CODES).find((s) => s.replace(/[^a-z]/g, "") === key);
+  if (byExactState) return byExactState.replace(/\b\w/g, (ch) => ch.toUpperCase());
+  if (INDIA_REGION_TO_STATE[key]) return INDIA_REGION_TO_STATE[key];
+  if (INDIA_CITY_STATE_MAP[key]) return INDIA_CITY_STATE_MAP[key];
+  return raw;
 }
 
 function parseDataUrl(dataUrl) {
@@ -5419,7 +5708,15 @@ function cleanContactFields(fields) {
   if (cleaned.website) cleaned.website = normalizeUrl(cleaned.website);
   if (cleaned.linkedInUrl) cleaned.linkedInUrl = normalizeUrl(cleaned.linkedInUrl);
   cleaned.city = toTitleCase(cleaned.city);
-  cleaned.state = toTitleCase(cleaned.state) || (cleaned.city ? inferStateFromCity(cleaned.city) : "");
+  // A card may print a district ("Kutch") or nothing at all where the state
+  // belongs; normalise it, then fall back to deriving the state from the city.
+  cleaned.state = normalizeIndianState(toTitleCase(cleaned.state)) || (cleaned.city ? inferStateFromCity(cleaned.city) : "");
+  if (cleaned.state && !INDIA_STATE_CODES[cleaned.state.toLowerCase()] && cleaned.city) {
+    cleaned.state = inferStateFromCity(cleaned.city) || cleaned.state;
+  }
+  // State code, dialling country, WhatsApp number and the saved-contact display
+  // name are always recomputed here so they stay correct after a manual edit.
+  applyDerivedContactFields(cleaned);
   return cleaned;
 }
 
@@ -5607,21 +5904,32 @@ function mergeContactRecord(db, user, card, existing, cleaned) {
 }
 
 function exportRow(contact) {
+  const phone = phoneCountryInfo(contact.mobileNumber, contact.country);
+  const stateCode = String(contact.stateCode || "").trim() || stateCodeFor(contact.state, contact.country, phone.iso, contact.city);
   return [
+    googleContactDisplayName(contact),
     contact.name,
+    contact.nameNative,
     contact.mobileNumber,
+    contact.phoneCountryCode || phone.code,
+    contact.phoneCountry || phone.name,
+    contact.whatsappNumber || whatsappDigits(contact.mobileNumber, contact.country),
     contact.secondaryMobileNumber,
     contact.companyName,
+    contact.companyNameNative,
     contact.designation,
     contact.officeNumber,
     contact.emailAddress,
     contact.secondaryEmail,
     contact.website,
     contact.address,
+    contact.addressNative,
     contact.city,
     contact.state,
+    stateCode,
     contact.postalCode,
     contact.country,
+    contact.cardLanguage,
     contact.exhibitionName,
     contact.exhibitionDate,
     exportRemarks(contact),
@@ -5898,22 +6206,27 @@ function contactToGooglePerson(contact) {
       { key: "Exhibition", value: String(contact.exhibitionName || "") },
       { key: "Exhibition Date", value: String(contact.exhibitionDate || "") },
       { key: "Card2Leads Label", value: exhibitionLabel },
-      { key: "Card2Leads Contact ID", value: String(contact.id || "") }
-    ]
+      { key: "Card2Leads Contact ID", value: String(contact.id || "") },
+      { key: "Contact Name", value: String(contact.name || "") },
+      { key: "Name (Original Script)", value: String(contact.nameNative || "") },
+      { key: "Company (Original Script)", value: String(contact.companyNameNative || "") },
+      { key: "Card Language", value: String(contact.cardLanguage || "") },
+      { key: "Country Code", value: String(contact.phoneCountryCode || "") },
+      { key: "Phone Country", value: String(contact.phoneCountry || "") },
+      { key: "State Code", value: String(contact.stateCode || "") }
+    ].filter((entry) => entry.value)
   };
 }
 
+// The name written into Google Contacts, VCF and the "Saved Contact Name"
+// export column: "GJEPC 2026. Ritesh Jewellers. MH. Amravati".
+// Recomputed rather than trusted so contacts saved before this format existed
+// (and any whose city/state was edited afterwards) still sync correctly.
 function googleContactDisplayName(contact) {
-  const name = String(contact.name || "").trim();
-  const exhibitionName = String(contact.exhibitionName || "").trim();
-  const dateMatch = String(contact.exhibitionDate || "").match(/^(\d{4})/);
-  const year = dateMatch?.[1] || "";
-  const code = year && !new RegExp(`\\b${year}\\b`).test(exhibitionName)
-    ? `${exhibitionName} ${year}`.trim()
-    : exhibitionName;
-  if (!code) return name;
-  const suffix = `[${code}]`;
-  return name.toLowerCase().endsWith(suffix.toLowerCase()) ? name : `${name} ${suffix}`.trim();
+  const stateCode = String(contact.stateCode || "").trim()
+    || stateCodeFor(contact.state, contact.country, phoneCountryInfo(contact.mobileNumber, contact.country).iso, contact.city);
+  const display = buildContactDisplayName({ ...contact, stateCode });
+  return display || String(contact.name || "").trim();
 }
 
 function googleContactGroupLabel(exhibitionName, exhibitionDate) {
@@ -6243,6 +6556,10 @@ function buildVcf(contacts) {
     }
     const exhibitionLabel = googleContactGroupLabel(contact.exhibitionName, contact.exhibitionDate);
     const noteParts = [
+      contact.name ? `Contact: ${contact.name}` : "",
+      contact.nameNative ? `Name (original): ${contact.nameNative}` : "",
+      contact.companyNameNative ? `Company (original): ${contact.companyNameNative}` : "",
+      contact.cardLanguage ? `Card language: ${contact.cardLanguage}` : "",
       exportRemarks(contact),
       exhibitionLabel ? `Exhibition: ${exhibitionLabel}` : ""
     ].filter(Boolean);
@@ -6406,10 +6723,15 @@ function crc32(buffer) {
 
 module.exports = {
   EXPORT_COLUMNS,
+  applyDerivedContactFields,
   assertGoogleWritePolicy,
+  buildContactDisplayName,
   buildCsv,
   buildVcf,
   buildXlsx,
+  phoneCountryInfo,
+  stateCodeFor,
+  whatsappDigits,
   canPurchaseTopup,
   contactToGooglePerson,
   createCollectionFromUpload,
