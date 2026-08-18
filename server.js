@@ -4816,7 +4816,10 @@ async function handleApi(req, res, pathname) {
         }
         const checksum = hash(`${file.dataUrl || file.name}|${file.backDataUrl || ""}`);
         const duplicateInBatchId = batchChecksums.get(checksum);
-        const duplicateImage = db.cards.find((c) => c.organisationId === user.organisationId && c.checksum === checksum);
+        // Only a still-live card blocks a re-upload. Once its contact is deleted
+        // the card is soft-deleted too (see contact delete handlers), so the same
+        // card can be scanned again — e.g. to re-test extraction.
+        const duplicateImage = db.cards.find((c) => c.organisationId === user.organisationId && c.checksum === checksum && !c.deletedAt && c.status !== "deleted");
         const duplicateImageId = duplicateInBatchId || duplicateImage?.id || "";
         // An identical image never needs a second AI extraction call — skip it
         // outright instead of queueing and paying for it, so cost only scales
@@ -5351,6 +5354,9 @@ async function handleApi(req, res, pathname) {
       db.contacts.forEach((contact) => {
         if (contact.organisationId === user.organisationId && ids.has(contact.id) && !contact.deletedAt) {
           contact.deletedAt = now();
+          // Release the originating card so the same image can be scanned again.
+          const sourceCard = contact.sourceCardId && db.cards.find((c) => c.id === contact.sourceCardId && c.organisationId === user.organisationId);
+          if (sourceCard) { sourceCard.deletedAt = now(); sourceCard.status = "deleted"; }
           deleted += 1;
         }
       });
@@ -5364,6 +5370,9 @@ async function handleApi(req, res, pathname) {
       const contact = db.contacts.find((c) => c.id === contactId && c.organisationId === user.organisationId && !c.deletedAt);
       if (!contact) return error(res, 404, "Contact not found.");
       contact.deletedAt = now();
+      // Release the originating card so the same image can be scanned again.
+      const sourceCard = contact.sourceCardId && db.cards.find((c) => c.id === contact.sourceCardId && c.organisationId === user.organisationId);
+      if (sourceCard) { sourceCard.deletedAt = now(); sourceCard.status = "deleted"; }
       audit(db, user, "contact.deleted", "contact", contact.id);
       await saveDb(db);
       return send(res, 200, { ok: true });
