@@ -3847,6 +3847,7 @@ function contactsView() {
               <input id="searchBox" aria-label="Search contacts" placeholder="Search name, number, or company" value="${escapeAttr(state.contactSearchQuery)}" />
               ${state.contactSearchQuery ? `<button type="button" class="search-clear" id="clearSearchBox" aria-label="Clear search">&times;</button>` : ""}
             </div>
+            <button type="button" class="secondary slim editWhatsappSettings" id="contactsEditMessages" title="Edit the WhatsApp / email messages sent to contacts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Edit messages</button>
           </div>
         </div>
         ${state.contactSearchQuery ? `<p class="search-active-note">Showing results for "${escapeHtml(state.contactSearchQuery)}" &middot; <button type="button" class="link-button" id="clearSearchLink">Clear search</button></p>` : ""}
@@ -4137,6 +4138,7 @@ function contactsView() {
     render();
   }));
   node.querySelector("#workflowAddTeam")?.addEventListener("click", showManageTeamModal);
+  node.querySelector("#contactsEditMessages")?.addEventListener("click", showWhatsappSettingsModal);
   node.querySelector("#workflowSyncContacts")?.addEventListener("click", async (event) => {
     await prepareGoogleContactsSync(event.currentTarget, selectedIds, activeCollectionId, activeCollection);
   });
