@@ -47,10 +47,11 @@ test("VCF export packages exhibition contacts for phone import", () => {
   ]).toString("utf8");
 
   assert.match(vcf, /BEGIN:VCARD/);
-  assert.match(vcf, /FN:Riya Shah/);
+  // Display name is now exhibition-first (buildContactDisplayName), e.g. "IIJS 2026. ABC Jewels".
+  assert.match(vcf, /FN:IIJS 2026\. ABC Jewels/);
   assert.match(vcf, /TEL;TYPE=CELL:\+91 98765 43210/);
   assert.match(vcf, /ORG:ABC Jewels/);
-  assert.match(vcf, /NOTE:September mein follow up karna hai/);
+  assert.match(vcf, /September mein follow up karna hai/);
   assert.match(vcf, /Exhibition: IIJS 2026 - 18 Jul 2026/);
   assert.match(vcf, /CATEGORIES:IIJS 2026 - 18 Jul 2026/);
 });
@@ -67,7 +68,7 @@ test("Google Contacts payload keeps exhibition identity and voice remarks", () =
     exhibitionDate: "2026-07-18",
     voiceTranscript: "September mein follow up karna hai."
   });
-  assert.equal(person.names[0].unstructuredName, "Riya Shah [IIJS 2026]");
+  assert.equal(person.names[0].unstructuredName, "IIJS 2026. ABC Jewels");
   assert.equal(person.phoneNumbers.length, 2);
   assert.equal(person.organizations[0].name, "ABC Jewels");
   assert.ok(person.biographies[0].value.includes("September"));
@@ -75,7 +76,7 @@ test("Google Contacts payload keeps exhibition identity and voice remarks", () =
     { key: "Exhibition", value: "IIJS 2026" },
     { key: "Exhibition Date", value: "2026-07-18" },
     { key: "Card2Leads Label", value: "IIJS 2026 - 18 Jul 2026" },
-    { key: "Card2Leads Contact ID", value: "" }
+    { key: "Contact Name", value: "Riya Shah" }
   ]);
 });
 
@@ -86,7 +87,7 @@ test("Google Contacts names include a searchable exhibition and year suffix", ()
       exhibitionName: "GJEPC",
       exhibitionDate: "2026-06-10"
     }),
-    "Naveen Kumar [GJEPC 2026]"
+    "GJEPC 2026. Naveen Kumar"
   );
   assert.equal(
     googleContactDisplayName({
@@ -94,16 +95,18 @@ test("Google Contacts names include a searchable exhibition and year suffix", ()
       exhibitionName: "IIJS 2026",
       exhibitionDate: "2026-07-18"
     }),
-    "Riya Shah [IIJS 2026]"
+    "IIJS 2026. Riya Shah"
   );
 });
 
 test("customer exports use the minimal sales-ready contact format", () => {
   assert.deepEqual(EXPORT_COLUMNS, [
-    "Name", "Mobile Number", "Secondary Mobile Number", "Company Name", "Designation",
-    "Office Number", "Email Address", "Secondary Email", "Website", "Address", "City",
-    "State", "Postal Code", "Country", "Exhibition Name", "Exhibition Date", "Remarks",
-    "Voice Note", "Tags", "Created Timestamp"
+    "Saved Contact Name", "Name", "Name (Original Script)", "Mobile Number", "Country Code",
+    "Phone Country", "WhatsApp Number", "Secondary Mobile Number", "Company Name",
+    "Company Name (Original Script)", "Designation", "Office Number", "Email Address",
+    "Secondary Email", "Website", "Address", "Address (Original Script)", "City", "State",
+    "State Code", "Postal Code", "Country", "Card Language", "Exhibition Name",
+    "Exhibition Date", "Remarks", "Voice Note", "Tags", "Created Timestamp"
   ]);
   const row = exportRow({
     id: "internal-only",
@@ -128,7 +131,7 @@ test("CSV and Excel export builders create valid downloadable files", () => {
   })];
   const csv = buildCsv(rows);
   assert.ok(Buffer.isBuffer(csv));
-  assert.match(csv.toString("utf8"), /Name,Mobile Number/);
+  assert.match(csv.toString("utf8"), /Saved Contact Name,Name,Name \(Original Script\),Mobile Number/);
   assert.match(csv.toString("utf8"), /Riya Shah/);
   assert.match(csv.toString("utf8"), /"Catalogue, pricing"/);
 
