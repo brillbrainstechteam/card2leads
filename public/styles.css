@@ -7348,6 +7348,15 @@ strong {
   text-decoration: none;
 }
 
+.row-btn.email {
+  color: #3a52a8;
+  border-color: #cdd7f0;
+  background: #f3f5fd;
+  text-decoration: none;
+}
+.row-btn.email svg { color: #5069c0; }
+.row-btn.email:hover { border-color: #5069c0; background: #eef1fb; }
+
 .row-btn.whatsapp svg {
   color: #25d366;
 }
