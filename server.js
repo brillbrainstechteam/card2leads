@@ -352,16 +352,32 @@ function exhibitionWithYear(exhibitionName, exhibitionDate) {
   return year && !new RegExp(`\\b${year}\\b`).test(name) ? `${name} ${year}` : name;
 }
 
-// "GJEPC 2026. Ritesh Jewellers. MH. Amravati"
-// Business name falls back to the person's name for individual cards. Any part
-// that is unknown is dropped rather than leaving an empty gap between periods.
+// Full state name for the saved contact label: trust the printed state when it
+// is already a real Indian state, otherwise map a district/region, and finally
+// fall back to inferring the state from the city when none was printed.
+function resolveStateName(stateValue, cityValue) {
+  const normalized = normalizeIndianState(stateValue);
+  if (normalized && INDIA_STATE_CODES[normalized.toLowerCase()]) return normalized;
+  const fromCity = inferStateFromCity(cityValue);
+  if (fromCity) return fromCity;
+  return normalized || "";
+}
+
+// "[GJEPC 2026]. Ashish Dosaya. Amravati Maharashtra"
+// Uses the person's transliterated English name (so the client can read and
+// search it regardless of the card's language), falling back to the company for
+// individual cards. The exhibition and year are bracketed, and the location is
+// "City State" with the full state name — mapped from the city when the card did
+// not print one. Any unknown part is dropped rather than leaving an empty gap.
 function buildContactDisplayName(contact) {
-  const business = String(contact.companyName || "").trim() || String(contact.name || "").trim();
+  const person = String(contact.name || "").trim() || String(contact.companyName || "").trim();
+  const exhibition = exhibitionWithYear(contact.exhibitionName, contact.exhibitionDate);
+  const stateName = resolveStateName(contact.state, contact.city);
+  const cityState = [String(contact.city || "").trim(), stateName].filter(Boolean).join(" ");
   return [
-    exhibitionWithYear(contact.exhibitionName, contact.exhibitionDate),
-    business,
-    String(contact.stateCode || "").trim(),
-    String(contact.city || "").trim()
+    exhibition ? `[${exhibition}]` : "",
+    person,
+    cityState
   ].filter(Boolean).join(". ");
 }
 
@@ -6258,10 +6274,7 @@ function contactToGooglePerson(contact) {
 // Recomputed rather than trusted so contacts saved before this format existed
 // (and any whose city/state was edited afterwards) still sync correctly.
 function googleContactDisplayName(contact) {
-  const stateCode = String(contact.stateCode || "").trim()
-    || stateCodeFor(contact.state, contact.country, phoneCountryInfo(contact.mobileNumber, contact.country).iso, contact.city);
-  const display = buildContactDisplayName({ ...contact, stateCode });
-  return display || String(contact.name || "").trim();
+  return buildContactDisplayName(contact) || String(contact.name || "").trim();
 }
 
 function googleContactGroupLabel(exhibitionName, exhibitionDate) {

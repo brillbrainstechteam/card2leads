@@ -1,0 +1,510 @@
+Terms of Use
+Card2Leads by BrillBrains Consultants Pvt. Ltd.
+Last updated: 04 August 2026
+These Terms of Use (“Terms”) govern your access to and use of Card2Leads, including its website, applications, integrations, software, features and related services.
+Card2Leads is owned and operated by BrillBrains Consultants Pvt. Ltd. (“BrillBrains”, “Card2Leads”, “we”, “us” or “our”).
+Card2Leads is a business-card digitisation and contact-management tool. It enables users to scan or upload business cards, extract and organise contact information, add information using voice input, apply labels, export records, download VCF files and synchronise selected information with Google Contacts and Google Sheets.
+By creating an account, accessing Card2Leads or using any Card2Leads feature, you agree to these Terms and our Privacy Policy.
+If you do not agree to these Terms, you must not access or use Card2Leads.
+On this page
+1.	Eligibility and authority
+
+2.	Card2Leads services
+
+3.	Account registration and security
+
+4.	User-provided information
+
+5.	Information relating to other people
+
+6.	Voice input, OCR and AI processing
+
+7.	User review and data accuracy
+
+8.	Google integrations
+
+9.	Exports and downloaded files
+
+10.	Acceptable use
+
+11.	Marketing and communication responsibilities
+
+12.	Plans, payments and taxes
+
+13.	Trial and promotional access
+
+14.	Intellectual property
+
+15.	Feedback
+
+16.	Third-party services
+
+17.	Service availability and changes
+
+18.	Suspension and termination
+
+19.	Data after termination
+
+20.	Disclaimers
+
+21.	Limitation of liability
+
+22.	Indemnity
+
+23.	Governing law and dispute resolution
+
+24.	Changes to these Terms
+
+25.	General provisions
+
+26.	Contact details
+1. Eligibility and Authority
+You must be at least 18 years old and legally capable of entering into a binding agreement to use Card2Leads.
+If you use Card2Leads on behalf of a company, partnership, organisation or other entity, you confirm that:
+•	You have authority to accept these Terms on behalf of that entity;
+•	The entity agrees to be bound by these Terms;
+•	You are authorised to upload, process, export and synchronise information on the entity’s behalf; and
+•	References to “you” in these Terms include both you and the entity you represent.
+Card2Leads is intended primarily for business and professional use. It is not intended for use by children.
+2. Card2Leads Services
+Depending on your account, subscription plan and available features, Card2Leads may allow you to:
+•	Scan business cards using a device camera;
+•	Upload one or more business-card images;
+•	Process business cards in bulk;
+•	Extract names, phone numbers, email addresses, company names, job titles, addresses, websites and other information;
+•	Convert extracted information into structured tables;
+•	Add or update information through voice input;
+•	Add bulk voice instructions or notes;
+•	Edit and correct extracted information;
+•	Apply labels, tags, categories and custom fields;
+•	Save records in your Card2Leads account;
+•	Identify possible duplicate records;
+•	Export records in Excel or CSV format;
+•	Generate and download VCF or vCard files;
+•	Synchronise selected information with Google Contacts;
+•	Synchronise selected information with Google Sheets; and
+•	Use other features introduced by Card2Leads.
+Certain features may not be available to every user or may be subject to plan, device, geographic, technical or usage limitations.
+3. Account Registration and Security
+You may need to create an account or sign in using an available authentication method to use Card2Leads.
+You agree to:
+•	Provide accurate and current account information;
+•	Maintain the confidentiality of your login credentials;
+•	Use strong and secure passwords where password-based login is available;
+•	Protect access to the email address or Google account associated with Card2Leads;
+•	Not allow unauthorised persons to use your account;
+•	Notify us promptly if you suspect unauthorised access or misuse; and
+•	Keep your contact and account information updated.
+You are responsible for activities performed through your account unless the activity results directly from a security failure under our control.
+We may request additional verification before allowing sensitive account changes, data exports, integration changes or account deletion.
+Accounts are personal to the registered user or subscribing organisation and may not be sold, transferred or shared outside the authorised organisation without our written permission.
+4. User-Provided Information
+“User Content” includes any information or material that you upload, enter, record, create, process or synchronise through Card2Leads, including:
+•	Business-card images;
+•	Contact information;
+•	Voice recordings and voice notes;
+•	Transcriptions;
+•	Labels, notes and categories;
+•	Custom fields;
+•	Spreadsheet information;
+•	Files uploaded for processing;
+•	Corrections and edits;
+•	Export instructions; and
+•	Other information provided through your account.
+You retain ownership of your User Content.
+You grant Card2Leads a limited, non-exclusive, worldwide licence to host, store, copy, transmit, process, structure, convert and display User Content only as necessary to:
+•	Provide the services requested by you;
+•	Maintain and secure Card2Leads;
+•	Troubleshoot errors;
+•	Provide customer support;
+•	Prevent fraud and misuse; and
+•	Comply with applicable legal obligations.
+This licence continues only for as long as necessary to provide Card2Leads or meet applicable retention obligations.
+You are responsible for ensuring that your User Content is accurate, lawful and appropriate for processing through Card2Leads.
+5. Information Relating to Other People
+Business cards and contact records generally contain information relating to people other than the Card2Leads account holder.
+By uploading, entering, recording, exporting or synchronising information relating to another person, you confirm that:
+•	You obtained the information lawfully;
+•	You have a legitimate business, professional or other lawful purpose for processing it;
+•	You have provided any notice or obtained any consent required by applicable law;
+•	You are authorised to store and process the information;
+•	Your use will not violate the individual’s privacy or other legal rights;
+•	You will respect applicable requests to correct, delete or stop using the information; and
+•	You will not use the information for unlawful marketing, spam, harassment or surveillance.
+The possession, receipt or exchange of a business card does not automatically provide unrestricted permission to send marketing or promotional communications.
+You are responsible for determining whether consent or another lawful basis is required before contacting a person whose information has been processed through Card2Leads.
+You must not upload or process information obtained through:
+•	Unlawful scraping;
+•	Theft or unauthorised access;
+•	Deception or impersonation;
+•	Purchased databases that you are not legally permitted to use;
+•	Breach of confidentiality;
+•	Unauthorised surveillance;
+•	Data leaks; or
+•	Any other unlawful source.
+Where you use Card2Leads on behalf of an organisation, your organisation is responsible for responding to requests from individuals whose information it has uploaded.
+6. Voice Input, OCR and AI Processing
+Card2Leads may use optical character recognition, speech-to-text, artificial intelligence and other automated technologies to process business-card images, voice recordings and instructions.
+These technologies may be used to:
+•	Detect and read text;
+•	Identify likely names, phone numbers, companies and email addresses;
+•	Transcribe voice inputs;
+•	Standardise data formats;
+•	Map information into table fields;
+•	Suggest labels or categories;
+•	Identify possible duplicates; and
+•	Highlight incomplete or potentially inaccurate information.
+You authorise us and our relevant service providers to process the submitted material for these purposes.
+You must not record or upload another person’s private conversation without appropriate authority or consent.
+You should not include unnecessary passwords, financial information, government identification numbers, health information or other highly sensitive information in voice inputs, notes or business-card records.
+Automated processing may be inaccurate. Card2Leads does not guarantee that OCR, transcription, categorisation, duplicate detection or AI-generated results will be complete, correct or suitable for your intended purpose.
+7. User Review and Data Accuracy
+You are responsible for reviewing extracted and transcribed information before:
+•	Saving it as a final contact record;
+•	Exporting it;
+•	Adding it to Google Contacts;
+•	Adding it to Google Sheets;
+•	Importing it into another application;
+•	Contacting the relevant person; or
+•	Relying on it for a business decision.
+Common extraction errors may include:
+•	Incorrect spelling;
+•	Numbers assigned to the wrong field;
+•	Confusion between similar characters;
+•	Missing country or area codes;
+•	Incorrect separation of names and job titles;
+•	Incorrect company identification;
+•	Duplicate records;
+•	Incorrect voice transcription; and
+•	Information being mapped to the wrong table column.
+Card2Leads is a data-processing and productivity tool. It is not an official identity-verification, legal-verification, background-verification or due-diligence service.
+You must independently verify information where its accuracy is important.
+8. Google Integrations
+Card2Leads may allow you to connect your Google account to use features involving Google Sign-In, Google Contacts or Google Sheets.
+8.1 Your authorisation
+Google integrations are activated only after you authorise the relevant permissions through Google’s consent process.
+Depending on the feature requested, Card2Leads may be permitted to:
+•	Receive basic Google account information;
+•	Create or update Google Contacts;
+•	Apply labels or other contact information;
+•	Locate possible matching contacts;
+•	Create or select a Google spreadsheet;
+•	Add or update rows in Google Sheets; and
+•	Perform other actions clearly presented to you.
+You authorise Card2Leads to perform the actions you select through the application.
+8.2 Your responsibility for synchronisation
+Before synchronising information, you are responsible for:
+•	Reviewing the information;
+•	Selecting the correct Google account;
+•	Selecting the correct contact or spreadsheet;
+•	Confirming that you have authority to add or update the information;
+•	Maintaining backups where appropriate; and
+•	Verifying the results of the synchronisation.
+Card2Leads is not responsible for incorrect or duplicate entries caused by inaccurate source information, incorrect user selections, third-party system behaviour or permissions granted by the user.
+8.3 Existing Google data
+Disconnecting Card2Leads or revoking Google permissions does not automatically delete:
+•	Contacts already created in Google Contacts;
+•	Updates already made to existing contacts;
+•	Data already written to Google Sheets; or
+•	Spreadsheets created through Card2Leads.
+You must delete or modify such information directly through the relevant Google service.
+8.4 Google’s terms
+Your use of Google products remains subject to Google’s applicable terms, policies, permissions and account restrictions.
+Google is not responsible for Card2Leads, and BrillBrains is not responsible for the availability, security or operation of Google’s services.
+The use of Google names or product names does not indicate sponsorship, endorsement or partnership unless expressly stated.
+9. Exports and Downloaded Files
+Card2Leads may allow you to create and download Excel, CSV, VCF, vCard or other files.
+Once a file is downloaded, shared, transferred or imported into another system:
+•	That copy is under your control;
+•	You are responsible for its storage and security;
+•	You are responsible for controlling who can access it;
+•	You are responsible for deleting it when no longer required;
+•	You are responsible for ensuring that its use is lawful; and
+•	Card2Leads may no longer be able to retrieve, change or delete it.
+Exported files may contain personal information. You must not leave them on unsecured shared devices or distribute them to unauthorised recipients.
+You should verify the compatibility and accuracy of an exported file before importing it into another platform.
+We do not guarantee that every third-party application will correctly interpret or import files generated by Card2Leads.
+10. Acceptable Use
+You may use Card2Leads only for lawful business, professional or personal purposes consistent with these Terms.
+You must not use Card2Leads to:
+•	Violate any applicable law or regulation;
+•	Violate privacy, confidentiality, intellectual-property or contractual rights;
+•	Send spam or unsolicited mass communications;
+•	Harass, threaten, deceive or impersonate another person;
+•	Conduct unauthorised surveillance or profiling;
+•	Build, sell or distribute unlawfully obtained contact databases;
+•	Upload stolen, leaked or unlawfully scraped information;
+•	Process information for discriminatory, fraudulent or deceptive purposes;
+•	Store passwords, payment-card credentials or authentication codes;
+•	Upload malicious software, scripts or files;
+•	Attempt to gain unauthorised access to Card2Leads or another account;
+•	Test or scan our systems for vulnerabilities without written permission;
+•	Bypass subscriptions, usage limits, access controls or security measures;
+•	Reverse engineer, decompile or copy Card2Leads except where applicable law expressly permits it;
+•	Use automated scripts, bots or scraping tools to access the service without written permission;
+•	Disrupt or place an unreasonable load on the service;
+•	Resell or commercially sublicense Card2Leads without written authorisation;
+•	Misrepresent extracted information as verified by Card2Leads;
+•	Use the service to make unlawful employment, credit, insurance or eligibility decisions;
+•	Process information about children without appropriate lawful authority; or
+•	Encourage another person to perform any prohibited activity.
+We may investigate suspected misuse and may restrict or suspend access where reasonably necessary to protect users, third parties or the service.
+11. Marketing and Communication Responsibilities
+Card2Leads helps organise contact information. It does not itself grant you permission to contact an individual.
+When using Card2Leads information for calls, emails, messages, WhatsApp communications or marketing campaigns, you are responsible for:
+•	Obtaining any consent required by law;
+•	Providing required disclosures;
+•	Accurately identifying yourself or your organisation;
+•	Providing opt-out or unsubscribe mechanisms where required;
+•	Respecting do-not-contact and withdrawal requests;
+•	Maintaining records of consent where appropriate;
+•	Following the rules of the communication platform being used; and
+•	Complying with applicable telemarketing, privacy and anti-spam requirements.
+You must not use Card2Leads as a way to avoid or bypass the rules of any messaging, email, advertising or social-media platform.
+We are not responsible for communications sent outside Card2Leads using exported or synchronised information.
+12. Plans, Payments and Taxes
+Some Card2Leads features may be free, while others may require a paid plan, prepaid credits or another payment arrangement.
+Where paid services are offered:
+•	Applicable prices, included usage and plan duration will be shown before purchase;
+•	Prices may be stated exclusive or inclusive of taxes as displayed;
+•	You agree to pay applicable charges and taxes;
+•	Payments may be processed by an authorised third-party payment provider;
+•	We may not directly receive or store your complete payment-card or banking credentials;
+•	Usage-based limits may apply to scans, uploads, storage, voice processing, exports or integrations;
+•	Unused allowances or credits may expire as stated in the selected plan;
+•	Additional usage may require purchasing further credits or upgrading the plan; and
+•	Non-payment may result in restriction or suspension of paid features.
+12.1 Renewals
+A plan will renew automatically only where automatic renewal is clearly disclosed and authorised during purchase.
+Where automatic renewal is enabled, you are responsible for cancelling it before the renewal date to avoid the next charge.
+12.2 Refunds
+Unless otherwise stated during purchase, fees are non-refundable after the relevant paid service, scan allowance, subscription period or credit has been activated or used.
+Refunds may nevertheless be provided:
+•	Where required by applicable law;
+•	Where an incorrect duplicate charge has occurred;
+•	Where Card2Leads confirms that a paid service could not be provided due to a failure under our control; or
+•	At our discretion in exceptional circumstances.
+Third-party payment-gateway charges, taxes or currency-conversion charges may not be refundable where they have already been incurred.
+12.3 Pricing changes
+We may change pricing, usage allowances and plan features.
+Pricing changes will normally apply to a future purchase or renewal and will not retrospectively reduce an already purchased fixed allowance, except where required for legal, security or technical reasons.
+13. Trial and Promotional Access
+We may offer free trials, promotional credits, discounted plans or early-access features.
+Such offers may:
+•	Be limited to eligible users;
+•	Be available for a limited period;
+•	Include restricted functionality;
+•	Include usage limits;
+•	Expire if unused;
+•	Be withdrawn in cases of misuse; and
+•	Be governed by additional terms displayed with the offer.
+Unless expressly stated, promotional credits have no cash value and cannot be transferred, sold or refunded.
+We may modify or discontinue a free service, trial or promotional feature without liability, subject to applicable law.
+14. Intellectual Property
+Card2Leads, including its software, interface, workflows, design, branding, databases, documentation and underlying technology, is owned by BrillBrains or its licensors.
+Subject to these Terms, we grant you a limited, revocable, non-exclusive, non-transferable and non-sublicensable right to access and use Card2Leads for your internal lawful purposes during the period your account remains authorised.
+This licence does not allow you to:
+•	Copy or reproduce Card2Leads;
+•	Create a competing service using Card2Leads materials;
+•	Remove proprietary notices;
+•	Use our trademarks without written permission;
+•	Sell, rent or sublicense access;
+•	Extract or replicate our database structure; or
+•	Use Card2Leads beyond the permissions granted under these Terms.
+Nothing in these Terms transfers ownership of Card2Leads intellectual property to you.
+Your ownership of User Content is not affected by this section.
+15. Feedback
+You may provide suggestions, ideas, comments or feedback about Card2Leads.
+You grant us a perpetual, worldwide, non-exclusive, royalty-free right to use, modify and incorporate such feedback into Card2Leads without payment or obligation to you.
+This does not give us ownership of your business-card records, contact databases or other User Content.
+16. Third-Party Services
+Card2Leads may rely on or connect with third-party services, including:
+•	Cloud-hosting providers;
+•	Google services;
+•	OCR and AI-processing providers;
+•	Voice-transcription providers;
+•	Authentication providers;
+•	Payment gateways;
+•	Email-delivery providers;
+•	Error-monitoring services; and
+•	Other infrastructure providers.
+Third-party services are governed by their own terms and privacy policies.
+We do not control and are not responsible for:
+•	Changes made by a third-party provider;
+•	Third-party outages;
+•	Account restrictions imposed by a third party;
+•	Changes to third-party APIs;
+•	Losses caused by your violation of third-party terms;
+•	Data modified directly through a third-party service; or
+•	Third-party products selected independently by you.
+We may replace, restrict or discontinue an integration where necessary for legal, security, commercial or technical reasons.
+17. Service Availability and Changes
+We aim to make Card2Leads reasonably available but do not guarantee uninterrupted or error-free operation.
+Card2Leads may be unavailable because of:
+•	Planned maintenance;
+•	Emergency maintenance;
+•	Security incidents;
+•	Network or hosting failures;
+•	Third-party outages;
+•	Software updates;
+•	Capacity limitations;
+•	Governmental or legal restrictions; or
+•	Events beyond our reasonable control.
+We may add, modify, restrict or remove features to:
+•	Improve Card2Leads;
+•	Address security risks;
+•	Meet legal requirements;
+•	Respond to third-party API changes;
+•	Prevent misuse;
+•	Manage technical or commercial constraints; or
+•	Introduce new plans or functionality.
+Where a change materially affects a paid service, we will provide reasonable notice where practicable.
+18. Suspension and Termination
+18.1 Termination by you
+You may stop using Card2Leads at any time.
+You may request account deletion through an available account setting or by contacting us.
+Stopping use or deleting an account does not automatically cancel an external payment mandate unless the cancellation process displayed during purchase has been completed.
+18.2 Suspension or termination by us
+We may restrict, suspend or terminate your access where we reasonably believe that:
+•	You have violated these Terms;
+•	Your account is being used unlawfully;
+•	Your activity creates a security or privacy risk;
+•	Your use may harm another person;
+•	Payment is overdue;
+•	You have attempted to bypass usage or payment controls;
+•	Your activity places an unreasonable burden on our systems;
+•	We are required to do so by law or a competent authority;
+•	A third-party integration requires us to restrict access; or
+•	Continuing the service creates a material legal, security or operational risk.
+Where appropriate, we may provide notice and an opportunity to correct the issue. Immediate action may be taken in cases involving fraud, security threats, unlawful activity or risk of harm.
+19. Data After Termination
+After account termination or deletion:
+•	You will lose access to information stored only in Card2Leads;
+•	Connected integrations may stop functioning;
+•	OAuth tokens may be deleted or rendered unusable;
+•	Active copies of account data may be deleted according to our retention process; and
+•	Limited records may be retained for security, legal, tax, dispute-resolution or fraud-prevention purposes.
+Account deletion does not delete:
+•	Contacts already added to Google Contacts;
+•	Data already written to Google Sheets;
+•	Files downloaded to your device;
+•	Information imported into another platform;
+•	Copies shared with other people; or
+•	Information independently held by another Card2Leads user.
+You should export any information you are legally permitted to retain before closing your account.
+The applicable Privacy Policy explains our data-retention and deletion practices in greater detail.
+20. Disclaimers
+Card2Leads is provided on an “as available” basis to the maximum extent permitted by law.
+We do not guarantee that:
+•	The service will always be available;
+•	Every business card will be processed successfully;
+•	Extracted information will be accurate or complete;
+•	Voice transcription will be error-free;
+•	Duplicate detection will identify every duplicate;
+•	Exports will be compatible with every system;
+•	Synchronisation will always complete successfully;
+•	Third-party integrations will remain available;
+•	The service will meet every specific business requirement; or
+•	Stored information will never be lost despite reasonable safeguards.
+Card2Leads does not provide:
+•	Legal advice;
+•	Privacy-compliance advice;
+•	Marketing consent;
+•	Identity verification;
+•	Background verification;
+•	Credit assessment;
+•	Professional due diligence; or
+•	A guarantee that contacting an extracted person is lawful.
+You are responsible for evaluating whether Card2Leads is appropriate for your intended use and for maintaining independent backups of important information.
+Nothing in these Terms excludes warranties, remedies or rights that cannot legally be excluded.
+21. Limitation of Liability
+To the maximum extent permitted by applicable law, BrillBrains, its directors, employees, contractors and affiliates will not be liable for indirect, incidental, special, punitive or consequential losses arising from or relating to Card2Leads.
+This includes loss of:
+•	Profits;
+•	Revenue;
+•	Business opportunities;
+•	Goodwill;
+•	Contacts;
+•	Data;
+•	Expected savings; or
+•	Business continuity.
+We are not responsible for losses resulting from:
+•	Incorrect OCR or transcription;
+•	Failure to review extracted information;
+•	Duplicate or incorrectly merged contacts;
+•	Information added to the wrong Google account or spreadsheet;
+•	Unauthorised use of exported files;
+•	Communications sent using processed information;
+•	A user’s failure to obtain consent;
+•	Third-party service failures;
+•	Unauthorised access caused by a user’s failure to secure their account;
+•	User Content that violates another person’s rights; or
+•	Events outside our reasonable control.
+Where liability cannot be excluded, our total aggregate liability arising from Card2Leads will not exceed the greater of:
+•	The amount you paid to Card2Leads during the three months immediately preceding the event giving rise to the claim; or
+•	INR 1,000 where you used only a free service.
+This limitation does not apply to liability that cannot legally be limited, including liability arising from fraud or wilful misconduct where applicable.
+22. Indemnity
+To the extent permitted by law, you agree to indemnify and hold harmless BrillBrains, its directors, employees, contractors and affiliates from claims, losses, damages, liabilities and reasonable costs arising from:
+•	Your unlawful use of Card2Leads;
+•	Your User Content;
+•	Your breach of these Terms;
+•	Your infringement of another person’s rights;
+•	Your failure to obtain required consent or authority;
+•	Your marketing or communication activities;
+•	Information you export, synchronise, share or distribute;
+•	Your violation of third-party platform rules; or
+•	Use of Card2Leads through your account by a person you authorised.
+We will notify you of a material claim and may control the defence or settlement of the claim, while reasonably considering information provided by you.
+23. Governing Law and Dispute Resolution
+These Terms are governed by the laws of India.
+Before initiating formal proceedings, you and BrillBrains agree to attempt to resolve a dispute in good faith by sending a written description of the issue and the requested resolution.
+A dispute notice may be sent to:
+connect@brillbrainsconsultants.com
+If the dispute is not resolved within 30 days of receipt of the written notice, either party may pursue available legal remedies.
+Subject to applicable consumer-protection laws and any jurisdiction that cannot lawfully be excluded, the courts having jurisdiction over the registered office of BrillBrains Consultants Pvt. Ltd. will have exclusive jurisdiction over disputes arising from these Terms or Card2Leads.
+Nothing in this section prevents either party from seeking urgent interim or injunctive relief where necessary to protect data, intellectual property, confidential information or system security.
+24. Changes to These Terms
+We may update these Terms to reflect:
+•	New or modified features;
+•	Pricing or plan changes;
+•	Legal or regulatory developments;
+•	Security requirements;
+•	Third-party integration changes; or
+•	Operational changes.
+The updated Terms will be published on the Card2Leads website with a revised “Last updated” date.
+Where a material change significantly affects your rights or obligations, we will provide reasonable notice through the website, application, email or another appropriate method.
+Your continued use of Card2Leads after the updated Terms become effective constitutes acceptance of the revised Terms.
+Where required by law, we will request fresh acceptance before the revised Terms apply.
+25. General Provisions
+25.1 Entire agreement
+These Terms, the Card2Leads Privacy Policy, applicable plan details and any additional terms expressly accepted by you form the agreement between you and BrillBrains regarding Card2Leads.
+25.2 Order of priority
+Where there is a conflict:
+1.	A separately signed agreement between you and BrillBrains will take priority;
+2.	Specific plan or feature terms will apply to that plan or feature;
+3.	These Terms will apply generally; and
+4.	The Privacy Policy will govern the handling of personal information.
+25.3 Severability
+If a provision of these Terms is found invalid or unenforceable, the remaining provisions will continue in effect. The affected provision will be interpreted or modified to the minimum extent necessary to make it enforceable.
+25.4 No waiver
+A delay or failure to enforce a provision does not waive the right to enforce it later.
+25.5 Assignment
+You may not assign or transfer your rights or obligations under these Terms without our written consent.
+We may assign these Terms as part of a merger, acquisition, restructuring, corporate reorganisation or transfer of the Card2Leads business, subject to applicable law.
+25.6 No partnership
+These Terms do not create an employment, agency, partnership, franchise or joint-venture relationship between you and BrillBrains.
+25.7 Electronic communications
+You agree that account notices, invoices, policy updates and service communications may be provided electronically through email, the Card2Leads interface or the website.
+25.8 Force majeure
+We will not be responsible for a delay or failure caused by events beyond our reasonable control, including natural disasters, war, civil disturbance, government action, internet failure, power failure, cyberattack, labour disruption or failure of a critical third-party provider.
+25.9 Survival
+Provisions concerning intellectual property, payment obligations, disclaimers, limitation of liability, indemnity, dispute resolution and other provisions that by their nature should continue will survive account termination.
+26. Contact Details
+For questions, complaints or notices regarding these Terms, contact:
+BrillBrains Consultants Pvt. Ltd.
+Product: Card2Leads
+Email: tech@brillbrainsconsultants.com
+Phone: +91 9093400666/777
+Please include your registered email address and sufficient information for us to understand and respond to your request.
+Do not send passwords, authentication codes, complete contact databases or unnecessary confidential information by email.

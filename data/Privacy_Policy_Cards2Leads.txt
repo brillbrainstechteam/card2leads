@@ -1,0 +1,362 @@
+Privacy Policy
+Card2Leads by BrillBrains Consultants Pvt. Ltd.
+Last updated: 04 August 2026
+BrillBrains Consultants Pvt. Ltd. (“BrillBrains”, “Card2Leads”, “we”, “us” or “our”) respects your privacy.
+Card2Leads is a business-card digitisation and lead-management tool available through the Card2Leads website. It helps users extract information from business cards, convert that information into structured tables, add information through voice input, organise contacts using labels, export records, and synchronise selected information with Google Contacts and Google Sheets.
+This Privacy Policy explains:
+1.	The information we collect
+2.	Information relating to people whose business cards are uploaded
+3.	How we use information
+4.	Google account and Google API data
+5.	Voice, OCR and AI processing
+6.	How we share information
+7.	Data retention and deletion
+8.	Data security
+9.	Your rights and choices
+10.	Cookies and technical information
+11.	International data processing
+12.	Children’s privacy
+13.	Changes to this policy
+14.	Contact and grievance details
+This Privacy Policy applies specifically to Card2Leads. Other products and services operated by BrillBrains Consultants Pvt. Ltd. may be governed by separate privacy policies.
+1. Information We Collect
+We collect information that you provide, information you upload for processing, information received through integrations that you authorise, and limited technical information generated when you use Card2Leads.
+1.1 Account and profile information
+When you create or use a Card2Leads account, we may collect:
+●	Name
+●	Email address
+●	Mobile number
+●	Company or organisation name
+●	Account login and authentication information
+●	Subscription, plan or usage information, where applicable
+●	Preferences and account settings
+●	Communications sent to our support team
+Where Google Sign-In is used, we may receive basic profile information such as your name, email address, profile image and Google account identifier.
+We do not receive or store your Google account password.
+1.2 Business-card images and uploaded files
+When you scan or upload a business card, we may process:
+●	Images of the front and back of the business card
+●	Photographs captured using your device camera
+●	Images uploaded from your device
+●	Bulk-uploaded business-card images
+●	Files containing business-card or contact information
+Business cards may contain information such as:
+●	Name
+●	Company or organisation
+●	Job title or designation
+●	Mobile and telephone numbers
+●	Email addresses
+●	Business and postal addresses
+●	Website addresses
+●	Social-media or professional-profile links
+●	QR-code information
+●	Product, service or business category
+●	Other information printed on the card
+1.3 Extracted and structured contact information
+Card2Leads converts uploaded content into structured records. These records may include:
+●	Name
+●	Mobile number
+●	Telephone number
+●	Email address
+●	Company name
+●	Designation
+●	Address
+●	Website
+●	Notes
+●	Labels and tags
+●	Contact category or importance
+●	Event or exhibition name
+●	Event or exhibition date
+●	Lead source
+●	User-added comments
+●	Other custom fields selected or entered by the user
+Users can review, correct, add to or remove extracted information before exporting or synchronising it.
+1.4 Voice inputs and recordings
+When you use voice-input features, we may process:
+●	Audio recordings captured through your microphone
+●	Voice notes uploaded by you
+●	Transcriptions generated from the audio
+●	Labels, notes, names, categories or contact details spoken by you
+●	Bulk voice instructions associated with multiple contacts
+Microphone access is requested only when you choose to use a voice-enabled feature.
+You should avoid including confidential, sensitive or unrelated personal information in voice inputs.
+1.5 Google Contacts information
+When you choose to connect Google Contacts, Card2Leads may access the Google Contacts data necessary to:
+•	Create new contacts
+•	Add extracted business-card information to contacts
+•	Update a contact selected by you
+•	Apply labels or identifying information
+•	Check for matching or duplicate contacts, where this feature is enabled
+•	Display the result of a contact-sync request
+We access Google Contacts only after you provide permission through Google’s authorisation process.
+1.6 Google Sheets and Google Drive information
+When you choose to synchronise data with Google Sheets, Card2Leads may access the information necessary to:
+•	Create a spreadsheet selected or requested by you
+•	Create or select a worksheet
+•	Add rows containing extracted contact data
+•	Update data previously added through Card2Leads
+•	Read spreadsheet names, worksheet names, identifiers or relevant rows when required to complete a user-requested operation
+•	Prevent duplicate entries, where this feature is enabled
+Card2Leads does not intentionally access unrelated Google Drive files or spreadsheets that are not required for a feature requested by you.
+We do not access Gmail, Google Calendar or other unrelated Google services through the Card2Leads integration.
+1.7 Export and download information
+Card2Leads allows users to generate and download:
+•	Microsoft Excel files
+•	CSV files
+•	VCF or vCard files
+•	Structured contact tables
+•	Other supported contact-data formats
+After a file has been downloaded to your device or transferred to another system, you are responsible for protecting and lawfully using that copy.
+1.8 Technical and usage information
+When you use Card2Leads, we may automatically receive limited technical information, including:
+•	IP address
+•	Browser type and version
+•	Device type
+•	Operating system
+•	Date and time of access
+•	Session information
+•	Feature usage
+•	Error and diagnostic logs
+•	Upload, extraction, synchronisation and export status
+•	Security and fraud-prevention information
+This information is used to operate, secure, troubleshoot and improve the service.
+2. Information About Other Individuals
+A business card usually contains information relating to someone other than the Card2Leads user.
+When you upload a business card, contact list, voice recording or other information relating to another person, you confirm that:
+•	You obtained the information through lawful business, professional or personal interaction;
+•	You have an appropriate purpose and lawful authority to process the information;
+•	You will use the information only for legitimate and lawful purposes;
+•	You will respect any request from the individual to correct, remove or stop using their information; and
+•	You will comply with applicable privacy, direct-marketing, telecommunications and anti-spam requirements.
+The exchange or possession of a business card does not necessarily constitute consent to receive unlimited promotional or marketing communications. Users are responsible for obtaining any consent required before contacting individuals for marketing purposes.
+You must not use Card2Leads to collect, organise, export or distribute information through unlawful scraping, surveillance, harassment, spam or other unauthorised activities.
+Depending on the context, BrillBrains may act as:
+•	A Data Fiduciary or data controller for account, support, security and service-administration information; and
+•	A service provider or data processor for business-card and contact information processed on a user’s instructions.
+Where Card2Leads processes information on behalf of a business or organisation, that business or organisation remains responsible for its relationship with the individuals whose information it uploads.
+3. How We Use Information
+We use information for the following purposes:
+3.1 Providing Card2Leads features
+•	To scan and process business cards
+•	To extract and standardise contact details
+•	To generate structured tables
+•	To convert voice input into text
+•	To associate notes, labels and categories with contacts
+•	To allow users to review and correct extracted information
+•	To create Excel, CSV and VCF files
+•	To synchronise selected records with Google Contacts
+•	To synchronise selected records with Google Sheets
+•	To maintain records within the user’s Card2Leads workspace
+•	To identify or reduce duplicate records where enabled
+3.2 Account administration
+•	To create and manage user accounts
+•	To authenticate users
+•	To maintain sessions
+•	To provide customer support
+•	To communicate service-related information
+•	To administer subscriptions and usage limits, where applicable
+3.3 Security and reliability
+•	To detect and prevent fraud, abuse and unauthorised access
+•	To investigate errors and technical problems
+•	To monitor service availability and performance
+•	To protect our systems, users and legal rights
+•	To maintain audit, access and security logs
+3.4 Improving the service
+We may use aggregated or de-identified operational information to understand how features perform and to improve usability, reliability and extraction accuracy.
+We do not use identifiable Google Workspace API data, business-card contact data, voice recordings or user-uploaded content to train generalized or publicly available artificial-intelligence or machine-learning models.
+3.5 Legal and compliance purposes
+We may process information where necessary to:
+•	Comply with applicable laws and lawful government requests
+•	Respond to court orders or legal proceedings
+•	Enforce our terms and policies
+•	Investigate misuse
+•	Establish, exercise or defend legal claims
+4. Google Account and Google API Data
+Card2Leads requests Google permissions only when you choose to use a feature that requires them.
+4.1 Information accessed
+Depending on the features selected and permissions granted, Card2Leads may access:
+•	Basic Google account information
+•	Google Contacts data
+•	Contact labels and relevant contact fields
+•	Google Sheets and worksheet information
+•	Spreadsheet data required to complete a synchronisation requested by you
+•	Google OAuth access and refresh tokens
+4.2 How Google data is used
+Google user data is used only to provide or improve user-facing Card2Leads features that you request, including:
+•	Signing in to Card2Leads
+•	Creating or updating Google Contacts
+•	Adding labels to contacts
+•	Selecting, creating or updating Google Sheets
+•	Writing extracted business-card records to a spreadsheet
+•	Preventing duplicate records where enabled
+•	Maintaining the Google integration authorised by you
+4.3 Google data sharing
+We do not sell Google user data.
+We do not use Google user data for:
+•	Advertising
+•	Retargeting
+•	Building advertising profiles
+•	Creditworthiness or lending decisions
+•	Sale to data brokers or information resellers
+•	Unrelated analytics
+•	Surveillance
+•	Training generalized AI or machine-learning models
+Google user data may be shared only with service providers that are necessary to operate the requested feature, for security purposes, where required by law, or as otherwise permitted under Google’s applicable policies and with appropriate user authorisation.
+4.4 Google API Limited Use disclosure
+Card2Leads’ use and transfer to any other application of information received from Google APIs will adhere to the Google API Services User Data Policy, including the Limited Use requirements.
+4.5 Disconnecting Google access
+You may disconnect your Google account from Card2Leads through the available account or integration settings, where provided.
+You may also revoke Card2Leads’ access through your Google Account’s third-party application and connection settings.
+After access is revoked:
+•	Card2Leads will no longer be able to perform new Google synchronisation operations;
+•	Previously created contacts or spreadsheet entries will remain in your Google account unless you delete them from Google;
+•	Stored OAuth tokens will be deleted or rendered unusable within a reasonable period; and
+•	Information separately retained in your Card2Leads account will remain until you delete it or request account deletion.
+5. Voice, OCR and AI Processing
+Card2Leads may use optical character recognition, transcription and artificial-intelligence technologies to extract and organise information.
+Business-card images, voice recordings and relevant instructions may be processed by carefully selected infrastructure, OCR, transcription or AI service providers solely to provide the requested extraction or transcription result.
+Such processing may involve:
+•	Reading printed text from an image
+•	Identifying likely names, phone numbers, companies and email addresses
+•	Converting spoken information into text
+•	Standardizing different contact formats
+•	Mapping extracted information into table columns
+•	Identifying possible duplicate or incomplete records
+•	Suggesting corrections for user review
+Automated extraction may occasionally be inaccurate. Users should review information before exporting it, synchronising it or using it to contact another individual.
+We do not guarantee that extracted information will be complete or error-free.
+We do not use Google Workspace API data or identifiable Card2Leads user content to train generalized AI or machine-learning models.
+6. How We Share Information
+We share information only where necessary to operate Card2Leads, follow your instructions, protect the service or comply with law.
+6.1 At your direction
+Information may be transferred to:
+•	Your Google Contacts account
+•	A Google Sheet selected or created by you
+•	Files downloaded by you
+•	Systems, devices or applications into which you import an Excel, CSV or VCF file
+•	Other users or team members authorised through your account, where team features are enabled
+6.2 Service providers
+We may use service providers for:
+•	Cloud hosting
+•	Database and file storage
+•	OCR and AI processing
+•	Voice transcription
+•	Authentication
+•	Email and service communications
+•	Security monitoring
+•	Error reporting
+•	Customer support
+•	Payment processing, where applicable
+These providers are permitted to process information only as necessary to provide services to us and are expected to apply appropriate confidentiality and security safeguards.
+6.3 Legal disclosures
+We may disclose information where reasonably necessary to:
+•	Comply with applicable law or legal process
+•	Respond to lawful requests from public authorities
+•	Protect the rights, safety and property of BrillBrains, our users or others
+•	Investigate fraud, security incidents or misuse
+•	Enforce our agreements
+6.4 Business transfers
+If BrillBrains undergoes a merger, acquisition, restructuring or sale of assets, information may be transferred as part of that transaction, subject to applicable law and appropriate notice or consent where required.
+We do not sell personal information or contact databases, and we do not share personal information for third-party advertising.
+7. Data Retention and Deletion
+We retain information only for as long as reasonably necessary to provide Card2Leads, comply with legal obligations, resolve disputes and protect the service.
+7.1 Recommended retention periods
+Unless a different period is required by law or communicated within the product:
+Temporary business-card images and voice recordings
+Temporary processing copies are generally deleted after extraction and verification or within 30 days of processing.
+Where Card2Leads allows users to save original images or audio in their workspace, those files may remain until the user deletes them or closes the account.
+Extracted contact records, tables, notes and labels
+These records are retained while the user’s account remains active or until the user deletes them.
+Following account deletion, active copies are generally deleted within 30 days, subject to legal, security and backup requirements.
+Google OAuth tokens
+OAuth tokens are retained while the Google integration remains connected. They are deleted, revoked or rendered unusable after the user disconnects Google access, revokes permission or deletes the Card2Leads account.
+Generated export files
+Export files may be generated temporarily and deleted from our systems after delivery or within 30 days. Copies downloaded to the user’s device are controlled by the user.
+Support and account communications
+Support records may be retained for up to three years or for another period required to resolve an issue, comply with law or establish legal claims.
+Security, access and diagnostic logs
+Security and operational logs may be retained for up to 12 months or for a longer period where required by applicable law or necessary to investigate an incident.
+Backups
+Deleted information may remain in encrypted or access-restricted backups for up to 90 days before being overwritten or permanently removed through the normal backup cycle.
+7.2 Account deletion
+You may request deletion of your Card2Leads account and associated personal information by contacting us using the details below or through an account-deletion option, where available.
+Before completing a deletion request, we may verify your identity and authority over the relevant account.
+Deletion does not automatically remove:
+•	Contacts already created in your Google Contacts account;
+•	Information already written to Google Sheets;
+•	Files downloaded to your device;
+•	Files shared with another person or system; or
+•	Information that another Card2Leads user independently obtained and uploaded.
+You must delete those copies from the relevant external service or device.
+We may retain limited information where required for legal compliance, fraud prevention, security investigations, dispute resolution or enforcement of agreements.
+8. Data Security
+We use reasonable technical and organisational safeguards designed to protect personal information, including, where appropriate:
+•	HTTPS encryption for data transmitted between your browser and our service
+•	Restricted and role-based access controls
+•	Secure authentication and session management
+•	Protection of OAuth credentials and tokens
+•	Access logging and monitoring
+•	Secure configuration of servers and databases
+•	Backups and recovery procedures
+•	Review of service-provider access
+•	Measures to detect and respond to unauthorised access
+•	Administrative confidentiality controls
+Access to uploaded business cards, voice inputs and extracted records is limited to authorised systems and personnel who need such access for service delivery, support, security or legal compliance.
+No method of electronic transmission or storage is completely secure. While we work to protect information, we cannot guarantee absolute security.
+Where required by applicable law, we will notify affected users and relevant authorities of a personal-data breach.
+9. Your Rights and Choices
+Subject to applicable law, you may have the right to:
+•	Request access to personal information associated with your account
+•	Correct inaccurate or incomplete account information
+•	Edit or delete extracted contact records
+•	Request deletion of your account and personal information
+•	Withdraw consent for optional processing
+•	Disconnect Google Contacts or Google Sheets
+•	Revoke Google permissions
+•	Request information about how your data is processed
+•	Raise a grievance regarding the processing of your information
+•	Nominate another person to exercise applicable rights in the event of death or incapacity, where provided by law
+Certain rights may be limited where retention or processing is required by law, necessary for security, or required to establish or defend legal claims.
+Requests from people whose business cards were uploaded
+Where your information was uploaded by a Card2Leads user, the user or organisation that collected your business card will generally be the appropriate first point of contact.
+You may also contact BrillBrains. After verifying the relevant record and circumstances, we may:
+•	Direct your request to the responsible Card2Leads user;
+•	Assist the user in locating, correcting or deleting the record;
+•	Restrict processing where appropriate; or
+•	Remove information under our control where legally required.
+10. Cookies and Technical Information
+Card2Leads may use essential cookies or similar technologies to:
+•	Keep users signed in
+•	Maintain secure sessions
+•	Remember necessary preferences
+•	Prevent fraud and misuse
+•	Support security and service functionality
+Essential cookies are required for Card2Leads to function properly. Disabling them may prevent you from signing in or using parts of the service.
+We do not use cookies for third-party behavioural advertising.
+Where optional analytics tools are introduced, appropriate notice and consent controls will be provided where required.
+11. International Data Processing
+Some cloud, OCR, AI, transcription, security or infrastructure providers may process information on systems located outside India.
+Where information is processed internationally, we take reasonable measures to ensure that the processing is connected to providing Card2Leads and is subject to appropriate contractual, organisational and technical safeguards, as required by applicable law.
+12. Children’s Privacy
+Card2Leads is intended for businesses, professionals and individuals who are at least 18 years old.
+It is not designed or intended for children. We do not knowingly allow children to create Card2Leads accounts.
+Users must not intentionally upload personal information relating to children unless they have lawful authority and the processing is necessary and permitted by applicable law.
+If we become aware that a child has created an account or that information has been processed unlawfully, we may delete or restrict the relevant information.
+13. Changes to This Privacy Policy
+We may update this Privacy Policy to reflect:
+•	Changes to Card2Leads features
+•	Changes to integrations or service providers
+•	Changes to legal or regulatory requirements
+•	Changes to our data-handling practices
+•	Security or operational improvements
+The current version will be published on the Card2Leads website with the updated “Last updated” date.
+Where a change materially affects how we use personal information or Google user data, we will provide appropriate notice and obtain additional consent where required before using the information for the new purpose.
+14. Contact and Grievance Details
+For questions, requests, complaints or concerns regarding this Privacy Policy or the processing of personal information, contact:
+BrillBrains Consultants Pvt. Ltd.
+Product: Card2Leads
+Email: tech@brillbrainsconsultants.com
+Phone: +91 9093400666/777
+Please include sufficient information to identify your account and the nature of your request. Do not email passwords, full contact databases, unredacted identity documents or other unnecessary confidential information.
+We may request reasonable verification before acting on an access, correction or deletion request.
+

@@ -47,8 +47,8 @@ test("VCF export packages exhibition contacts for phone import", () => {
   ]).toString("utf8");
 
   assert.match(vcf, /BEGIN:VCARD/);
-  // Display name is now exhibition-first (buildContactDisplayName), e.g. "IIJS 2026. ABC Jewels".
-  assert.match(vcf, /FN:IIJS 2026\. ABC Jewels/);
+  // Display name is "[Exhibition Year]. Person Name. City State" (buildContactDisplayName).
+  assert.match(vcf, /FN:\[IIJS 2026\]\. Riya Shah/);
   assert.match(vcf, /TEL;TYPE=CELL:\+91 98765 43210/);
   assert.match(vcf, /ORG:ABC Jewels/);
   assert.match(vcf, /September mein follow up karna hai/);
@@ -68,7 +68,7 @@ test("Google Contacts payload keeps exhibition identity and voice remarks", () =
     exhibitionDate: "2026-07-18",
     voiceTranscript: "September mein follow up karna hai."
   });
-  assert.equal(person.names[0].unstructuredName, "IIJS 2026. ABC Jewels");
+  assert.equal(person.names[0].unstructuredName, "[IIJS 2026]. Riya Shah");
   assert.equal(person.phoneNumbers.length, 2);
   assert.equal(person.organizations[0].name, "ABC Jewels");
   assert.ok(person.biographies[0].value.includes("September"));
@@ -87,7 +87,7 @@ test("Google Contacts names include a searchable exhibition and year suffix", ()
       exhibitionName: "GJEPC",
       exhibitionDate: "2026-06-10"
     }),
-    "GJEPC 2026. Naveen Kumar"
+    "[GJEPC 2026]. Naveen Kumar"
   );
   assert.equal(
     googleContactDisplayName({
@@ -95,7 +95,19 @@ test("Google Contacts names include a searchable exhibition and year suffix", ()
       exhibitionName: "IIJS 2026",
       exhibitionDate: "2026-07-18"
     }),
-    "IIJS 2026. Riya Shah"
+    "[IIJS 2026]. Riya Shah"
+  );
+});
+
+test("Saved contact name maps state from the city when the card omitted it", () => {
+  assert.equal(
+    googleContactDisplayName({
+      name: "Ashish Dosaya",
+      exhibitionName: "GJEPC",
+      exhibitionDate: "2026-06-10",
+      city: "Jaipur"
+    }),
+    "[GJEPC 2026]. Ashish Dosaya. Jaipur Rajasthan"
   );
 });
 
