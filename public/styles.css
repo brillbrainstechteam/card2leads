@@ -8244,3 +8244,41 @@ strong {
   padding: 0 12px;
   flex-shrink: 0;
 }
+
+/* Phones: the pinned actions column at its desktop width (208px) left barely
+   70px for the contact name on a ~325px table, so only the buttons were
+   visible. Drop the WhatsApp label to its icon and tighten the cell — the
+   green button stays pinned and tappable, and the name is readable at rest. */
+@media (max-width: 640px) {
+  .c2l-table .col-actions {
+    min-width: 0;
+    width: 1%;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .c2l-table .row-actions {
+    gap: 4px;
+  }
+
+  .c2l-table .row-btn.whatsapp span {
+    display: none;
+  }
+
+  .c2l-table .row-btn.whatsapp {
+    width: 32px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .c2l-table .col-name {
+    min-width: 168px;
+    max-width: none;
+  }
+
+  .c2l-table thead th,
+  .c2l-table tbody td {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+}
