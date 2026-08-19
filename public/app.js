@@ -545,7 +545,7 @@ function authView() {
           </article>
           <article class="price-card">
             <span class="price-label">1 year</span>
-            <h3><span>&#8377;1,499</span> once</h3>
+            <h3><span>&#8377;2,999</span> once</h3>
             <p>1,500 card scans valid for one year, at the lowest included cost per scan.</p>
             <span class="plan-cancel">No auto-renewal</span>
             <button type="button" class="secondary" data-auth-mode="signup" data-plan="annual" data-billing-mode="one_time">Buy 1 year</button>
@@ -577,7 +577,7 @@ function authView() {
             </article>
             <article class="price-card compact">
               <span class="price-label">Annual</span>
-              <h3><span>&#8377;1,499</span> / year</h3>
+              <h3><span>&#8377;2,999</span> / year</h3>
               <p>1,500 scans every year.</p>
               <span class="plan-cancel">Cancel anytime</span>
               <button type="button" class="secondary" data-auth-mode="signup" data-plan="annual" data-billing-mode="subscription">Subscribe yearly</button>
@@ -2312,7 +2312,7 @@ function showPaymentPrompt(message) {
   const billing = state.overview?.billing || {};
   const planLabel = { monthly: "1 month", quarterly: "3 months", annual: "1 year" };
   const scansFor = { monthly: 150, quarterly: 300, annual: 1500 };
-  const priceFor = { monthly: 499, quarterly: 799, annual: 1499 };
+  const priceFor = { monthly: 499, quarterly: 799, annual: 2999 };
   const oneTime = (Array.isArray(billing.oneTimePlans) && billing.oneTimePlans.length
     ? billing.oneTimePlans.map((p) => p.plan)
     : ["monthly", "quarterly", "annual"]);
@@ -4930,7 +4930,7 @@ function accountView() {
           <div class="plan-choices">
             <button type="button" class="secondary" data-subscribe="monthly" ${billing.availablePlans.includes("monthly") ? "" : "disabled"}>Monthly · ₹499 / 150 scans</button>
             <button type="button" class="secondary" data-subscribe="quarterly" ${billing.availablePlans.includes("quarterly") ? "" : "disabled"}>Quarterly · ₹799 / 300 scans</button>
-            <button type="button" class="secondary" data-subscribe="annual" ${billing.availablePlans.includes("annual") ? "" : "disabled"}>Annual · ₹1,499 / 1,500 scans</button>
+            <button type="button" class="secondary" data-subscribe="annual" ${billing.availablePlans.includes("annual") ? "" : "disabled"}>Annual · ₹2,999 / 1,500 scans</button>
           </div>
           <p class="muted">Cancel anytime.</p>
           <div class="actions">
@@ -5097,7 +5097,7 @@ function accountBillingView() {
             <div class="plan-choices billing-plan-grid">
               <button type="button" class="billing-plan-option" data-subscribe="monthly" ${billing.availablePlans.includes("monthly") ? "" : "disabled"}><span class="billing-plan-name">Monthly</span><strong>&#8377;499</strong><small>150 scans every month</small></button>
               <button type="button" class="billing-plan-option recommended" data-subscribe="quarterly" ${billing.availablePlans.includes("quarterly") ? "" : "disabled"}><span class="billing-recommended-label">Most popular</span><span class="billing-plan-name">Quarterly</span><strong>&#8377;799</strong><small>300 scans every 3 months</small></button>
-              <button type="button" class="billing-plan-option" data-subscribe="annual" ${billing.availablePlans.includes("annual") ? "" : "disabled"}><span class="billing-plan-name">Annual</span><strong>&#8377;1,499</strong><small>1,500 scans every year</small></button>
+              <button type="button" class="billing-plan-option" data-subscribe="annual" ${billing.availablePlans.includes("annual") ? "" : "disabled"}><span class="billing-plan-name">Annual</span><strong>&#8377;2,999</strong><small>1,500 scans every year</small></button>
             </div>
           </div>
           <div class="credit-pack-card ${billing.canTopup ? "available" : "locked"}">

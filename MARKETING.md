@@ -86,7 +86,7 @@ At an exhibition you collect dozens or hundreds of cards. Afterwards they sit un
 | **Trial** | Free | 20 | Try extraction, review, and voice notes |
 | **Monthly** | ₹499 / month | 100 | Everything included |
 | **Quarterly** | ₹799 / 3 months | 300 | Best value for regular exhibitors |
-| **Annual** | ₹1,499 / year | 1,500 | Lowest price per scan |
+| **Annual** | ₹2,999 / year | 1,500 | Lowest price per scan |
 | **Top-up** | ₹499 | +100 | Add scans anytime, mid-plan |
 
 *All plans include AI extraction, review, voice notes, and every export option (Excel, CSV, Google Sheets, Google Contacts, phone/VCF). Plans differ only by how many cards you scan.*

@@ -84,7 +84,7 @@ In Google Cloud Console → your project → **Clients** (OAuth client), add:
 - Publish the app (Audience → In production) when ready; contacts scope may trigger verification.
 
 ## 8. Razorpay
-1. Enable **Subscriptions** on the account; create **3 Plans** (Monthly ₹499, Quarterly ₹799, Annual ₹1,499) → copy Plan IDs.
+1. Enable **Subscriptions** on the account; create **3 Plans** (Monthly ₹499, Quarterly ₹799, Annual ₹2,999) → copy Plan IDs.
 2. Put Key ID/Secret + Plan IDs in `.env` (Test first). Restart: `pm2 restart card2leads`.
 3. Add a **Webhook**: URL `https://card2leads.brillbrainsconsultants.com/api/webhooks/razorpay`,
    secret = your `RAZORPAY_WEBHOOK_SECRET`, events:

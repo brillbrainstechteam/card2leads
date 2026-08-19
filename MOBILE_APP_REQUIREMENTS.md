@@ -98,7 +98,7 @@ The web app has **four primary screens** plus auth. The mobile app should reach 
 
 ### 4.5 Account
 - Profile, company, onboarding data.
-- **Billing:** pay-to-start plans (₹499 / 1 month / 150 scans; ₹799 / 3 months / 300; ₹1499 / 1 year / 1500), subscriptions, top-ups, Razorpay checkout, usage/quota display.
+- **Billing:** pay-to-start plans (₹499 / 1 month / 150 scans; ₹799 / 3 months / 300; ₹2999 / 1 year / 1500), subscriptions, top-ups, Razorpay checkout, usage/quota display.
 - **Team management:** invite/list members, assign contacts.
 - **Integrations:** connect/disconnect Google; configure Google target (Contacts/Sheets).
 - **WhatsApp message settings:** template library editor.

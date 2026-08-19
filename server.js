@@ -147,7 +147,7 @@ const RAZORPAY_PLAN_IDS = {
 };
 // Number of billing cycles a subscription runs before completing.
 const RAZORPAY_TOTAL_COUNTS = { monthly: 12, quarterly: 8, annual: 5 };
-const PLAN_PRICES_PAISE = Object.freeze({ monthly: 49900, quarterly: 79900, annual: 149900 });
+const PLAN_PRICES_PAISE = Object.freeze({ monthly: 49900, quarterly: 79900, annual: 299900 });
 const PLAN_DURATIONS_MONTHS = Object.freeze({ monthly: 1, quarterly: 3, annual: 12 });
 const TOPUP_AMOUNT_PAISE = 49900; // ₹499
 const TOPUP_SCANS = 100;
