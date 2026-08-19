@@ -1681,6 +1681,9 @@ function showSetCityModal(contact) {
   render();
 }
 
+// Mirrors the server's buildContactDisplayName():
+// "MH. IIJS 2026. Sampatlal Soni. Soni Jewellers. Amgaon".
+// Shown in its own table column so the saved name is visible before exporting.
 function contactSavedDisplayName(contact) {
   const stored = String(contact.contactDisplayName || "").trim();
   if (stored) return stored;
@@ -1689,10 +1692,16 @@ function contactSavedDisplayName(contact) {
   const label = exhibition && year && !new RegExp(`\\b${year}\\b`).test(exhibition)
     ? `${exhibition} ${year}`
     : exhibition || year;
-  const business = String(contact.companyName || "").trim() || String(contact.name || "").trim();
-  return [label, business, String(contact.stateCode || "").trim(), String(contact.city || "").trim()]
-    .filter(Boolean)
-    .join(". ");
+  const person = String(contact.name || "").trim();
+  const company = String(contact.companyName || "").trim();
+  const sameAsPerson = company.toLowerCase() === person.toLowerCase();
+  return [
+    String(contact.stateCode || "").trim(),
+    label,
+    person,
+    sameAsPerson ? "" : company,
+    String(contact.city || "").trim()
+  ].filter(Boolean).join(". ");
 }
 
 // Used by both the contacts table and the Review quick-send strip, so it lives

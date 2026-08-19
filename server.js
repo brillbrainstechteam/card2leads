@@ -363,21 +363,26 @@ function resolveStateName(stateValue, cityValue) {
   return normalized || "";
 }
 
-// "[GJEPC 2026]. Ashish Dosaya. Amravati Maharashtra"
-// Uses the person's transliterated English name (so the client can read and
-// search it regardless of the card's language), falling back to the company for
-// individual cards. The exhibition and year are bracketed, and the location is
-// "City State" with the full state name — mapped from the city when the card did
-// not print one. Any unknown part is dropped rather than leaving an empty gap.
+// "MH. IIJS 2026. Sampatlal Soni. Soni Jewellers. Amgaon"
+// Order is state code, exhibition + year, person, company, city. The state code
+// is the two-letter form (Maharashtra -> MH), mapped from the city when the card
+// did not print a state, and falling back to the ISO country code outside India.
+// The person name is the transliterated English one so it stays readable and
+// searchable whatever script the card used. Company is dropped when it merely
+// repeats the person name, and any unknown part is dropped rather than leaving
+// an empty gap between separators.
 function buildContactDisplayName(contact) {
-  const person = String(contact.name || "").trim() || String(contact.companyName || "").trim();
-  const exhibition = exhibitionWithYear(contact.exhibitionName, contact.exhibitionDate);
-  const stateName = resolveStateName(contact.state, contact.city);
-  const cityState = [String(contact.city || "").trim(), stateName].filter(Boolean).join(" ");
+  const person = String(contact.name || "").trim();
+  const company = String(contact.companyName || "").trim();
+  const sameAsPerson = company.toLowerCase() === person.toLowerCase();
+  const stateCode = String(contact.stateCode || "").trim()
+    || stateCodeFor(contact.state, contact.country, phoneCountryInfo(contact.mobileNumber, contact.country).iso, contact.city);
   return [
-    exhibition ? `[${exhibition}]` : "",
+    stateCode,
+    exhibitionWithYear(contact.exhibitionName, contact.exhibitionDate),
     person,
-    cityState
+    sameAsPerson ? "" : company,
+    String(contact.city || "").trim()
   ].filter(Boolean).join(". ");
 }
 
