@@ -1834,7 +1834,7 @@ function modalView() {
           ${
             Array.isArray(modal.actions)
               ? modal.actions.map((action, index) => `<button type="button" class="${action.className || "secondary"}" data-modal-action="${index}">${escapeHtml(action.label)}</button>`).join("")
-              : `<button type="button" class="secondary" data-modal-cancel>${escapeHtml(modal.cancelText || "Cancel")}</button><button type="button" class="${modal.confirmClass || "danger"}" data-modal-confirm>${escapeHtml(modal.confirmText || "Confirm")}</button>`
+              : `<button type="button" class="secondary" data-modal-cancel>${escapeHtml(modal.cancelText || "Cancel")}</button><button type="button" class="${modal.confirmClass ?? "danger"}" data-modal-confirm>${escapeHtml(modal.confirmText || "Confirm")}</button>`
           }
         </div>
       </section>
@@ -3945,7 +3945,8 @@ function contactsView() {
               <th class="col-voice">Voice note</th>
               <th class="col-sync">Google sync</th>
               <th class="col-team">Team member</th>
-              <th class="col-actions sticky-r">Actions</th>
+              <th class="col-actions">Actions</th>
+              <th class="col-reach sticky-r"><span class="sr-only">Message</span></th>
             </tr></thead>
             <tbody class="c2l-tbody"></tbody>
           </table>
@@ -4045,17 +4046,19 @@ function contactsView() {
           <option value="__add">+ Add a team member…</option>
         </select>
       </td>
-      <td class="col-actions sticky-r">
+      <td class="col-actions">
         <div class="row-actions">
+          <button class="row-btn icon-only" data-voice-contact="${contact.id}" data-contact-name="${escapeAttr(contact.name)}" title="Add or replace voice note" aria-label="Voice note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
+          <button class="row-btn icon-only" data-edit="${contact.id}" title="Edit contact" aria-label="Edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          <button class="row-btn icon-only danger" data-delete="${contact.id}" data-contact-name="${escapeAttr(contact.name)}" title="Delete contact" aria-label="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+        </div>
+      </td>
+      <td class="col-reach sticky-r">
           ${waNumber
             ? `<a class="row-btn whatsapp" href="https://wa.me/${escapeAttr(waNumber)}" target="_blank" rel="noopener noreferrer" data-wa-contact="${contact.id}" title="Message ${escapeAttr(contact.name)} on WhatsApp"><svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M17.47 14.38c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.3-.77.96-.94 1.16-.17.2-.35.22-.65.08-.3-.15-1.25-.46-2.39-1.47-.88-.79-1.48-1.76-1.65-2.06-.17-.3-.02-.46.13-.61.14-.14.3-.35.45-.53.15-.18.2-.3.3-.5.1-.2.05-.38-.02-.53-.08-.15-.67-1.61-.92-2.21-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.53.07-.8.38-.28.3-1.05 1.02-1.05 2.5s1.08 2.9 1.23 3.1c.15.2 2.12 3.24 5.14 4.54.72.31 1.28.5 1.71.63.72.23 1.37.2 1.89.12.58-.09 1.76-.72 2.01-1.42.25-.7.25-1.3.17-1.42-.07-.13-.27-.2-.57-.35z"/><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.46 1.32 4.96L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2zm0 18.15h-.01a8.23 8.23 0 0 1-4.19-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.2 8.2 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.25-8.24a8.2 8.2 0 0 1 5.83 2.42 8.19 8.19 0 0 1 2.41 5.83c0 4.54-3.7 8.23-8.24 8.23z"/></svg><span>WhatsApp</span></a>`
             : contact.emailAddress
               ? `<a class="row-btn email" href="mailto:${escapeAttr(contact.emailAddress)}" data-email-contact="${contact.id}" title="Email ${escapeAttr(contact.name)} (not on WhatsApp)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg><span>Email</span></a>`
               : ""}
-          <button class="row-btn icon-only" data-voice-contact="${contact.id}" data-contact-name="${escapeAttr(contact.name)}" title="Add or replace voice note" aria-label="Voice note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
-          <button class="row-btn icon-only" data-edit="${contact.id}" title="Edit contact" aria-label="Edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-          <button class="row-btn icon-only danger" data-delete="${contact.id}" data-contact-name="${escapeAttr(contact.name)}" title="Delete contact" aria-label="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
-        </div>
       </td>
     </tr>`;
   }).join("");

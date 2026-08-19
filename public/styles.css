@@ -7963,7 +7963,7 @@ strong {
 .c2l-table .col-voice { min-width: 96px; }
 .c2l-table .col-sync { min-width: 112px; }
 .c2l-table .col-team { min-width: 142px; }
-.c2l-table .col-actions { width: auto; min-width: 208px; white-space: nowrap; }
+.c2l-table .col-actions { width: auto; white-space: nowrap; }
 
 .c2l-table .col-team .assign-select {
   width: 100%;
@@ -8280,5 +8280,113 @@ strong {
   .c2l-table tbody td {
     padding-left: 8px;
     padding-right: 8px;
+  }
+}
+
+/* ============================================================
+   Mobile dialogs
+   The backdrop sat at z-index 50 while the fixed bottom nav is at 100, so on a
+   phone the nav painted over the dialog and its buttons were unreachable. A
+   modal has to sit above every piece of app chrome.
+   ============================================================ */
+.modal-backdrop {
+  z-index: 200;
+}
+
+@media (max-width: 760px) {
+  .modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .dialog,
+  .dialog.wide-dialog,
+  .dialog.payment-modal {
+    width: 100%;
+    max-width: none;
+    /* dvh, not vh: 100vh is the *largest* viewport, so the sheet ran underneath
+       the browser's own top/bottom bars and the actions were cut off. */
+    max-height: calc(100dvh - env(safe-area-inset-top) - 8px);
+    margin: 0;
+    border-radius: 14px 14px 0 0;
+    /* The dialog itself must not scroll — its grid keeps the actions row
+       visible while only the content between scrolls. */
+    overflow: hidden;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    padding: 18px 16px 0;
+  }
+
+  /* The side icon column costs width that phones do not have. */
+  .dialog > .dialog-icon {
+    display: none;
+  }
+
+  .dialog-content {
+    padding-right: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    scrollbar-gutter: auto;
+  }
+
+  /* Always reachable, clear of the home indicator. */
+  .dialog-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    gap: 8px;
+    margin-top: 6px;
+    padding: 12px 0 calc(12px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+    background: #fff;
+    flex-wrap: nowrap;
+  }
+
+  .dialog-actions > button,
+  .dialog-actions > .button-link {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 46px;
+  }
+
+  .dialog-close {
+    top: 10px;
+    right: 10px;
+  }
+
+  /* The payment sheet supplies its own padding inside .dialog-content. */
+  .dialog.payment-modal {
+    padding: 0;
+  }
+
+  .dialog.payment-modal .dialog-actions {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
+/* Only the WhatsApp/Email button stays pinned; voice, edit and delete scroll
+   with the rest of the table so the columns behind them stay reachable. */
+.c2l-table .col-reach {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.c2l-table .col-actions {
+  width: auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .c2l-table .col-reach {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  /* Full-width actions again now that they are no longer pinned. */
+  .c2l-table .col-actions {
+    min-width: 0;
   }
 }
