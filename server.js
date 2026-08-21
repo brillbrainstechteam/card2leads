@@ -2955,8 +2955,12 @@ function audioExtension(mimeType) {
   if (/ogg/i.test(mimeType)) return "ogg";
   if (/m4a|mp4/i.test(mimeType)) return "m4a";
   if (/wav/i.test(mimeType)) return "wav";
-  if (/aac/i.test(mimeType)) return "aac";
-  return "mp3";
+  if (/mp3|mpeg|mpga/i.test(mimeType)) return "mp3";
+  // AAC is normally delivered inside an MP4 container, and speech APIs reject a
+  // bare .aac upload. Anything else unrecognised is far more likely to be the
+  // m4a a phone recorded than an mp3, and naming it wrongly makes the provider
+  // report the audio as corrupted.
+  return "m4a";
 }
 
 function googleSttConfigured() {
