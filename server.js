@@ -1428,15 +1428,30 @@ async function processQueueCycle() {
         // detached from any request, so there's no session user to fall back on.
         const uploader = db.users.find((u) => u.id === batchesById.get(card.batchId)?.uploadedBy);
         try {
-          const saved = uploader
-            ? saveContactRecord(db, uploader, card, finalExtraction, { mergeDuplicate: true })
-            : { ok: false, message: "Could not identify who uploaded this card, so it needs to be saved manually." };
-          if (saved.ok) {
-            status = "saved";
-          } else {
+          if (!uploader) {
             status = "requires_review";
             card.status = "requires_review";
-            finalExtraction.warnings = [...(finalExtraction.warnings || []), saved.message];
+            finalExtraction.warnings = [...(finalExtraction.warnings || []), "Could not identify who uploaded this card, so it needs to be saved manually."];
+          } else {
+            // A card that names more than one person fans out into a contact per
+            // person (same business/city/state/exhibition). This must run on the
+            // automatic-save path too, otherwise multi-person cards processed via
+            // the queue would collapse into a single contact.
+            const people = expandCardPeople(finalExtraction);
+            let anySaved = false;
+            let firstFailure = null;
+            for (const person of people) {
+              const saved = saveContactRecord(db, uploader, card, person, { mergeDuplicate: true });
+              if (saved.ok) anySaved = true;
+              else if (!firstFailure) firstFailure = saved;
+            }
+            if (anySaved) {
+              status = "saved";
+            } else {
+              status = "requires_review";
+              card.status = "requires_review";
+              finalExtraction.warnings = [...(finalExtraction.warnings || []), firstFailure?.message || "Automatic save failed."];
+            }
           }
         } catch (err) {
           status = "requires_review";
