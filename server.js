@@ -159,6 +159,11 @@ let pgPool = null;
 let geminiUnavailableUntil = 0;
 const rateLimitBuckets = new Map();
 const mobileAuthCodes = new Map();
+// Short-lived Google OAuth state for the mobile connect flow: state -> { userId,
+// feature, createdAt }. Held in memory (like otpStore/mobileAuthCodes) rather
+// than on the session, because persisting it would rewrite the whole database
+// on both the start and the callback of every Google connection.
+const googleMobileOAuthStates = new Map();
 
 const EXPORT_COLUMNS = [
   "Saved Contact Name",
@@ -4652,23 +4657,27 @@ async function handleApi(req, res, pathname) {
     if (req.method === "GET" && pathname === "/api/google/callback") {
       const url = new URL(req.url, `http://${req.headers.host}`);
       const returnedState = url.searchParams.get("state");
-      const mobileFlowSession = returnedState
+      // Legacy sessions may still carry the state from before it moved in-memory.
+      const legacySession = returnedState
         ? db.sessions.find((candidate) => candidate.googleMobileOAuthState === returnedState)
         : null;
-      if (mobileFlowSession) {
+      const mobileFlow = (returnedState && googleMobileOAuthStates.get(returnedState))
+        || (legacySession ? { userId: legacySession.userId, feature: legacySession.googleMobileOAuthFeature, createdAt: new Date(legacySession.googleMobileOAuthCreatedAt || 0).getTime() } : null);
+      if (mobileFlow) {
         const code = url.searchParams.get("code");
-        const createdAt = new Date(mobileFlowSession.googleMobileOAuthCreatedAt || 0).getTime();
-        const mobileUser = db.users.find((candidate) => candidate.id === mobileFlowSession.userId && candidate.status === "active");
-        const feature = mobileFlowSession.googleMobileOAuthFeature === "contacts" ? "contacts" : "sheets";
-        delete mobileFlowSession.googleMobileOAuthState;
-        delete mobileFlowSession.googleMobileOAuthCreatedAt;
-        delete mobileFlowSession.googleMobileOAuthFeature;
+        const createdAt = Number(mobileFlow.createdAt || 0);
+        const mobileUser = db.users.find((candidate) => candidate.id === mobileFlow.userId && candidate.status === "active");
+        const feature = mobileFlow.feature === "contacts" ? "contacts" : "sheets";
+        if (returnedState) googleMobileOAuthStates.delete(returnedState);
+        if (legacySession) {
+          delete legacySession.googleMobileOAuthState;
+          delete legacySession.googleMobileOAuthCreatedAt;
+          delete legacySession.googleMobileOAuthFeature;
+        }
         if (!code || !createdAt || Date.now() - createdAt > 10 * 60 * 1000) {
-          await saveDb(db);
           return redirect(res, "easysave://auth?google_sheets=failed");
         }
         if (!mobileUser) {
-          await saveDb(db);
           return redirect(res, "easysave://auth?google_sheets=failed");
         }
         try {
@@ -4899,10 +4908,9 @@ async function handleApi(req, res, pathname) {
       authUrl.searchParams.set("state", oauthState);
       const isMobile = connectUrl.searchParams.get("mobile") === "1";
       if (isMobile) {
-        session.googleMobileOAuthState = oauthState;
-        session.googleMobileOAuthCreatedAt = now();
-        session.googleMobileOAuthFeature = feature;
-        await saveDb(db);
+        // Kept in memory so starting a Google connection does not trigger a full
+        // database write; the callback reads it back by state.
+        googleMobileOAuthStates.set(oauthState, { userId: session.userId, feature, createdAt: Date.now() });
         return send(res, 200, { authUrl: authUrl.toString() });
       }
       session.googleOAuthState = oauthState;
