@@ -33,6 +33,7 @@ button { font-family: inherit; cursor: pointer; }
 /* ---------- Login ---------- */
 .login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
 .login-card { width: 100%; max-width: 380px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); padding: 32px; }
+.login-card.setup-card { max-width: 430px; }
 .login-card h1 { font-size: 20px; margin: 0 0 4px; }
 .login-card p.sub { color: var(--text-soft); margin: 0 0 24px; font-size: 13px; }
 .brand-mark { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: -.3px; margin-bottom: 20px; }
@@ -47,6 +48,11 @@ button { font-family: inherit; cursor: pointer; }
 .btn-primary:hover { background: #1f57e6; }
 .btn-primary:disabled { opacity: .6; cursor: not-allowed; }
 .form-error { background: var(--danger-soft); color: var(--danger); border-radius: 8px; padding: 9px 12px; font-size: 13px; margin-bottom: 14px; }
+.form-help, .password-hint { color: var(--text-soft); font-size: 12px; line-height: 1.45; }
+.form-help { margin: 16px 0 0; text-align: center; }
+.password-hint { margin: -3px 0 14px; }
+.setup-note { background: var(--warn-soft); color: var(--warn); border-radius: 9px; padding: 12px 14px; font-size: 13px; line-height: 1.5; }
+.setup-note code { font-weight: 700; }
 
 /* ---------- App shell ---------- */
 .shell { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
