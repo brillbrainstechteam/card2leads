@@ -13,6 +13,7 @@ const {
   exportRemarks,
   exportRow,
   findCollectionForUser,
+  foldLedgerRows,
   contactToGooglePerson,
   grantOneTimePlan,
   grantTopupEntitlement,
@@ -22,6 +23,7 @@ const {
   normalizePhoneFields,
   parseDataUrl,
   planUsage,
+  removeOrganisationData,
   remainingTopupScans,
   repairCollectionExhibitionAssignments,
   saveContactRecord,
@@ -29,6 +31,42 @@ const {
   validateContact,
   validatePasswordStrength
 } = require("../server");
+
+test("usage decisions prefer the ledger snapshot over legacy counters", () => {
+  const ledger = foldLedgerRows([
+    { transaction_type: "PLAN_ALLOCATION", quantity: 150, balance_effect: 150 },
+    { transaction_type: "SCAN_CONSUMED", quantity: 1, balance_effect: -1 },
+    { transaction_type: "ADMIN_CREDIT", quantity: 10, balance_effect: 10 },
+    { transaction_type: "SCAN_CONSUMED", quantity: 1, balance_effect: -1 }
+  ]);
+  assert.deepEqual(ledger, { used: 2, remaining: 158, limit: 160, balance: 158 });
+  assert.deepEqual(planUsage({ plan: "monthly", billingMode: "subscription", subscriptionStatus: "active", scansUsed: 99, scanLimit: 100 }, ledger), {
+    plan: "monthly", used: 2, remaining: 158, limit: 160
+  });
+});
+
+test("hard deletion removes only the selected tenant graph", () => {
+  const db = {
+    organisations: [{ id: "org-a" }, { id: "org-b" }],
+    users: [{ id: "user-a", organisationId: "org-a" }, { id: "user-b", organisationId: "org-b" }],
+    sessions: [{ id: "session-a", userId: "user-a" }, { id: "session-b", userId: "user-b" }],
+    collections: [{ id: "collection-a", organisationId: "org-a" }, { id: "collection-b", organisationId: "org-b" }],
+    uploadBatches: [{ id: "batch-a", organisationId: "org-a" }],
+    cards: [{ id: "card-a", organisationId: "org-a", storagePath: "private_storage/cards/a.jpg" }, { id: "card-b", organisationId: "org-b" }],
+    contacts: [{ id: "contact-a", organisationId: "org-a" }, { id: "contact-b", organisationId: "org-b" }],
+    voiceNotes: [{ id: "voice-a", organisationId: "org-a", audioPath: "private_storage/voice_notes/a.webm" }],
+    googleConnections: [{ id: "google-a", organisationId: "org-a" }],
+    sheetConfigurations: [{ id: "sheet-a", organisationId: "org-a" }],
+    syncRecords: [{ id: "sync-a", contactId: "contact-a", sheetConfigurationId: "sheet-a" }, { id: "sync-b", contactId: "contact-b" }],
+    auditLogs: [{ id: "audit-a", organisationId: "org-a" }, { id: "audit-b", organisationId: "org-b" }]
+  };
+  const paths = removeOrganisationData(db, "org-a");
+  assert.deepEqual(db.organisations.map((item) => item.id), ["org-b"]);
+  assert.deepEqual(db.users.map((item) => item.id), ["user-b"]);
+  assert.deepEqual(db.sessions.map((item) => item.id), ["session-b"]);
+  assert.deepEqual(db.syncRecords.map((item) => item.id), ["sync-b"]);
+  assert.equal(paths.length, 2);
+});
 
 test("VCF export packages exhibition contacts for phone import", () => {
   const vcf = buildVcf([

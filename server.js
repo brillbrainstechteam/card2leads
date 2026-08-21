@@ -47,6 +47,8 @@ const EXTRACTION_CONCURRENCY = Math.min(5, Math.max(1, Number(process.env.EXTRAC
 // in flight at once from this loop — comfortably under any reasonable
 // provider rate limit even if a request-time extraction is also running.
 const QUEUE_BATCH_SIZE = 5;
+const DELETION_RETENTION_MS = Math.max(1, Number(process.env.DELETION_RETENTION_DAYS || 30)) * 24 * 60 * 60 * 1000;
+const DELETION_WORKER_INTERVAL_MS = Math.max(60 * 1000, Number(process.env.DELETION_WORKER_INTERVAL_MS || 6 * 60 * 60 * 1000));
 const PLAN_LIMITS = Object.freeze({
   trial: 20,
   monthly: 150,
@@ -688,7 +690,7 @@ async function persistPostgresDb(db) {
           collection.organisationId,
           collection.name,
           nullable(collection.exhibitionName),
-          nullable(collection.exhibitionDate),
+          dateColumn(collection.exhibitionDate),
           collection.destinationType || "excel",
           nullable(collection.destinationName),
           nullable(collection.spreadsheetId),
@@ -792,11 +794,11 @@ async function persistPostgresDb(db) {
           nullable(contact.postalCode),
           nullable(contact.country),
           nullable(contact.exhibitionName),
-          nullable(contact.exhibitionDate),
+          dateColumn(contact.exhibitionDate),
           nullable(contact.interest),
           nullable(contact.specialRequirement),
           nullable(contact.budget),
-          nullable(contact.followUpDate),
+          dateColumn(contact.followUpDate),
           nullable(contact.voiceTranscript),
           nullable(contact.voiceLanguage),
           nullable(contact.voiceNoteCreatedAt),
@@ -886,7 +888,7 @@ async function persistPostgresDb(db) {
           nullable(note.interest),
           nullable(note.specialRequirement),
           nullable(note.budget),
-          nullable(note.followUpDate),
+          dateColumn(note.followUpDate),
           nullable(note.summary),
           note.status || "draft",
           nullable(note.provider),
@@ -1249,6 +1251,22 @@ function dateOnly(value) {
   return value ? new Date(value).toISOString().slice(0, 10) : "";
 }
 
+// Postgres `date` columns reject partial/legacy values such as "2026",
+// "2026-07" or "07/2026". A single such row anywhere in db.collections /
+// db.contacts / db.voiceNotes would otherwise crash saveDb — and because
+// createSession() flushes the whole db, it would 500 an ordinary login. Coerce
+// anything that is not a full, valid YYYY-MM-DD to NULL rather than inventing a
+// date (never turn "2026" into 2026-01-01). Full ISO timestamps are accepted by
+// keeping only their date part.
+function dateColumn(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value).trim());
+  if (!match) return null;
+  const iso = `${match[1]}-${match[2]}-${match[3]}`;
+  const parsed = new Date(`${iso}T00:00:00Z`);
+  return Number.isNaN(parsed.getTime()) ? null : iso;
+}
+
 function id(prefix) {
   return `${prefix}_${crypto.randomBytes(8).toString("hex")}`;
 }
@@ -1312,7 +1330,7 @@ async function processQueueCycle() {
       if (toProcess.length >= QUEUE_BATCH_SIZE) break;
       const organisation = snapshot.organisations.find((o) => o.id === card.organisationId);
       if (!organisation) continue;
-      const usage = planUsage(organisation);
+      const usage = await authoritativePlanUsage(organisation);
       const claimed = orgUsageClaimed.get(organisation.id) || 0;
       if (claimed >= usage.remaining) continue;
       orgUsageClaimed.set(organisation.id, claimed + 1);
@@ -1389,10 +1407,8 @@ async function processQueueCycle() {
         finalExtraction.warnings.push("This image appears to have been uploaded before. Review before saving.");
       }
 
-      // Every extracted card is saved automatically now, no matter how blank
-      // or malformed the fields are — validateContact() only ever produces a
-      // "needs review" flag, it never blocks. A card only stays requires_review
-      // if the save itself throws (a storage error), never for incomplete data.
+      // Save readable extractions automatically. Empty or unreadable cards
+      // remain in Review so they never become confusing blank contacts.
       let status = "completed";
 
       card.extraction = finalExtraction;
@@ -1402,7 +1418,12 @@ async function processQueueCycle() {
       delete card.queuedDuplicateInBatchId;
       delete card.queuedDuplicateImageId;
 
-      {
+      const hasIdentity = Boolean(cleanText(finalExtraction.name) || cleanText(finalExtraction.companyName));
+      if (!hasIdentity) {
+        status = "requires_review";
+        card.status = "requires_review";
+        finalExtraction.warnings = [...(finalExtraction.warnings || []), "No name or company could be read. Retake a sharper photo or add the visible details before saving."];
+      } else {
         // Contacts are owned by whoever uploaded the batch; the queue runs
         // detached from any request, so there's no session user to fall back on.
         const uploader = db.users.find((u) => u.id === batchesById.get(card.batchId)?.uploadedBy);
@@ -1430,10 +1451,13 @@ async function processQueueCycle() {
       // review without charging the client (D1: only successful scans count).
       const organisation = orgsById.get(card.organisationId);
       if (organisation && billable) {
-        organisation.scansUsed = Number(organisation.scansUsed || 0) + 1;
-        organisation.scanLimit = Number(organisation.scanLimit || PLAN_LIMITS[organisation.plan] || 0);
-        organisation.updatedAt = now();
-        // Log the scan so the admin panel has an auditable per-scan record.
+        // The ledger is the source of truth. Legacy counters are updated only
+        // for the local-JSON development fallback where PostgreSQL is absent.
+        if (!pgPool) {
+          organisation.scansUsed = Number(organisation.scansUsed || 0) + 1;
+          organisation.scanLimit = Number(organisation.scanLimit || PLAN_LIMITS[organisation.plan] || 0);
+          organisation.updatedAt = now();
+        }
         const uploaderId = batchesById.get(card.batchId)?.uploadedBy || null;
         scanLogEntries.push({
           clientId: organisation.id,
@@ -1459,20 +1483,29 @@ async function processQueueCycle() {
       if (!stillQueued) batch.status = batch.failedFiles === batch.totalFiles ? "failed" : "completed";
     }
 
+    // Charge before committing the card result. If the ledger write fails the
+    // queue retries the card; idempotency prevents a retry charging twice.
+    if (pgPool) {
+      const charged = await Promise.all(scanLogEntries.map((s) => consumeUsageCredit({
+        clientId: s.clientId, userId: s.userId, referenceId: s.referenceId, demo: s.demo,
+        idempotencyKey: `scan:${s.referenceId}`, metadata: { demo: s.demo }
+      })));
+      if (charged.some((ok) => !ok)) throw new Error("A queued card no longer has an available ledger credit.");
+      // Keep legacy fields synchronized for old exports and top-up carryover
+      // calculations. Access checks and admin reporting never read this cache.
+      scanLogEntries.forEach((scan) => {
+        const organisation = orgsById.get(scan.clientId);
+        if (organisation) {
+          organisation.scansUsed = Number(organisation.scansUsed || 0) + 1;
+          organisation.updatedAt = now();
+        }
+      });
+    }
     await saveDb(db);
-    // Best-effort scan logs (never block the cycle): one usage_ledger
-    // SCAN_CONSUMED row and one product_events scan_completed per billable scan.
-    await Promise.all(scanLogEntries.flatMap((s) => [
-      recordUsageLedger({
-        clientId: s.clientId, userId: s.userId, type: "SCAN_CONSUMED",
-        quantity: 1, balanceEffect: -1, source: "scan", referenceId: s.referenceId,
-        metadata: { demo: s.demo }
-      }),
-      recordProductEvent({
+    await Promise.all(scanLogEntries.map((s) => recordProductEvent({
         name: "scan_completed", clientId: s.clientId, userId: s.userId,
         source: "queue", metadata: { cardId: s.referenceId, demo: s.demo, hasName: Boolean(s.name) }
-      })
-    ]));
+      })));
     nextDelay = queuedCards.length > toProcess.length ? 600 : 3000;
   } catch (err) {
     console.error("[queue] processing cycle failed:", err.message);
@@ -1841,9 +1874,15 @@ function emailDeliveryEnabled() {
 }
 
 async function deliverAccountEmail(type, email, link) {
-  const subject = type === "verify-email" ? "Verify your Card2Leads account" : "Reset your Card2Leads password";
+  const invitation = type === "client-invitation";
+  const subject = type === "verify-email"
+    ? "Verify your Card2Leads account"
+    : invitation ? "You're invited to Card2Leads" : "Reset your Card2Leads password";
   const html = `
-    <p>${type === "verify-email" ? "Please verify your Card2Leads account." : "Use this link to reset your Card2Leads password."}</p>
+    <p>${type === "verify-email"
+      ? "Please verify your Card2Leads account."
+      : invitation ? "An administrator created your Card2Leads workspace. Use this link to choose a password and accept the invitation."
+        : "Use this link to reset your Card2Leads password."}</p>
     <p><a href="${link}">${link}</a></p>
     <p>If you did not request this, you can ignore this email.</p>
   `;
@@ -1912,9 +1951,12 @@ function collectionForUser(db, user, requestedId) {
   return collection;
 }
 
-function planUsage(organisation) {
+function planUsage(organisation, ledgerUsage = null) {
   const plan = String(organisation?.plan || "trial").toLowerCase();
-  const used = Math.max(0, Number(organisation?.scansUsed || 0));
+  // PostgreSQL deployments pass a ledger-derived snapshot. The legacy
+  // counters remain only as a local-JSON compatibility cache and are never
+  // authoritative when the usage ledger is available.
+  const used = Math.max(0, Number(ledgerUsage?.used ?? organisation?.scansUsed ?? 0));
   // The demo/test account scans without limit so it's never blocked mid-test.
   if (organisation?.isDemoAccount) {
     return { plan: "demo", limit: Infinity, used, remaining: Number.MAX_SAFE_INTEGER, unlimited: true };
@@ -1925,11 +1967,51 @@ function planUsage(organisation) {
   if (!orgIsPaid(organisation) && !organisation.adminGranted) {
     return { plan, limit: 0, used, remaining: 0, requiresPayment: true };
   }
-  const limit = Number(organisation?.scanLimit || PLAN_LIMITS[plan] || 0);
+  const limit = Math.max(0, Number(ledgerUsage?.limit ?? organisation?.scanLimit ?? PLAN_LIMITS[plan] ?? 0));
   if (oneTimePlanExpired(organisation)) {
     return { plan, limit, used, remaining: 0, expired: true };
   }
-  return { plan, limit, used, remaining: Math.max(0, limit - used) };
+  const remaining = Math.max(0, Number(ledgerUsage?.remaining ?? (limit - used)));
+  return { plan, limit, used, remaining };
+}
+
+function foldLedgerRows(rows) {
+  let balance = 0;
+  let used = 0;
+  for (const row of rows || []) {
+    balance += Number(row.balance_effect || 0);
+    if (row.transaction_type === "PLAN_ALLOCATION") used = 0;
+    else if (row.transaction_type === "SCAN_CONSUMED") used += Math.max(0, Number(row.quantity || 0));
+  }
+  const remaining = Math.max(0, balance);
+  return { used, remaining, limit: used + remaining, balance };
+}
+
+async function ledgerUsageForClient(clientId) {
+  if (!pgPool || !clientId) return null;
+  const result = await pgPool.query(
+    "select transaction_type, quantity, balance_effect, created_at from usage_ledger where client_id = $1 order by created_at, id",
+    [clientId]
+  );
+  return foldLedgerRows(result.rows);
+}
+
+async function ledgerUsageMap(clientIds) {
+  const ids = [...new Set((clientIds || []).filter(Boolean))];
+  if (!pgPool || !ids.length) return new Map();
+  const result = await pgPool.query(
+    "select client_id, transaction_type, quantity, balance_effect, created_at from usage_ledger where client_id = any($1::text[]) order by created_at, id",
+    [ids]
+  );
+  const rowsByClient = new Map(ids.map((clientId) => [clientId, []]));
+  result.rows.forEach((row) => rowsByClient.get(row.client_id)?.push(row));
+  return new Map(ids.map((clientId) => [clientId, foldLedgerRows(rowsByClient.get(clientId))]));
+}
+
+async function authoritativePlanUsage(organisation) {
+  if (!organisation) return planUsage(organisation);
+  const ledgerUsage = await ledgerUsageForClient(organisation.id);
+  return planUsage(organisation, ledgerUsage);
 }
 
 // User-facing reason a scan is blocked, based on a planUsage() result.
@@ -3116,6 +3198,22 @@ const ADMIN_COOKIE = "admin_session";
 const ADMIN_SESSION_TTL_MS = 8 * 60 * 60 * 1000;   // 8h absolute (D8)
 const ADMIN_IDLE_TIMEOUT_MS = 30 * 60 * 1000;      // 30m idle (D8)
 
+function adminSetupPolicy() {
+  const setupTokenConfigured = Boolean(String(process.env.ADMIN_SETUP_TOKEN || ""));
+  const production = process.env.NODE_ENV === "production";
+  return {
+    tokenRequired: production || setupTokenConfigured,
+    available: !production || setupTokenConfigured
+  };
+}
+
+function constantTimeStringEqual(left, right) {
+  const a = Buffer.from(String(left || ""));
+  const b = Buffer.from(String(right || ""));
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
 function adminSessionCookie(req, value, maxAgeSeconds) {
   const attrs = [
     `${ADMIN_COOKIE}=${value}`,
@@ -3217,11 +3315,11 @@ function deriveLifecycle(org, activity) {
   return "REGISTERED";
 }
 
-function clientActivity(db, org) {
+function clientActivity(db, org, ledgerUsage = null) {
   const orgCards = db.cards.filter((c) => c.organisationId === org.id);
   const orgContacts = db.contacts.filter((c) => c.organisationId === org.id && !c.deletedAt);
   const batches = db.uploadBatches.filter((b) => b.organisationId === org.id);
-  const scans = Number(org.scansUsed || 0);
+  const scans = Number(ledgerUsage?.used ?? org.scansUsed ?? 0);
   const timestamps = [
     ...orgContacts.map((c) => c.updatedAt || c.createdAt),
     ...orgCards.map((c) => c.updatedAt || c.createdAt)
@@ -3236,14 +3334,15 @@ function clientActivity(db, org) {
   };
 }
 
-function clientSummary(db, org) {
+function clientSummary(db, org, ledgerUsage = null) {
   const users = db.users.filter((u) => u.organisationId === org.id);
   const primary = users.find((u) => u.status !== "deleted") || users[0] || null;
-  const activity = clientActivity(db, org);
+  const activity = clientActivity(db, org, ledgerUsage);
   // Respect an explicit 0 allowance (pay-to-start) — only fall back to the plan
   // default when scanLimit is genuinely unset, so a new account reads 0, not 20.
-  const scanLimit = org.scanLimit != null ? Number(org.scanLimit) : Number(PLAN_LIMITS[org.plan] || 0);
-  const scansUsed = Number(org.scansUsed || 0);
+  const scanLimit = Number(ledgerUsage?.limit ?? (org.scanLimit != null ? org.scanLimit : PLAN_LIMITS[org.plan] || 0));
+  const scansUsed = Number(ledgerUsage?.used ?? org.scansUsed ?? 0);
+  const remaining = Math.max(0, Number(ledgerUsage?.remaining ?? (scanLimit - scansUsed)));
   return {
     clientId: org.id,
     clientName: org.name,
@@ -3255,7 +3354,7 @@ function clientSummary(db, org) {
     plan: org.plan || "trial",
     billingMode: org.billingMode || "none",
     subscriptionStatus: org.subscriptionStatus || "none",
-    usage: { used: scansUsed, limit: scanLimit, remaining: Math.max(0, scanLimit - scansUsed) },
+    usage: { used: scansUsed, limit: scanLimit, remaining },
     userCount: users.length,
     lastActivityAt: activity.lastActivityAt,
     createdAt: org.createdAt
@@ -3267,22 +3366,47 @@ function withinDays(iso, days) {
   return Date.now() - new Date(iso).getTime() <= days * 24 * 60 * 60 * 1000;
 }
 
-// --- Scan / usage logging (admin panel tables, written by direct SQL so they
-// are independent of the customer app's in-memory Postgres rewrite). All writes
-// are best-effort: a logging failure must never break a customer request. ---
+// --- Scan / usage records are written directly so the in-memory persistence
+// rewrite cannot clobber them. Ledger writes are deliberately fail-closed:
+// entitlements must never change without a durable ledger transaction. ---
 async function recordUsageLedger(entry) {
-  if (!pgPool || !entry?.clientId) return;
-  try {
-    await pgPool.query(
-      `insert into usage_ledger (id, client_id, user_id, transaction_type, quantity, balance_effect, source, reference_id, admin_id, reason, metadata)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+  if (!pgPool || !entry?.clientId) return false;
+  const result = await pgPool.query(
+      `insert into usage_ledger (id, client_id, user_id, transaction_type, quantity, balance_effect, source, reference_id, admin_id, reason, metadata, idempotency_key)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       on conflict (idempotency_key) where idempotency_key is not null do nothing returning id`,
       [id("ledg"), entry.clientId, entry.userId || null, entry.type, Number(entry.quantity || 0),
        Number(entry.balanceEffect || 0), entry.source || null, entry.referenceId || null,
-       entry.adminId || null, entry.reason || null, JSON.stringify(entry.metadata || {})]
+       entry.adminId || null, entry.reason || null, JSON.stringify(entry.metadata || {}),
+       entry.idempotencyKey || null]
     );
-  } catch (err) {
-    console.error("[ledger] write failed:", err.message);
-  }
+  return result.rowCount > 0;
+}
+
+async function consumeUsageCredit(entry) {
+  if (!pgPool || !entry?.clientId || !entry?.idempotencyKey) return false;
+  const duplicate = await pgPool.query("select 1 from usage_ledger where idempotency_key = $1", [entry.idempotencyKey]);
+  if (duplicate.rowCount) return true;
+  const result = await pgPool.query(
+    `insert into usage_ledger (id, client_id, user_id, transaction_type, quantity, balance_effect, source, reference_id, metadata, idempotency_key)
+     select $1,$2,$3,'SCAN_CONSUMED',1,-1,'scan',$4,$5::jsonb,$6
+     where $7::boolean or (select coalesce(sum(balance_effect),0) from usage_ledger where client_id = $2) > 0
+     on conflict (idempotency_key) where idempotency_key is not null do nothing returning id`,
+    [id("ledg"), entry.clientId, entry.userId || null, entry.referenceId || null, JSON.stringify(entry.metadata || {}), entry.idempotencyKey, Boolean(entry.demo)]
+  );
+  return result.rowCount > 0;
+}
+
+async function setLedgerBalance(entry) {
+  if (!pgPool || !entry?.clientId) return false;
+  const current = await ledgerUsageForClient(entry.clientId);
+  const target = Math.max(0, Number(entry.targetBalance || 0));
+  return recordUsageLedger({
+    ...entry,
+    type: entry.type || "PLAN_ALLOCATION",
+    quantity: Number(entry.quantity ?? target),
+    balanceEffect: target - Number(current?.balance || 0)
+  });
 }
 
 async function recordProductEvent(event) {
@@ -3316,8 +3440,220 @@ async function recordPayment(payment) {
   }
 }
 
+async function recordSubscription(subscription) {
+  if (!pgPool || !subscription?.clientId || !subscription?.providerReference) return;
+  const provider = subscription.provider || "razorpay";
+  const existing = (await pgPool.query(
+    "select * from subscriptions where provider = $1 and provider_reference = $2 limit 1",
+    [provider, subscription.providerReference]
+  )).rows[0];
+  const metadata = { ...(existing?.metadata || {}), ...(subscription.metadata || {}) };
+  const history = Array.isArray(metadata.statusHistory) ? metadata.statusHistory : [];
+  const historyKey = subscription.eventId || `${subscription.status}:${subscription.occurredAt || now()}`;
+  if (!history.some((item) => item.key === historyKey)) {
+    history.push({ key: historyKey, status: subscription.status, at: subscription.occurredAt || now(), source: subscription.source || "system" });
+  }
+  metadata.statusHistory = history.slice(-100);
+  if (existing) {
+    await pgPool.query(
+      `update subscriptions set plan = $2, status = $3, billing_mode = $4, start_date = coalesce($5,start_date),
+       current_period_end = coalesce($6,current_period_end), updated_at = $7, metadata = $8::jsonb where id = $1`,
+      [existing.id, subscription.plan || existing.plan, subscription.status || existing.status,
+       subscription.billingMode || existing.billing_mode, subscription.startDate || null,
+       subscription.currentPeriodEnd || null, now(), JSON.stringify(metadata)]
+    );
+    return existing.id;
+  }
+  const subscriptionId = id("sub");
+  await pgPool.query(
+    `insert into subscriptions (id, client_id, plan, status, billing_mode, provider, provider_reference, start_date, current_period_end, metadata)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)`,
+    [subscriptionId, subscription.clientId, subscription.plan || null, subscription.status || "pending",
+     subscription.billingMode || "subscription", provider, subscription.providerReference,
+     subscription.startDate || null, subscription.currentPeriodEnd || null, JSON.stringify(metadata)]
+  );
+  return subscriptionId;
+}
+
+async function reconcileUsageLedger() {
+  if (!pgPool) return;
+  const db = readDb();
+  for (const org of db.organisations) {
+    const marker = `ledger-cutover-v1:${org.id}`;
+    const exists = await pgPool.query("select 1 from usage_ledger where idempotency_key = $1", [marker]);
+    if (exists.rowCount) continue;
+    const current = await ledgerUsageForClient(org.id);
+    const legacyRemaining = Math.max(0, Number(org.scanLimit || 0) - Number(org.scansUsed || 0));
+    await recordUsageLedger({
+      clientId: org.id, type: "SYSTEM_CORRECTION", quantity: Math.abs(legacyRemaining - Number(current?.balance || 0)),
+      balanceEffect: legacyRemaining - Number(current?.balance || 0), source: "system",
+      referenceId: marker, idempotencyKey: marker, reason: "One-time ledger-authoritative cutover",
+      metadata: { legacyScanLimit: Number(org.scanLimit || 0), legacyScansUsed: Number(org.scansUsed || 0) }
+    });
+  }
+}
+
+function removeOrganisationData(db, clientId) {
+  const users = new Set(db.users.filter((item) => item.organisationId === clientId).map((item) => item.id));
+  const collections = new Set(db.collections.filter((item) => item.organisationId === clientId).map((item) => item.id));
+  const cards = db.cards.filter((item) => item.organisationId === clientId);
+  const contacts = new Set(db.contacts.filter((item) => item.organisationId === clientId).map((item) => item.id));
+  const sheetConfigurations = new Set(db.sheetConfigurations.filter((item) => item.organisationId === clientId).map((item) => item.id));
+  const storagePaths = [
+    ...cards.flatMap((card) => [card.storagePath, card.backStoragePath, card.processedStoragePath]),
+    ...db.voiceNotes.filter((item) => item.organisationId === clientId).map((item) => item.audioPath)
+  ].filter(Boolean);
+  db.sessions = db.sessions.filter((item) => !users.has(item.userId));
+  db.syncRecords = db.syncRecords.filter((item) => !contacts.has(item.contactId) && !collections.has(item.collectionId) && !sheetConfigurations.has(item.sheetConfigurationId));
+  db.auditLogs = db.auditLogs.filter((item) => item.organisationId !== clientId);
+  for (const key of ["users", "collections", "uploadBatches", "cards", "contacts", "voiceNotes", "googleConnections", "sheetConfigurations"]) {
+    db[key] = db[key].filter((item) => item.organisationId !== clientId);
+  }
+  db.organisations = db.organisations.filter((item) => item.id !== clientId);
+  return storagePaths;
+}
+
+function removePrivateStorageFile(filePath) {
+  const resolved = path.resolve(String(filePath || ""));
+  const storageRoot = path.resolve(STORAGE_DIR) + path.sep;
+  if (!resolved.startsWith(storageRoot)) {
+    console.error("[deletion] refused to remove path outside private storage:", resolved);
+    return;
+  }
+  try {
+    if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) fs.unlinkSync(resolved);
+  } catch (err) {
+    console.error("[deletion] file removal failed:", err.message);
+  }
+}
+
+async function purgePendingDeletionAccounts(asOf = new Date()) {
+  // Product decision: accounts are retained (archived), never hard-deleted, until
+  // the archive workflow is built. The permanent purge stays off unless
+  // ENABLE_ACCOUNT_PURGE=true is explicitly set, so no tenant data is ever
+  // removed by the background job in production.
+  if (process.env.ENABLE_ACCOUNT_PURGE !== "true") return 0;
+  const db = readDb();
+  const cutoff = asOf.getTime() - DELETION_RETENTION_MS;
+  const due = db.organisations.filter((org) =>
+    org.status === "pending_deletion" && new Date(org.pendingDeletionAt || 0).getTime() > 0 &&
+    new Date(org.pendingDeletionAt).getTime() <= cutoff
+  );
+  if (!due.length) return 0;
+  const paths = [];
+  due.forEach((org) => paths.push(...removeOrganisationData(db, org.id)));
+  if (pgPool) {
+    const client = await pgPool.connect();
+    try {
+      await client.query("begin");
+      for (const org of due) {
+        for (const table of ["admin_notes", "usage_ledger", "product_events", "payments", "subscriptions", "admin_audit_logs"]) {
+          await client.query(`delete from ${table} where client_id = $1`, [org.id]);
+        }
+      }
+      await client.query("commit");
+    } catch (err) {
+      await client.query("rollback");
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+  await saveDb(db);
+  paths.forEach(removePrivateStorageFile);
+  console.log(`[deletion] permanently purged ${due.length} account(s) after the retention window.`);
+  return due.length;
+}
+
+async function expireOneTimeSubscriptionHistory(asOf = new Date()) {
+  if (!pgPool) return;
+  const result = await pgPool.query(
+    "select * from subscriptions where billing_mode = 'one_time' and status = 'active' and current_period_end <= $1",
+    [asOf]
+  );
+  for (const subscription of result.rows) {
+    await recordSubscription({ clientId: subscription.client_id, plan: subscription.plan, status: "expired", billingMode: "one_time", provider: subscription.provider, providerReference: subscription.provider_reference, currentPeriodEnd: subscription.current_period_end, source: "maintenance", eventId: `expired:${subscription.current_period_end}` });
+  }
+}
+
+async function runMaintenance() {
+  await purgePendingDeletionAccounts();
+  await expireOneTimeSubscriptionHistory();
+}
+
+function scheduleMaintenance() {
+  const timer = setInterval(() => runMaintenance().catch((err) => console.error("[maintenance] failed:", err.stack || err)), DELETION_WORKER_INTERVAL_MS);
+  if (typeof timer.unref === "function") timer.unref();
+}
+
 async function handleAdminApi(req, res, pathname) {
  try {
+  // --- One-time first-admin setup. It is permanently disabled as soon as any
+  // admin row exists. Production additionally requires ADMIN_SETUP_TOKEN so an
+  // unattended new deployment cannot be claimed from the public login page. ---
+  if (req.method === "GET" && pathname === "/api/admin/setup/status") {
+    if (!pgPool) return error(res, 503, "Admin panel requires the PostgreSQL database.");
+    const total = (await pgPool.query("select count(*)::int as n from admin_users")).rows[0].n;
+    const policy = adminSetupPolicy();
+    return send(res, 200, { setupRequired: total === 0, tokenRequired: policy.tokenRequired, setupAvailable: policy.available });
+  }
+
+  if (req.method === "POST" && pathname === "/api/admin/setup") {
+    if (!pgPool) return error(res, 503, "Admin panel requires the PostgreSQL database.");
+    if (!rateLimit(req, res, "admin-setup", 8, 15 * 60 * 1000)) return;
+    const policy = adminSetupPolicy();
+    const expectedToken = String(process.env.ADMIN_SETUP_TOKEN || "");
+    if (!policy.available) return error(res, 503, "First-admin setup is locked. Set ADMIN_SETUP_TOKEN on the backend and restart it.");
+    const body = await readJson(req);
+    if (policy.tokenRequired && !constantTimeStringEqual(body.setupToken, expectedToken)) {
+      return error(res, 403, "The setup code is incorrect.");
+    }
+    const name = String(body.name || "").trim();
+    const email = String(body.email || "").trim().toLowerCase();
+    const password = String(body.password || "");
+    if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return error(res, 400, "Name and a valid email are required.");
+    const passwordError = validatePasswordStrength(password);
+    if (passwordError) return error(res, 400, passwordError);
+
+    const adminId = id("adm");
+    const sessionId = id("asn");
+    const createdAt = now();
+    const expiresAt = new Date(Date.now() + ADMIN_SESSION_TTL_MS).toISOString();
+    const client = await pgPool.connect();
+    let committed = false;
+    try {
+      await client.query("begin");
+      await client.query("lock table admin_users in exclusive mode");
+      const existing = await client.query("select count(*)::int as n from admin_users");
+      if (existing.rows[0].n > 0) {
+        await client.query("rollback");
+        return error(res, 409, "Initial setup is already complete. Ask a super-admin to add you from Settings.");
+      }
+      await client.query(
+        `insert into admin_users (id, name, email, password_hash, role, status, last_login_at, created_at, updated_at)
+         values ($1,$2,$3,$4,'super_admin','active',$5,$5,$5)`,
+        [adminId, name, email, hashPassword(password), createdAt]
+      );
+      await client.query(
+        `insert into admin_sessions (id, admin_id, created_at, expires_at, last_seen_at, ip, user_agent)
+         values ($1,$2,$3,$4,$3,$5,$6)`,
+        [sessionId, adminId, createdAt, expiresAt, clientIp(req), String(req.headers["user-agent"] || "").slice(0, 400)]
+      );
+      await client.query("commit");
+      committed = true;
+    } catch (err) {
+      if (!committed) await client.query("rollback").catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+    const admin = { id: adminId, name, email, role: "super_admin" };
+    await adminAudit(admin, { action: "INITIAL_ADMIN_CREATED" });
+    return send(res, 201, { admin }, {
+      "Set-Cookie": adminSessionCookie(req, signSession(sessionId), Math.floor(ADMIN_SESSION_TTL_MS / 1000))
+    });
+  }
+
   // --- Auth: login / logout / me (no session required for login) ---
   if (req.method === "POST" && pathname === "/api/admin/auth/login") {
     if (!pgPool) return error(res, 503, "Admin panel requires the PostgreSQL database.");
@@ -3363,10 +3699,63 @@ async function handleAdminApi(req, res, pathname) {
     return send(res, 200, { admin });
   }
 
+  // Admin-led customer provisioning. The owner receives a one-time setup
+  // link; no temporary password is generated or exposed to the administrator.
+  if (req.method === "POST" && pathname === "/api/admin/clients") {
+    const body = await readJson(req);
+    const clientName = String(body.clientName || "").trim();
+    const ownerName = String(body.ownerName || "").trim();
+    const email = String(body.email || "").trim().toLowerCase();
+    const phone = String(body.phone || "").trim();
+    if (!clientName || !ownerName || !email) return error(res, 400, "Client name, owner name and email are required.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return error(res, 400, "Enter a valid email address.");
+    const db = readDb();
+    if (db.users.some((user) => String(user.email || "").toLowerCase() === email && user.status !== "deleted")) {
+      return error(res, 409, "A customer account already exists for this email.");
+    }
+    const createdAt = now();
+    const org = {
+      id: id("org"), name: clientName, plan: "trial", scanLimit: 0, scansUsed: 0,
+      topupScans: 0, billingMode: "none", subscriptionStatus: "none",
+      retentionPolicy: "90-days", setupComplete: false, status: "active",
+      createdByAdminId: admin.id, createdAt, updatedAt: createdAt
+    };
+    const invitationToken = randomToken("invite");
+    const user = {
+      id: id("usr"), organisationId: org.id, name: ownerName, email, phone,
+      passwordHash: "", emailVerified: false, role: "owner", status: "pending_invitation",
+      passwordResetToken: invitationToken,
+      passwordResetExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      invitedByAdminId: admin.id, createdAt, updatedAt: createdAt
+    };
+    db.organisations.push(org);
+    db.users.push(user);
+    audit(db, user, "user.invited_by_admin", "user", user.id, { adminId: admin.id });
+    await saveDb(db);
+    const invitationLink = buildLink(req, `/?resetToken=${encodeURIComponent(invitationToken)}&invited=1`);
+    let invitationSent = false;
+    let deliveryError = "";
+    try {
+      await deliverAccountEmail("client-invitation", email, invitationLink);
+      invitationSent = emailDeliveryEnabled();
+    } catch (err) {
+      deliveryError = err.message || "Invitation delivery failed.";
+      console.error("[admin] client invitation delivery failed:", deliveryError);
+    }
+    await recordProductEvent({ name: "account_created", clientId: org.id, userId: user.id, source: "admin_invite", idempotencyKey: `account_created:${org.id}` });
+    await adminAudit(admin, { clientId: org.id, action: "CLIENT_CREATED", newValue: { clientName, ownerName, email, phone, invitationSent } });
+    return send(res, 201, {
+      ok: true, client: clientSummary(db, org, foldLedgerRows([])), invitationSent,
+      invitationLink: invitationSent ? undefined : invitationLink,
+      warning: deliveryError || (invitationSent ? "" : "Email delivery is not configured; copy the setup link to the client.")
+    });
+  }
+
   if (req.method === "GET" && pathname === "/api/admin/dashboard") {
     const db = readDb();
     const orgs = db.organisations;
-    const summaries = orgs.map((o) => clientSummary(db, o));
+    const usageByClient = await ledgerUsageMap(orgs.map((o) => o.id));
+    const summaries = orgs.map((o) => clientSummary(db, o, usageByClient.get(o.id)));
     const totalClients = orgs.length;
     const newSignups7d = orgs.filter((o) => withinDays(o.createdAt, 7)).length;
     const activated = summaries.filter((s) => s.usage.used > 0).length;
@@ -3414,7 +3803,8 @@ async function handleAdminApi(req, res, pathname) {
     const page = Math.max(1, Number(url.searchParams.get("page") || 1));
     const pageSize = Math.min(100, Math.max(1, Number(url.searchParams.get("pageSize") || 25)));
 
-    let rows = db.organisations.map((o) => clientSummary(db, o));
+    const usageByClient = await ledgerUsageMap(db.organisations.map((o) => o.id));
+    let rows = db.organisations.map((o) => clientSummary(db, o, usageByClient.get(o.id)));
     if (q) {
       rows = rows.filter((s) => {
         const hay = [s.clientName, s.clientId, s.email, s.phone, s.primaryUser?.name].filter(Boolean).join(" ").toLowerCase();
@@ -3437,15 +3827,16 @@ async function handleAdminApi(req, res, pathname) {
     const db = readDb();
     const org = db.organisations.find((o) => o.id === clientId);
     if (!org) return error(res, 404, "Client not found.");
-    const summary = clientSummary(db, org);
+    const summary = clientSummary(db, org, await ledgerUsageForClient(org.id));
     const users = db.users
       .filter((u) => u.organisationId === org.id)
       .map((u) => ({ id: u.id, name: u.name, email: u.email, phone: u.phone || null, status: u.status, createdAt: u.createdAt }));
     const google = db.googleConnections.find((g) => g.organisationId === org.id);
-    const [ledger, notes, payments, events] = await Promise.all([
+    const [ledger, notes, payments, subscriptions, events] = await Promise.all([
       pgPool.query("select * from usage_ledger where client_id = $1 order by created_at desc limit 100", [clientId]),
       pgPool.query("select * from admin_notes where client_id = $1 order by created_at desc limit 50", [clientId]),
       pgPool.query("select * from payments where client_id = $1 order by created_at desc limit 50", [clientId]),
+      pgPool.query("select * from subscriptions where client_id = $1 order by created_at desc limit 50", [clientId]),
       pgPool.query("select event_name, created_at, metadata from product_events where client_id = $1 order by created_at desc limit 100", [clientId])
     ]);
     await adminAudit(admin, { clientId, action: "CLIENT_VIEWED" }); // D10-lite: log PII access
@@ -3458,6 +3849,7 @@ async function handleAdminApi(req, res, pathname) {
       usageLedger: ledger.rows,
       notes: notes.rows,
       payments: payments.rows,
+      subscriptions: subscriptions.rows,
       timeline: events.rows
     });
   }
@@ -3487,43 +3879,63 @@ async function handleAdminApi(req, res, pathname) {
       return send(res, 200, { ok: true, note: row });
     }
 
+    if (action === "resend-invitation") {
+      const invitedUser = db.users.find((user) => user.organisationId === clientId && user.status === "pending_invitation" && user.email);
+      if (!invitedUser) return error(res, 400, "This client has no pending invitation.");
+      const invitationToken = randomToken("invite");
+      invitedUser.passwordResetToken = invitationToken;
+      invitedUser.passwordResetExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      invitedUser.updatedAt = now();
+      await saveDb(db);
+      const invitationLink = buildLink(req, `/?resetToken=${encodeURIComponent(invitationToken)}&invited=1`);
+      let invitationSent = false;
+      try {
+        await deliverAccountEmail("client-invitation", invitedUser.email, invitationLink);
+        invitationSent = emailDeliveryEnabled();
+      } catch (err) {
+        console.error("[admin] invitation resend failed:", err.message);
+      }
+      await adminAudit(admin, { clientId, action: "CLIENT_INVITATION_RESENT", newValue: { email: invitedUser.email, invitationSent } });
+      return send(res, 200, { ok: true, invitationSent, invitationLink: invitationSent ? undefined : invitationLink });
+    }
+
     if (action === "credits") {
       const type = body.type === "remove" ? "remove" : "add";
       const qty = Math.floor(Number(body.quantity || 0));
       if (!(qty > 0)) return error(res, 400, "Enter a quantity greater than zero.");
-      const prevLimit = Number(org.scanLimit || 0);
-      const used = Number(org.scansUsed || 0);
-      let applied;
+      const previousUsage = await authoritativePlanUsage(org);
+      let applied = qty;
       if (type === "add") {
-        org.scanLimit = prevLimit + qty; applied = qty;
+        if (pgPool) await recordUsageLedger({ clientId, type: "ADMIN_CREDIT", quantity: qty, balanceEffect: qty, source: "admin", adminId: admin.id, reason, metadata: { by: admin.email } });
+        org.scanLimit = Number(org.scanLimit || previousUsage.limit) + qty;
         org.adminGranted = true; // goodwill credits unlock scanning under pay-to-start
       } else {
-        const newLimit = Math.max(used, prevLimit - qty); applied = prevLimit - newLimit; org.scanLimit = newLimit;
+        applied = Math.min(qty, previousUsage.remaining);
+        if (!(applied > 0)) return error(res, 400, "This client has no remaining credits to remove.");
+        if (pgPool) await recordUsageLedger({ clientId, type: "ADMIN_DEBIT", quantity: applied, balanceEffect: -applied, source: "admin", adminId: admin.id, reason, metadata: { by: admin.email } });
+        org.scanLimit = Math.max(Number(org.scansUsed || 0), Number(org.scanLimit || previousUsage.limit) - applied);
       }
       org.updatedAt = now();
       await saveDb(db);
-      await recordUsageLedger({
-        clientId, type: type === "add" ? "ADMIN_CREDIT" : "ADMIN_DEBIT",
-        quantity: applied, balanceEffect: type === "add" ? applied : -applied,
-        source: "admin", adminId: admin.id, reason, metadata: { by: admin.email }
-      });
-      await adminAudit(admin, { clientId, action: type === "add" ? "CREDITS_ADDED" : "CREDITS_REMOVED", previousValue: { scanLimit: prevLimit }, newValue: { scanLimit: org.scanLimit }, reason });
-      return send(res, 200, { ok: true, usage: { used, limit: org.scanLimit, remaining: Math.max(0, org.scanLimit - used) } });
+      const currentUsage = await authoritativePlanUsage(org);
+      await adminAudit(admin, { clientId, action: type === "add" ? "CREDITS_ADDED" : "CREDITS_REMOVED", previousValue: previousUsage, newValue: currentUsage, reason });
+      return send(res, 200, { ok: true, usage: currentUsage });
     }
 
     if (action === "change-plan") {
       const plan = String(body.plan || "").toLowerCase();
       if (!PLAN_LIMITS[plan]) return error(res, 400, "Choose a valid plan.");
-      const prev = { plan: org.plan, scanLimit: Number(org.scanLimit || 0) };
+      const prev = { plan: org.plan, usage: await authoritativePlanUsage(org) };
       org.plan = plan;
       org.scanLimit = Number(PLAN_LIMITS[plan] || 0) + Number(org.topupScans || 0);
       org.adminGranted = true; // comped plan unlocks scanning under pay-to-start
       org.billingMode = org.billingMode && org.billingMode !== "none" ? org.billingMode : "admin";
       if (!org.subscriptionStatus || org.subscriptionStatus === "none") org.subscriptionStatus = "active";
       org.updatedAt = now();
+      if (pgPool) await setLedgerBalance({ clientId, targetBalance: org.scanLimit, type: "PLAN_ALLOCATION", quantity: org.scanLimit, source: "admin", adminId: admin.id, reason, idempotencyKey: `admin-plan:${clientId}:${Date.now()}`, metadata: { plan, adminChange: true } });
       await saveDb(db);
-      await recordUsageLedger({ clientId, type: "PLAN_ALLOCATION", quantity: PLAN_LIMITS[plan] || 0, balanceEffect: org.scanLimit - prev.scanLimit, source: "admin", adminId: admin.id, reason, metadata: { plan, adminChange: true } });
-      await adminAudit(admin, { clientId, action: "PLAN_CHANGED", previousValue: prev, newValue: { plan, scanLimit: org.scanLimit }, reason });
+      await recordSubscription({ clientId, plan, status: "active", billingMode: "admin", provider: "admin", providerReference: `admin-plan:${clientId}`, source: "admin", eventId: `admin-plan:${Date.now()}`, metadata: { adminId: admin.id } });
+      await adminAudit(admin, { clientId, action: "PLAN_CHANGED", previousValue: prev, newValue: { plan, usage: await authoritativePlanUsage(org) }, reason });
       return send(res, 200, { ok: true });
     }
 
@@ -3545,14 +3957,20 @@ async function handleAdminApi(req, res, pathname) {
 
     if (action === "cancel-subscription") {
       const prev = org.subscriptionStatus || "none";
-      if (org.subscriptionId && billingConfigured()) {
-        try { await razorpayApi(`/subscriptions/${org.subscriptionId}/cancel`, { method: "POST", body: { cancel_at_cycle_end: 0 } }); }
-        catch (err) { console.error("[admin] razorpay cancel failed:", err.message); }
+      if (!org.subscriptionId || String(org.billingMode || "") !== "subscription") return error(res, 400, "This client has no recurring subscription to cancel.");
+      if (!billingConfigured()) return error(res, 503, "Billing is not configured, so cancellation could not be scheduled.");
+      if (prev === "cancel_scheduled") return send(res, 200, { ok: true, status: prev, currentPeriodEnd: org.currentPeriodEnd || null });
+      try {
+        await razorpayApi(`/subscriptions/${org.subscriptionId}/cancel`, { method: "POST", body: { cancel_at_cycle_end: 1 } });
+      } catch (err) {
+        return error(res, 502, `Payment provider did not accept the cancellation: ${err.message}`);
       }
-      org.subscriptionStatus = "cancelled"; org.updatedAt = now();
+      org.subscriptionStatus = "cancel_scheduled"; org.updatedAt = now();
       await saveDb(db);
-      await adminAudit(admin, { clientId, action: "SUBSCRIPTION_CANCELLED", previousValue: { subscriptionStatus: prev }, newValue: { subscriptionStatus: "cancelled" }, reason });
-      return send(res, 200, { ok: true });
+      await recordSubscription({ clientId, plan: org.plan, status: "cancel_scheduled", billingMode: "subscription", providerReference: org.subscriptionId, currentPeriodEnd: org.currentPeriodEnd || null, source: "admin", eventId: `admin-cancel:${Date.now()}`, metadata: { cancellationReason: reason } });
+      await recordProductEvent({ name: "subscription_cancel_scheduled", clientId, source: "admin", metadata: { currentPeriodEnd: org.currentPeriodEnd || null } });
+      await adminAudit(admin, { clientId, action: "SUBSCRIPTION_CANCELLATION_SCHEDULED", previousValue: { subscriptionStatus: prev }, newValue: { subscriptionStatus: "cancel_scheduled", currentPeriodEnd: org.currentPeriodEnd || null }, reason });
+      return send(res, 200, { ok: true, status: "cancel_scheduled", currentPeriodEnd: org.currentPeriodEnd || null });
     }
 
     if (action === "disconnect-google") {
@@ -3677,17 +4095,20 @@ async function handleAdminApi(req, res, pathname) {
     const name = String(body.name || "").trim();
     const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "");
-    if (!name || !email || password.length < 8) return error(res, 400, "Name, email, and a password of at least 8 characters are required.");
+    const role = body.role === "super_admin" ? "super_admin" : "admin";
+    if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return error(res, 400, "Name and a valid email are required.");
+    const passwordError = validatePasswordStrength(password);
+    if (passwordError) return error(res, 400, passwordError);
     const existing = await pgPool.query("select id from admin_users where email = $1", [email]);
     if (existing.rowCount) return error(res, 409, "An admin with this email already exists.");
     const newId = id("adm");
     await pgPool.query(
       `insert into admin_users (id, name, email, password_hash, role, status, created_at, updated_at)
-       values ($1,$2,$3,$4,'super_admin','active',$5,$5)`,
-      [newId, name, email, hashPassword(password), now()]
+       values ($1,$2,$3,$4,$5,'active',$6,$6)`,
+      [newId, name, email, hashPassword(password), role, now()]
     );
-    await adminAudit(admin, { action: "ADMIN_CREATED", newValue: { email } });
-    return send(res, 201, { ok: true, admin: { id: newId, name, email, role: "super_admin", status: "active" } });
+    await adminAudit(admin, { action: "ADMIN_CREATED", newValue: { email, role } });
+    return send(res, 201, { ok: true, admin: { id: newId, name, email, role, status: "active" } });
   }
 
   if (req.method === "POST" && pathname.startsWith("/api/admin/admins/") && pathname.split("/").length === 6) {
@@ -3761,12 +4182,19 @@ async function handleApi(req, res, pathname) {
             status: event === "subscription.charged" ? "active" : (subscriptionEntity?.status || "active"),
             resetUsage: event === "subscription.charged" && isNewPeriod
           });
+          await recordSubscription({
+            clientId: organisation.id, plan, status: organisation.subscriptionStatus,
+            billingMode: "subscription", providerReference: subscriptionEntity?.id,
+            startDate: subscriptionEntity?.start_at ? new Date(subscriptionEntity.start_at * 1000).toISOString() : null,
+            currentPeriodEnd: newPeriodEnd || null, source: "webhook", eventId: eventId || event,
+            metadata: { razorpayEvent: event }
+          });
           audit(db, { organisationId: organisation.id }, `billing.${event}`, "organisation", organisation.id, { plan });
           // Log the recurring charge (the whole webhook is deduped by eventId, so
           // each subscription.charged for a cycle is recorded exactly once).
           if (event === "subscription.charged") {
             await recordPayment({ clientId: organisation.id, amountPaise: Number(paymentEntity?.amount) || PLAN_PRICES_PAISE[plan] || 0, plan, status: "paid", providerPaymentId: paymentEntity?.id || "", subscriptionId: subscriptionEntity?.id || "" });
-            await recordUsageLedger({ clientId: organisation.id, type: "PLAN_ALLOCATION", quantity: PLAN_LIMITS[plan] || 0, balanceEffect: PLAN_LIMITS[plan] || 0, source: "plan", referenceId: subscriptionEntity?.id || "", metadata: { plan, mode: "subscription" } });
+            if (isNewPeriod) await setLedgerBalance({ clientId: organisation.id, type: "PLAN_ALLOCATION", quantity: organisation.scanLimit, targetBalance: organisation.scanLimit, source: "plan", referenceId: subscriptionEntity?.id || "", idempotencyKey: `allocation:${eventId || `${subscriptionEntity?.id}:${newPeriodEnd}`}`, metadata: { plan, mode: "subscription", periodEnd: newPeriodEnd } });
           }
           await recordProductEvent({ name: "plan_activated", clientId: organisation.id, source: "webhook", idempotencyKey: `sub:${subscriptionEntity?.id}:${eventId || event}`, metadata: { plan, mode: "subscription", event } });
         }
@@ -3775,6 +4203,8 @@ async function handleApi(req, res, pathname) {
         if (organisation) {
           organisation.subscriptionStatus = event.replace("subscription.", "");
           organisation.updatedAt = now();
+          await recordSubscription({ clientId: organisation.id, plan: organisation.plan, status: organisation.subscriptionStatus, billingMode: "subscription", providerReference: subscriptionEntity?.id, currentPeriodEnd: organisation.currentPeriodEnd || null, source: "webhook", eventId: eventId || event, metadata: { razorpayEvent: event } });
+          await recordProductEvent({ name: event.replace(".", "_"), clientId: organisation.id, source: "webhook", idempotencyKey: `subscription:${eventId || `${subscriptionEntity?.id}:${event}`}` });
         }
       } else if (event === "order.paid" || event === "payment.captured") {
         const paymentNotes = paymentEntity?.notes || {};
@@ -3792,7 +4222,7 @@ async function handleApi(req, res, pathname) {
             organisation.pendingTopupOrders = (organisation.pendingTopupOrders || []).filter((order) => order.orderId !== orderId);
             audit(db, { organisationId: organisation.id }, "billing.topup_charged", "organisation", organisation.id, { orderId });
             await recordPayment({ clientId: organisation.id, amountPaise: Number(paymentEntity?.amount) || TOPUP_AMOUNT_PAISE, plan: "topup", status: "paid", providerPaymentId: paymentEntity?.id || "", providerOrderId: orderId });
-            await recordUsageLedger({ clientId: organisation.id, type: "TOPUP_PURCHASE", quantity: scans, balanceEffect: scans, source: "topup", referenceId: orderId, metadata: { scans } });
+            await recordUsageLedger({ clientId: organisation.id, type: "TOPUP_PURCHASE", quantity: scans, balanceEffect: scans, source: "topup", referenceId: orderId, idempotencyKey: `topup:${orderId}`, metadata: { scans } });
           }
         } else if (organisation && (notes.type === "one_time_plan" || pendingOneTimeOrder(organisation, orderId)) && orderId) {
           const pendingOrder = pendingOneTimeOrder(organisation, orderId);
@@ -3800,7 +4230,8 @@ async function handleApi(req, res, pathname) {
           if (grantOneTimePlan(organisation, plan, { orderId, paymentId: paymentEntity?.id || "" })) {
             audit(db, { organisationId: organisation.id }, "billing.one_time_charged", "organisation", organisation.id, { orderId, plan });
             await recordPayment({ clientId: organisation.id, amountPaise: PLAN_PRICES_PAISE[plan] || Number(paymentEntity?.amount) || 0, plan, status: "paid", providerPaymentId: paymentEntity?.id || "", providerOrderId: orderId });
-            await recordUsageLedger({ clientId: organisation.id, type: "PLAN_ALLOCATION", quantity: PLAN_LIMITS[plan] || 0, balanceEffect: PLAN_LIMITS[plan] || 0, source: "plan", referenceId: orderId, metadata: { plan, mode: "one_time" } });
+            await setLedgerBalance({ clientId: organisation.id, type: "PLAN_ALLOCATION", quantity: organisation.scanLimit, targetBalance: organisation.scanLimit, source: "plan", referenceId: orderId, idempotencyKey: `allocation:${orderId}`, metadata: { plan, mode: "one_time" } });
+            await recordSubscription({ clientId: organisation.id, plan, status: "active", billingMode: "one_time", providerReference: orderId, startDate: now(), currentPeriodEnd: organisation.currentPeriodEnd, source: "webhook", eventId: eventId || `order:${orderId}`, metadata: { paymentId: paymentEntity?.id || "" } });
             await recordProductEvent({ name: "plan_activated", clientId: organisation.id, source: "webhook", idempotencyKey: `plan:${orderId}`, metadata: { plan, mode: "one_time" } });
           }
         }
@@ -3816,6 +4247,7 @@ async function handleApi(req, res, pathname) {
           if (pe.subscription_id && organisation.subscriptionId === pe.subscription_id) {
             organisation.subscriptionStatus = "past_due";
             organisation.updatedAt = now();
+            await recordSubscription({ clientId: organisation.id, plan: organisation.plan, status: "past_due", billingMode: "subscription", providerReference: pe.subscription_id, currentPeriodEnd: organisation.currentPeriodEnd || null, source: "webhook", eventId: eventId || `failed:${pe.id}` });
           }
         }
       }
@@ -4053,13 +4485,21 @@ async function handleApi(req, res, pathname) {
       if (!user) return error(res, 400, "This password reset link is invalid or expired.");
       const passwordError = validatePasswordStrength(body.password);
       if (passwordError) return error(res, 400, passwordError);
+      const acceptingInvitation = user.status === "pending_invitation";
       user.passwordHash = hashPassword(String(body.password));
+      if (acceptingInvitation) {
+        user.status = "active";
+        user.emailVerified = true;
+      }
       user.passwordResetToken = "";
       user.passwordResetExpiresAt = "";
       user.updatedAt = now();
       db.sessions = db.sessions.filter((s) => s.userId !== user.id);
       audit(db, user, "user.password_reset_completed", "user", user.id);
       await saveDb(db);
+      if (acceptingInvitation) {
+        await recordProductEvent({ name: "invitation_accepted", clientId: user.organisationId, userId: user.id, source: "invitation", idempotencyKey: `invitation_accepted:${user.id}` });
+      }
       return send(res, 200, { message: "Password updated. Please log in with your new password." });
     }
 
@@ -4293,6 +4733,7 @@ async function handleApi(req, res, pathname) {
       organisation.updatedAt = now();
       audit(db, user, "billing.subscription_created", "organisation", organisation.id, { plan });
       await saveDb(db);
+      await recordSubscription({ clientId: organisation.id, plan, status: subscription.status || "pending", billingMode: "subscription", providerReference: subscription.id, startDate: subscription.start_at ? new Date(subscription.start_at * 1000).toISOString() : null, currentPeriodEnd: subscription.current_end ? new Date(subscription.current_end * 1000).toISOString() : null, source: "checkout", eventId: `created:${subscription.id}` });
       await recordProductEvent({ name: "checkout_started", clientId: organisation.id, userId: user.id, source: "billing", metadata: { plan, mode: "subscription" } });
       return send(res, 200, { subscriptionId: subscription.id, keyId: RAZORPAY_KEY_ID, plan });
     }
@@ -4358,11 +4799,12 @@ async function handleApi(req, res, pathname) {
       if (grantOneTimePlan(organisation, pendingOrder.plan, { orderId, paymentId })) {
         audit(db, user, "billing.one_time_verified", "organisation", organisation.id, { orderId, paymentId, plan: pendingOrder.plan });
         await recordPayment({ clientId: organisation.id, userId: user.id, amountPaise: PLAN_PRICES_PAISE[pendingOrder.plan] || 0, plan: pendingOrder.plan, status: "paid", providerPaymentId: paymentId, providerOrderId: orderId });
-        await recordUsageLedger({ clientId: organisation.id, userId: user.id, type: "PLAN_ALLOCATION", quantity: PLAN_LIMITS[pendingOrder.plan] || 0, balanceEffect: PLAN_LIMITS[pendingOrder.plan] || 0, source: "plan", referenceId: orderId, metadata: { plan: pendingOrder.plan, mode: "one_time" } });
+        await setLedgerBalance({ clientId: organisation.id, userId: user.id, type: "PLAN_ALLOCATION", quantity: organisation.scanLimit, targetBalance: organisation.scanLimit, source: "plan", referenceId: orderId, idempotencyKey: `allocation:${orderId}`, metadata: { plan: pendingOrder.plan, mode: "one_time" } });
+        await recordSubscription({ clientId: organisation.id, plan: pendingOrder.plan, status: "active", billingMode: "one_time", providerReference: orderId, startDate: now(), currentPeriodEnd: organisation.currentPeriodEnd, source: "verify", eventId: `verified:${paymentId}`, metadata: { paymentId } });
         await recordProductEvent({ name: "plan_activated", clientId: organisation.id, userId: user.id, source: "verify", idempotencyKey: `plan:${orderId}`, metadata: { plan: pendingOrder.plan, mode: "one_time" } });
       }
       await saveDb(db);
-      return send(res, 200, { ok: true, usage: planUsage(organisation), billing: billingSummary(organisation) });
+      return send(res, 200, { ok: true, usage: await authoritativePlanUsage(organisation), billing: billingSummary(organisation) });
     }
 
     if (req.method === "POST" && pathname === "/api/billing/topup") {
@@ -4407,7 +4849,7 @@ async function handleApi(req, res, pathname) {
       if (!organisation) return error(res, 404, "Workspace not found.");
       organisation.grantedTopupOrders = Array.isArray(organisation.grantedTopupOrders) ? organisation.grantedTopupOrders : [];
       if (organisation.grantedTopupOrders.includes(orderId)) {
-        return send(res, 200, { ok: true, duplicate: true, usage: planUsage(organisation), billing: billingSummary(organisation) });
+        return send(res, 200, { ok: true, duplicate: true, usage: await authoritativePlanUsage(organisation), billing: billingSummary(organisation) });
       }
       const pendingOrder = pendingTopupOrder(organisation, orderId);
       if (!pendingOrder) return error(res, 400, "This credit order was not found for your workspace.");
@@ -4417,9 +4859,9 @@ async function handleApi(req, res, pathname) {
       organisation.pendingTopupOrders = organisation.pendingTopupOrders.filter((order) => order.orderId !== orderId);
       audit(db, user, "billing.topup_verified", "organisation", organisation.id, { orderId, paymentId });
       await recordPayment({ clientId: organisation.id, userId: user.id, amountPaise: TOPUP_AMOUNT_PAISE, plan: "topup", status: "paid", providerPaymentId: paymentId, providerOrderId: orderId });
-      await recordUsageLedger({ clientId: organisation.id, userId: user.id, type: "TOPUP_PURCHASE", quantity: topupScans, balanceEffect: topupScans, source: "topup", referenceId: orderId, metadata: { scans: topupScans } });
+      await recordUsageLedger({ clientId: organisation.id, userId: user.id, type: "TOPUP_PURCHASE", quantity: topupScans, balanceEffect: topupScans, source: "topup", referenceId: orderId, idempotencyKey: `topup:${orderId}`, metadata: { scans: topupScans } });
       await saveDb(db);
-      return send(res, 200, { ok: true, usage: planUsage(organisation), billing: billingSummary(organisation) });
+      return send(res, 200, { ok: true, usage: await authoritativePlanUsage(organisation), billing: billingSummary(organisation) });
     }
 
     if (req.method === "GET" && pathname === "/api/google/connect") {
@@ -4517,7 +4959,7 @@ async function handleApi(req, res, pathname) {
         collections,
         organisation,
         needsOnboarding: organisationNeedsOnboarding(db, user),
-        usage: planUsage(organisation),
+        usage: await authoritativePlanUsage(organisation),
         stats: {
           contacts: contacts.length,
           needsReview: cards.filter((c) => c.status === "requires_review").length,
@@ -4741,7 +5183,7 @@ async function handleApi(req, res, pathname) {
       // message rather than letting the cards queue and silently never process.
       if (!stage) {
         const org = db.organisations.find((o) => o.id === user.organisationId);
-        const usage = planUsage(org);
+        const usage = await authoritativePlanUsage(org);
         if (usage.remaining <= 0) {
           return error(res, 402, scanBlockedMessage(usage), { code: "payment_required" });
         }
@@ -4946,7 +5388,7 @@ async function handleApi(req, res, pathname) {
       if (!staged.length) return error(res, 400, "There are no pending cards to process.");
       // Pay-to-start: reading staged cards needs scan credits.
       const org = db.organisations.find((o) => o.id === user.organisationId);
-      const usage = planUsage(org);
+      const usage = await authoritativePlanUsage(org);
       if (usage.remaining <= 0) return error(res, 402, scanBlockedMessage(usage), { code: "payment_required" });
       const batchIds = new Set();
       for (const card of staged) {
@@ -5136,17 +5578,26 @@ async function handleApi(req, res, pathname) {
       );
       const result = { saved: 0, keptForReview: 0, duplicates: 0, invalid: 0 };
       for (const card of candidates) {
-        const saved = saveContactRecord(db, user, card, card.extraction, { allowDuplicate: false });
-        if (saved.ok) {
-          result.saved += 1;
+        // One card may hold several named people; save a contact for each. The
+        // card counts as saved if at least its primary person saved.
+        const people = expandCardPeople(card.extraction);
+        let cardSaved = 0;
+        let firstFailure = null;
+        for (const person of people) {
+          const saved = saveContactRecord(db, user, card, person, { allowDuplicate: false });
+          if (saved.ok) cardSaved += 1;
+          else if (!firstFailure) firstFailure = saved;
+        }
+        if (cardSaved > 0) {
+          result.saved += cardSaved;
         } else {
           card.status = "requires_review";
           card.extraction = card.extraction || {};
           card.extraction.warnings = Array.isArray(card.extraction.warnings) ? card.extraction.warnings : [];
-          card.extraction.warnings.push(saved.message);
+          if (firstFailure) card.extraction.warnings.push(firstFailure.message);
           card.updatedAt = now();
           result.keptForReview += 1;
-          if (saved.code === "duplicate") result.duplicates += 1;
+          if (firstFailure?.code === "duplicate") result.duplicates += 1;
           else result.invalid += 1;
         }
       }
@@ -5846,7 +6297,74 @@ function fieldLabelsForServer(field) {
   }[field] || field;
 }
 
+// A single card can carry more than one person — business partners who share a
+// company each print their own name and number. The extractor captures the
+// extra people in secondary/tertiary name+number pairs. Each *named* extra
+// person becomes their own contact that inherits the business (company, city,
+// state, address, exhibition) but carries their own name and mobile — so a card
+// with three people's numbers becomes three contact rows under one business.
+// A nameless extra number is treated as the same person's second line and stays
+// on the primary as secondaryMobileNumber (unchanged behaviour).
+function expandCardPeople(fields) {
+  const source = fields || {};
+  const secondaryName = String(source.secondaryName || "").trim();
+  const tertiaryName = String(source.tertiaryName || "").trim();
+
+  const primary = { ...source };
+  // A named second/third person owns their number — move it off the primary so
+  // it is not duplicated as the primary's secondary line.
+  if (secondaryName) { primary.secondaryName = ""; primary.secondaryMobileNumber = ""; }
+  if (tertiaryName) { primary.tertiaryName = ""; primary.tertiaryMobileNumber = ""; }
+
+  const extraFor = (name, mobile) => ({
+    ...source,
+    name: String(name || "").trim(),
+    mobileNumber: String(mobile || "").trim(),
+    // Single-owner personal fields belong to the primary card holder; an extra
+    // person only inherits the shared business and location context.
+    designation: "",
+    department: "",
+    emailAddress: "",
+    secondaryEmail: "",
+    linkedInUrl: "",
+    nameNative: "",
+    designationNative: "",
+    secondaryName: "",
+    secondaryMobileNumber: "",
+    tertiaryName: "",
+    tertiaryMobileNumber: ""
+  });
+
+  const people = [primary];
+  if (secondaryName) people.push(extraFor(secondaryName, source.secondaryMobileNumber));
+  if (tertiaryName) people.push(extraFor(tertiaryName, source.tertiaryMobileNumber));
+
+  // Never let two produced contacts collide on the same normalised number.
+  const seen = new Set();
+  return people.filter((person) => {
+    const key = normalizeMobile(person.mobileNumber || "");
+    if (key && seen.has(key)) return false;
+    if (key) seen.add(key);
+    return true;
+  });
+}
+
 async function saveContactFromFields(res, db, user, card, fields) {
+  // Multiple named people on one card fan out into separate contacts, each
+  // merging (fill-blanks) against any existing number instead of blocking, so
+  // the save never fails and the same business links every person.
+  const people = expandCardPeople(fields);
+  if (people.length > 1) {
+    const savedContacts = [];
+    for (const person of people) {
+      const saved = saveContactRecord(db, user, card, person, { allowDuplicate: false, mergeDuplicate: true });
+      if (saved.ok) savedContacts.push(saved.contact);
+    }
+    audit(db, user, "contact.saved_split", "card", card.id, { contacts: savedContacts.length });
+    await saveDb(db);
+    return send(res, 201, { contact: savedContacts[0], contacts: savedContacts, split: savedContacts.length });
+  }
+
   const cleaned = cleanContactFields(fields);
   const normalizedMobileNumber = normalizeMobile(cleaned.mobileNumber);
   const duplicate = normalizedMobileNumber
@@ -6664,6 +7182,8 @@ if (require.main === module) {
   validateRuntimeConfiguration();
   ensureStorage()
     .then(() => ensureBootstrapAdmin())
+    .then(() => reconcileUsageLedger())
+    .then(() => runMaintenance())
     .then(() => {
       // Set HOST=127.0.0.1 in production so the app is reachable only via the
       // reverse proxy (CloudPanel/nginx) and never exposed publicly on its port.
@@ -6671,6 +7191,7 @@ if (require.main === module) {
       server.listen(PORT, HOST, () => {
         console.log(`Card2Leads running at http://${HOST || "localhost"}:${PORT}`);
         scheduleQueueProcessing();
+        scheduleMaintenance();
       });
     })
     .catch((err) => {
@@ -6811,6 +7332,7 @@ module.exports = {
   exportRemarks,
   exportRow,
   findCollectionForUser,
+  foldLedgerRows,
   googleContactDisplayName,
   googleScopes,
   grantOneTimePlan,
@@ -6819,6 +7341,7 @@ module.exports = {
   normalizePhoneFields,
   parseDataUrl,
   planUsage,
+  removeOrganisationData,
   remainingTopupScans,
   repairCollectionExhibitionAssignments,
   saveContactRecord,

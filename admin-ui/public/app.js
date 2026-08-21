@@ -76,7 +76,7 @@
       '<div class="field"><label>Email</label><input type="email" name="email" autocomplete="username" required></div>' +
       '<div class="field"><label>Password</label><input type="password" name="password" autocomplete="current-password" required></div>' +
       '<button class="btn btn-primary" type="submit" id="loginBtn">Sign in</button>' +
-      "</form></div></div>";
+      '</form><p class="form-help">Need another login? A super-admin can add administrators from Settings after signing in.</p></div></div>';
     document.getElementById("loginForm").addEventListener("submit", async function (e) {
       e.preventDefault();
       var btn = document.getElementById("loginBtn");
@@ -89,6 +89,48 @@
         renderShell();
       } catch (err) {
         renderLogin(err.status === 401 ? "Incorrect email or password." : (err.message || "Could not sign in."));
+      }
+    });
+  }
+
+  function renderFirstAdminSetup(status, errMsg) {
+    var unavailable = status && status.setupAvailable === false;
+    app.innerHTML =
+      '<div class="login-wrap"><div class="login-card setup-card">' + LOGO +
+      '<h1>Create the first administrator</h1>' +
+      '<p class="sub">No admin login exists yet. This one-time setup creates the first super-admin and then disables itself.</p>' +
+      (errMsg ? '<div class="form-error">' + esc(errMsg) + '</div>' : '') +
+      (unavailable
+        ? '<div class="setup-note">For production safety, set <code>ADMIN_SETUP_TOKEN</code> on the backend and restart it, then reload this page.</div>'
+        : '<form id="setupForm">' +
+          '<div class="field"><label>Full name</label><input name="name" autocomplete="name" required></div>' +
+          '<div class="field"><label>Email</label><input type="email" name="email" autocomplete="username" required></div>' +
+          (status && status.tokenRequired ? '<div class="field"><label>Setup code</label><input type="password" name="setupToken" autocomplete="one-time-code" required></div>' : '') +
+          '<div class="field"><label>Password</label><input type="password" name="password" autocomplete="new-password" required></div>' +
+          '<div class="field"><label>Confirm password</label><input type="password" name="confirmPassword" autocomplete="new-password" required></div>' +
+          '<p class="password-hint">Use at least 10 characters with uppercase, lowercase, a number and a symbol.</p>' +
+          '<button class="btn btn-primary" type="submit" id="setupBtn">Create super-admin</button></form>') +
+      '</div></div>';
+    if (unavailable) return;
+    document.getElementById("setupForm").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var fields = e.target.elements;
+      if (fields.password.value !== fields.confirmPassword.value) {
+        renderFirstAdminSetup(status, "Passwords do not match."); return;
+      }
+      var btn = document.getElementById("setupBtn");
+      btn.disabled = true; btn.textContent = "Creating…";
+      try {
+        var out = await api("/api/admin/setup", { method: "POST", body: {
+          name: fields.name.value.trim(), email: fields.email.value.trim(),
+          password: fields.password.value, setupToken: fields.setupToken ? fields.setupToken.value : ""
+        } });
+        state.admin = out.admin;
+        location.hash = "#/dashboard";
+        renderShell();
+      } catch (err) {
+        if (err.status === 409) return renderLogin(err.message);
+        renderFirstAdminSetup(status, err.message || "Could not create the first administrator.");
       }
     });
   }
@@ -229,6 +271,7 @@
       ["ACTIVE", "SUSPENDED", "PENDING_DELETION"].map(function (s) {
         return '<option' + (q.status === s ? " selected" : "") + ">" + s + "</option>";
       }).join("") + "</select>" +
+      '<button class="btn-sm btn-brand" id="createClientBtn" style="margin-left:auto">Create & invite client</button>' +
       "</div>" +
       '<div id="clientsTable"></div>';
 
@@ -280,7 +323,54 @@
     document.getElementById("cq").addEventListener("input", function () { clearTimeout(deb); deb = setTimeout(function () { page = 1; load(); }, 250); });
     document.getElementById("clife").addEventListener("change", function () { page = 1; load(); });
     document.getElementById("cstatus").addEventListener("change", function () { page = 1; load(); });
+    document.getElementById("createClientBtn").addEventListener("click", function () { openCreateClientModal(load); });
     load();
+  }
+
+  function openCreateClientModal(refresh) {
+    var scrim = document.createElement("div");
+    scrim.className = "modal-scrim";
+    scrim.innerHTML =
+      '<div class="modal" role="dialog" aria-modal="true"><h3>Create & invite client</h3>' +
+      '<p class="modal-sub">Creates a zero-credit workspace and emails the owner a secure password-setup link.</p>' +
+      '<div class="modal-error" hidden></div><div class="modal-body">' +
+      '<div><label>Client / company name</label><input data-f="clientName" autocomplete="organization"></div>' +
+      '<div><label>Owner name</label><input data-f="ownerName" autocomplete="name"></div>' +
+      '<div><label>Owner email</label><input data-f="email" type="email" autocomplete="email"></div>' +
+      '<div><label>Phone (optional)</label><input data-f="phone" autocomplete="tel"></div>' +
+      '</div><div class="modal-foot"><button class="btn" data-cancel>Cancel</button><button class="btn btn-primary" style="width:auto" data-submit>Create & send invite</button></div></div>';
+    document.body.appendChild(scrim);
+    function close() { scrim.remove(); }
+    scrim.addEventListener("click", function (e) { if (e.target === scrim) close(); });
+    scrim.querySelector("[data-cancel]").addEventListener("click", close);
+    var errBox = scrim.querySelector(".modal-error");
+    var btn = scrim.querySelector("[data-submit]");
+    var done = false;
+    btn.addEventListener("click", async function () {
+      if (done) { close(); return; }
+      var payload = {};
+      Array.prototype.forEach.call(scrim.querySelectorAll("[data-f]"), function (input) { payload[input.getAttribute("data-f")] = input.value.trim(); });
+      if (!payload.clientName || !payload.ownerName || !payload.email) {
+        errBox.hidden = false; errBox.textContent = "Client name, owner name and email are required."; return;
+      }
+      btn.disabled = true; btn.textContent = "Creating…";
+      try {
+        var result = await api("/api/admin/clients", { method: "POST", body: payload });
+        if (refresh) refresh();
+        if (result.invitationLink) {
+          scrim.querySelector(".modal-sub").textContent = result.warning || "Client created. Share this setup link securely.";
+          scrim.querySelector(".modal-body").innerHTML = '<div><label>One-time setup link</label><input value="' + esc(result.invitationLink) + '" readonly></div>';
+          btn.textContent = "Done"; btn.disabled = false;
+          done = true;
+          scrim.querySelector("[data-cancel]").hidden = true;
+        } else {
+          close();
+        }
+      } catch (err) {
+        errBox.hidden = false; errBox.textContent = err.message || "Client creation failed.";
+        btn.disabled = false; btn.textContent = "Create & send invite";
+      }
+    });
   }
 
   // ================= CLIENT DETAIL DRAWER =================
@@ -325,6 +415,17 @@
       "</tbody></table>" :
       '<div class="empty-mini">No payment records yet.</div>';
 
+    var subscriptions = (c.subscriptions && c.subscriptions.length) ?
+      '<table class="mini-table"><thead><tr><th>Started</th><th>Plan</th><th>Mode</th><th>Status</th><th>Period end</th></tr></thead><tbody>' +
+      c.subscriptions.map(function (s) { return "<tr><td>" + fmtDate(s.start_date || s.created_at) + "</td><td>" + esc(s.plan || "—") + "</td><td>" + esc(s.billing_mode || "—") + "</td><td>" + esc(s.status || "—") + "</td><td>" + fmtDate(s.current_period_end) + "</td></tr>"; }).join("") +
+      "</tbody></table>" +
+      '<ul class="timeline" style="margin-top:12px">' + c.subscriptions.reduce(function (all, s) {
+        var history = s.metadata && Array.isArray(s.metadata.statusHistory) ? s.metadata.statusHistory : [];
+        return all.concat(history.map(function (h) { return { at: h.at, status: h.status, source: h.source }; }));
+      }, []).sort(function (a, b) { return String(b.at || "").localeCompare(String(a.at || "")); }).slice(0, 20).map(function (h) {
+        return '<li><span class="t-when">' + fmtDateTime(h.at) + '</span><span>' + esc((h.status || "").replace(/_/g, " ")) + ' · ' + esc(h.source || "system") + '</span></li>';
+      }).join("") + "</ul>" : '<div class="empty-mini">No subscription history yet.</div>';
+
     var g = c.googleIntegration || { status: "not_connected" };
 
     drawer.innerHTML =
@@ -355,6 +456,8 @@
 
       '<div class="dcard"><h3>Payments</h3><div class="body">' + payments + "</div></div>" +
 
+      '<div class="dcard"><h3>Subscription history</h3><div class="body">' + subscriptions + "</div></div>" +
+
       '<div class="dcard"><h3>Users</h3><div class="body">' + usersHtml + "</div></div>" +
 
       '<div class="dcard"><h3>Google Integration</h3><div class="body"><dl class="kv">' +
@@ -378,7 +481,10 @@
   // ---------- Client operational actions (Phase 4) ----------
   function actionsBar(c) {
     var locked = c.accountStatus === "SUSPENDED" || c.accountStatus === "PENDING_DELETION";
+    var pendingInvitation = (c.users || []).some(function (u) { return u.status === "pending_invitation"; });
+    var canCancel = c.billingMode === "subscription" && c.subscriptionStatus !== "cancelled" && c.subscriptionStatus !== "cancel_scheduled";
     return '<div class="drawer-actions">' +
+      (pendingInvitation ? '<button class="btn-sm btn-brand" data-act="resend-invitation">Resend invite</button>' : "") +
       '<button class="btn-sm btn-brand" data-act="credits">Adjust Credits</button>' +
       '<button class="btn-sm" data-act="change-plan">Change Plan</button>' +
       (locked
@@ -387,7 +493,7 @@
       '<button class="btn-sm" data-act="note">Add Note</button>' +
       '<div class="overflow"><button class="btn-sm" data-act="more" aria-haspopup="true">•••</button>' +
         '<div class="overflow-menu" hidden>' +
-          '<button data-act="cancel-subscription">Cancel Subscription</button>' +
+          (canCancel ? '<button data-act="cancel-subscription">Schedule cancellation</button>' : "") +
           '<button data-act="disconnect-google">Disconnect Google</button>' +
           '<button data-act="initiate-deletion" class="danger">Initiate Deletion</button>' +
         '</div></div>' +
@@ -448,9 +554,13 @@
         fields: [{ key: "note", type: "textarea", label: "Note", required: true, placeholder: "e.g. Customer reported 20 failed scans at exhibition; added 25 goodwill credits." }]
       };
       case "cancel-subscription": return {
-        endpoint: "cancel-subscription", title: "Cancel Subscription", submitLabel: "Cancel subscription", danger: true,
-        note: { kind: "warn", text: "Recurring billing stops. The customer keeps access until the current period ends." },
+        endpoint: "cancel-subscription", title: "Schedule Subscription Cancellation", submitLabel: "Schedule cancellation", danger: true,
+        note: { kind: "warn", text: "The payment provider will stop renewal at the end of the current billing period. Access and credits remain active until then." },
         fields: [{ key: "reason", type: "text", label: "Reason", required: true, placeholder: "Why cancel?" }]
+      };
+      case "resend-invitation": return {
+        endpoint: "resend-invitation", title: "Resend Client Invitation", submitLabel: "Send invitation", brand: true,
+        sub: "Generates a new seven-day setup link; the previous link stops working.", fields: []
       };
       case "disconnect-google": return {
         endpoint: "disconnect-google", title: "Disconnect Google", submitLabel: "Disconnect", warn: true,
@@ -539,8 +649,9 @@
 
       submitBtn.disabled = true; submitBtn.textContent = "Working…";
       try {
-        await api("/api/admin/clients/" + encodeURIComponent(c.clientId) + "/" + spec.endpoint, { method: "POST", body: payload });
+        var result = await api("/api/admin/clients/" + encodeURIComponent(c.clientId) + "/" + spec.endpoint, { method: "POST", body: payload });
         close();
+        if (result.invitationLink) window.prompt("Email delivery is not configured. Copy this setup link:", result.invitationLink);
         if (refresh) refresh();
       } catch (err) {
         errBox.hidden = false; errBox.textContent = err.message || "Action failed.";
@@ -677,6 +788,7 @@
       '<div class="table-wrap"><table><thead><tr><th>Plan</th><th>Price</th><th>Duration</th><th>Included</th><th>Status</th></tr></thead><tbody>' + planRows + "</tbody></table></div>" +
       '<div class="section-title" style="display:flex;justify-content:space-between;align-items:center">Administrators' +
       (isSuper ? '<button class="btn-sm btn-brand" id="addAdminBtn" style="text-transform:none;letter-spacing:0">Add admin</button>' : "") + "</div>" +
+      '<div class="cell-sub" style="margin:-8px 0 12px">Each administrator gets a separate email and password. Only super-admins can add, disable or reactivate admin logins.</div>' +
       '<div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last login</th><th></th></tr></thead><tbody>' + adminRows + "</tbody></table></div>";
 
     Array.prototype.forEach.call(view.querySelectorAll("[data-admin-disable]"), function (b) {
@@ -706,7 +818,9 @@
       '<div class="modal-body">' +
       '<div><label>Name</label><input data-f="name"></div>' +
       '<div><label>Email</label><input data-f="email" type="email"></div>' +
-      '<div><label>Password (min 8 chars)</label><input data-f="password" type="password"></div>' +
+      '<div><label>Role</label><select data-f="role"><option value="admin">Administrator</option><option value="super_admin">Super admin</option></select></div>' +
+      '<div><label>Temporary password</label><input data-f="password" type="password"></div>' +
+      '<div class="cell-sub">At least 10 characters with uppercase, lowercase, a number and a symbol. Share it securely.</div>' +
       '</div><div class="modal-foot"><button class="btn" data-cancel>Cancel</button><button class="btn btn-primary" style="width:auto" data-submit>Create admin</button></div></div>';
     document.body.appendChild(scrim);
     function close() { scrim.remove(); }
@@ -747,6 +861,12 @@
 
   async function boot() {
     app.innerHTML = '<div class="state" style="padding-top:120px"><div class="spinner"></div>Loading…</div>';
+    try {
+      var setup = await api("/api/admin/setup/status");
+      if (setup.setupRequired) return renderFirstAdminSetup(setup);
+    } catch (setupErr) {
+      if (setupErr.status !== 404) return renderLogin(setupErr.message || "Could not check admin setup status.");
+    }
     try {
       var me = await api("/api/admin/auth/me");
       state.admin = me.admin;

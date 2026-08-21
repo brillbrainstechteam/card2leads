@@ -348,8 +348,11 @@ create table if not exists usage_ledger (
   admin_id text,
   reason text,
   created_at timestamptz not null default now(),
-  metadata jsonb not null default '{}'::jsonb
+  metadata jsonb not null default '{}'::jsonb,
+  idempotency_key text
 );
+
+alter table usage_ledger add column if not exists idempotency_key text;
 
 -- Product / funnel events (spec §37-44). Idempotency key dedupes milestone events.
 create table if not exists product_events (
@@ -405,9 +408,11 @@ create index if not exists admin_audit_client_idx on admin_audit_logs (client_id
 create index if not exists admin_audit_created_idx on admin_audit_logs (created_at desc);
 create index if not exists admin_notes_client_idx on admin_notes (client_id, created_at desc);
 create index if not exists usage_ledger_client_idx on usage_ledger (client_id, created_at desc);
+create unique index if not exists usage_ledger_idempotency_idx on usage_ledger (idempotency_key) where idempotency_key is not null;
 create index if not exists product_events_client_idx on product_events (client_id, created_at desc);
 create index if not exists product_events_name_idx on product_events (event_name, created_at desc);
 create index if not exists payments_client_idx on payments (client_id, created_at desc);
 create index if not exists payments_created_idx on payments (created_at desc);
 create index if not exists subscriptions_client_idx on subscriptions (client_id, created_at desc);
+create unique index if not exists subscriptions_provider_ref_idx on subscriptions (provider, provider_reference) where provider_reference is not null;
 create index if not exists users_phone_idx on users (phone);
