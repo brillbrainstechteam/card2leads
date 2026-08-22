@@ -4962,6 +4962,13 @@ function accountView() {
           </div>
         </div>
         <div class="account-block">
+          <h3>Google Contacts</h3>
+          <p class="muted">${google.contactsConnected ? `Connected${google.googleEmail ? ` as ${escapeHtml(google.googleEmail)}` : ""}. Selected contacts are saved to your Google account using the workspace naming format.` : "Not connected. Connect to save selected contacts straight into Google Contacts."}</p>
+          <div class="actions">
+            ${google.contactsConnected ? `<span class="muted">Use Disconnect Google above to remove access for both Sheets and Contacts.</span>` : google.configured ? `<a href="/api/google/connect?feature=contacts"><button class="secondary" type="button">Connect Google Contacts</button></a>` : `<span class="muted">Google OAuth is not configured.</span>`}
+          </div>
+        </div>
+        <div class="account-block">
           <h3>WhatsApp messages</h3>
           <p class="muted">${(() => {
             const count = whatsappTemplateLibrary().length;
@@ -5137,6 +5144,13 @@ function accountBillingView() {
           <p class="muted">${google.sheetsConnected ? `${google.needsReconnect ? "This older connection has broad access. Disconnect and reconnect it below to switch to file-limited access." : `Connected${google.googleEmail ? ` as ${escapeHtml(google.googleEmail)}` : ""} with file-limited access.`} Tokens are encrypted on the server.` : "Not connected. You can still download Excel/CSV files."}</p>
           <div class="actions">
             ${google.sheetsConnected ? `<button id="disconnectGoogle" class="secondary">Disconnect Google</button>` : google.configured ? `<a href="/api/google/connect?feature=sheets"><button class="secondary" type="button">Connect Google Sheets</button></a>` : `<span class="muted">Google OAuth is not configured.</span>`}
+          </div>
+        </div>
+        <div class="account-block">
+          <h3>Google Contacts</h3>
+          <p class="muted">${google.contactsConnected ? `Connected${google.googleEmail ? ` as ${escapeHtml(google.googleEmail)}` : ""}. Selected contacts are saved to your Google account using the workspace naming format.` : "Not connected. Connect to save selected contacts straight into Google Contacts."}</p>
+          <div class="actions">
+            ${google.contactsConnected ? `<span class="muted">Use Disconnect Google above to remove access for both Sheets and Contacts.</span>` : google.configured ? `<a href="/api/google/connect?feature=contacts"><button class="secondary" type="button">Connect Google Contacts</button></a>` : `<span class="muted">Google OAuth is not configured.</span>`}
           </div>
         </div>
         <div class="account-block">
