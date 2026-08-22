@@ -6469,9 +6469,38 @@ function expandCardPeople(fields) {
   if (secondaryName) people.push(extraFor(secondaryName, source.secondaryMobileNumber));
   if (tertiaryName) people.push(extraFor(tertiaryName, source.tertiaryMobileNumber));
 
+  // One person can also print several of their own numbers. Each becomes its own
+  // contact so every number is reachable, identical apart from a "no.1"/"no.2"
+  // suffix on the name. A person with a single number is left untouched.
+  const expanded = [];
+  for (const person of people) {
+    const numbers = [];
+    const seenNumbers = new Set();
+    for (const candidate of [person.mobileNumber, ...splitPhoneValues(person.secondaryMobileNumber)]) {
+      const value = String(candidate || "").trim();
+      const key = normalizeMobile(value);
+      if (!value || !key || seenNumbers.has(key)) continue;
+      seenNumbers.add(key);
+      numbers.push(value);
+    }
+    if (numbers.length <= 1) {
+      expanded.push(person);
+      continue;
+    }
+    const personName = String(person.name || "").trim();
+    numbers.forEach((number, index) => {
+      expanded.push({
+        ...person,
+        name: personName ? `${personName} no.${index + 1}` : personName,
+        mobileNumber: number,
+        secondaryMobileNumber: ""
+      });
+    });
+  }
+
   // Never let two produced contacts collide on the same normalised number.
   const seen = new Set();
-  return people.filter((person) => {
+  return expanded.filter((person) => {
     const key = normalizeMobile(person.mobileNumber || "");
     if (key && seen.has(key)) return false;
     if (key) seen.add(key);
@@ -7456,6 +7485,7 @@ function crc32(buffer) {
 module.exports = {
   EXPORT_COLUMNS,
   applyDerivedContactFields,
+  expandCardPeople,
   assertGoogleWritePolicy,
   buildContactDisplayName,
   buildCsv,
