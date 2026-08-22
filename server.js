@@ -5117,6 +5117,20 @@ async function handleApi(req, res, pathname) {
       const exhibitionName = String(body.exhibitionName || body.name || "").trim();
       const destinationType = body.destinationType === "google" ? "google" : "excel";
       if (!name || !exhibitionName) return error(res, 400, "Enter an exhibition name before creating it.");
+      const duplicate = findExistingCollection(db, user, exhibitionName);
+      if (duplicate) {
+        db.collections.forEach((c) => {
+          if (c.organisationId === user.organisationId) c.status = c.id === duplicate.id ? "active" : "archived";
+        });
+        if (!duplicate.exhibitionDate && body.exhibitionDate) duplicate.exhibitionDate = String(body.exhibitionDate);
+        duplicate.updatedAt = now();
+        await saveDb(db);
+        return send(res, 200, {
+          collection: duplicate,
+          existing: true,
+          message: `"${duplicate.exhibitionName || duplicate.name}" already exists, so it has been selected instead of creating a duplicate.`
+        });
+      }
       db.collections.forEach((c) => {
         if (c.organisationId === user.organisationId) c.status = "archived";
       });
@@ -6207,7 +6221,35 @@ function publicUser(user) {
   return { id: user.id, name: user.name, email: user.email, organisationId: user.organisationId };
 }
 
+function normalizeExhibitionKey(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+// An exhibition already used by this workspace, matched on name regardless of
+// case or spacing. Reusing it keeps one event's contacts, sheet and Google label
+// together instead of splitting them across near-identical duplicates.
+function findExistingCollection(db, user, exhibitionName) {
+  const key = normalizeExhibitionKey(exhibitionName);
+  if (!key) return null;
+  return db.collections.find((collection) =>
+    collection.organisationId === user.organisationId
+    && collection.status !== "deleted"
+    && !collection.deletedAt
+    && (normalizeExhibitionKey(collection.exhibitionName) === key || normalizeExhibitionKey(collection.name) === key)
+  ) || null;
+}
+
 function createCollectionFromUpload(db, user, body) {
+  const requestedName = String(body.exhibitionName || body.collectionName || "").trim();
+  const existing = findExistingCollection(db, user, requestedName);
+  if (existing) {
+    db.collections.forEach((c) => {
+      if (c.organisationId === user.organisationId) c.status = c.id === existing.id ? "active" : "archived";
+    });
+    if (!existing.exhibitionDate && body.exhibitionDate) existing.exhibitionDate = String(body.exhibitionDate);
+    existing.updatedAt = now();
+    return existing;
+  }
   db.collections.forEach((c) => {
     if (c.organisationId === user.organisationId) {
       c.status = "archived";
