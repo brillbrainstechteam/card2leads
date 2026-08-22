@@ -6584,6 +6584,9 @@ function saveContactRecord(db, user, card, fields, options = {}) {
     exhibitionName: collection.exhibitionName || cleaned.exhibitionName || "",
     exhibitionDate: collection.exhibitionDate || cleaned.exhibitionDate || ""
   };
+  // The exhibition is only known here, so the saved-contact name has to be
+  // rebuilt now; deriving it earlier left the exhibition out of the name.
+  applyDerivedContactFields(contact);
   db.contacts.unshift(contact);
   collection.savedContactCount = db.contacts.filter((c) => c.collectionId === collection.id && !c.deletedAt).length;
   collection.nextSheetRow = 2 + collection.savedContactCount;
@@ -6614,6 +6617,9 @@ function mergeContactRecord(db, user, card, existing, cleaned) {
     filled.push("notes");
   }
   if (filled.length) {
+    // Filling blanks can supply an exhibition, city or state that the name is
+    // built from, so refresh it rather than leaving the older, shorter name.
+    applyDerivedContactFields(existing);
     existing.updatedAt = now();
     existing.updatedBy = user.id;
     // Re-queue for Sheets, otherwise the newly filled columns never reach it.
