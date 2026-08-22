@@ -4958,14 +4958,14 @@ function accountView() {
           <h3>Google Sheets</h3>
           <p class="muted">${google.sheetsConnected ? `${google.needsReconnect ? "This older connection has broad access. Disconnect and reconnect it below to switch to file-limited access." : `Connected${google.googleEmail ? ` as ${escapeHtml(google.googleEmail)}` : ""} with file-limited access.`} Tokens are encrypted on the server.` : "Not connected. You can still download Excel/CSV files."}</p>
           <div class="actions">
-            ${google.sheetsConnected ? `<button id="disconnectGoogle" class="secondary">Disconnect Google</button>` : google.configured ? `<a href="/api/google/connect?feature=sheets"><button class="secondary" type="button">Connect Google Sheets</button></a>` : `<span class="muted">Google OAuth is not configured.</span>`}
+            ${!google.configured ? `<span class="muted">Google OAuth is not configured.</span>` : google.sheetsConnected ? `<button type="button" class="secondary disconnectGoogleAccount">Disconnect</button>` : `<a href="/api/google/connect?feature=sheets"><button class="secondary" type="button">Connect Google Sheets</button></a>`}
           </div>
         </div>
         <div class="account-block">
           <h3>Google Contacts</h3>
           <p class="muted">${google.contactsConnected ? `Connected${google.googleEmail ? ` as ${escapeHtml(google.googleEmail)}` : ""}. Selected contacts are saved to your Google account using the workspace naming format.` : "Not connected. Connect to save selected contacts straight into Google Contacts."}</p>
           <div class="actions">
-            ${google.contactsConnected ? `<span class="muted">Use Disconnect Google above to remove access for both Sheets and Contacts.</span>` : google.configured ? `<a href="/api/google/connect?feature=contacts"><button class="secondary" type="button">Connect Google Contacts</button></a>` : `<span class="muted">Google OAuth is not configured.</span>`}
+            ${!google.configured ? `<span class="muted">Google OAuth is not configured.</span>` : google.contactsConnected ? `<button type="button" class="secondary disconnectGoogleAccount">Disconnect</button>` : `<a href="/api/google/connect?feature=contacts"><button class="secondary" type="button">Connect Google Contacts</button></a>`}
           </div>
         </div>
         <div class="account-block">
@@ -4997,19 +4997,19 @@ function accountView() {
   `);
   node.querySelectorAll("[data-subscribe]").forEach((btn) => btn.addEventListener("click", () => startSubscription(btn.dataset.subscribe)));
   node.querySelector("#buyTopup")?.addEventListener("click", () => startTopup());
-  node.querySelector("#disconnectGoogle")?.addEventListener("click", () => {
+  node.querySelectorAll(".disconnectGoogleAccount").forEach((btn) => btn.addEventListener("click", () => {
     state.modal = {
-      title: "Disconnect Google Sheets?",
-      body: "Card2Leads will remove the stored Google tokens. Existing Google Sheets stay in your Google Drive.",
+      title: "Disconnect Google?",
+      body: "Sheets and Contacts share one Google account, so both will be disconnected. Card2Leads removes its stored tokens; sheets and contacts already in your Google account are left untouched. You can reconnect at any time.",
       confirmText: "Disconnect",
       onConfirm: async () => {
         await api("/api/google/disconnect", { method: "POST", body: {} });
         await refreshAll();
-        setMessage("Google Sheets disconnected.");
+        setMessage("Google disconnected. Reconnect from Account whenever you need it.");
       }
     };
     render();
-  });
+  }));
   node.querySelectorAll(".editWhatsappSettings").forEach((btn) => btn.addEventListener("click", showWhatsappSettingsModal));
   node.querySelector("#deleteAccount").addEventListener("click", () => {
     state.modal = {
@@ -5143,14 +5143,14 @@ function accountBillingView() {
           <h3>Google Sheets</h3>
           <p class="muted">${google.sheetsConnected ? `${google.needsReconnect ? "This older connection has broad access. Disconnect and reconnect it below to switch to file-limited access." : `Connected${google.googleEmail ? ` as ${escapeHtml(google.googleEmail)}` : ""} with file-limited access.`} Tokens are encrypted on the server.` : "Not connected. You can still download Excel/CSV files."}</p>
           <div class="actions">
-            ${google.sheetsConnected ? `<button id="disconnectGoogle" class="secondary">Disconnect Google</button>` : google.configured ? `<a href="/api/google/connect?feature=sheets"><button class="secondary" type="button">Connect Google Sheets</button></a>` : `<span class="muted">Google OAuth is not configured.</span>`}
+            ${!google.configured ? `<span class="muted">Google OAuth is not configured.</span>` : google.sheetsConnected ? `<button type="button" class="secondary disconnectGoogleAccount">Disconnect</button>` : `<a href="/api/google/connect?feature=sheets"><button class="secondary" type="button">Connect Google Sheets</button></a>`}
           </div>
         </div>
         <div class="account-block">
           <h3>Google Contacts</h3>
           <p class="muted">${google.contactsConnected ? `Connected${google.googleEmail ? ` as ${escapeHtml(google.googleEmail)}` : ""}. Selected contacts are saved to your Google account using the workspace naming format.` : "Not connected. Connect to save selected contacts straight into Google Contacts."}</p>
           <div class="actions">
-            ${google.contactsConnected ? `<span class="muted">Use Disconnect Google above to remove access for both Sheets and Contacts.</span>` : google.configured ? `<a href="/api/google/connect?feature=contacts"><button class="secondary" type="button">Connect Google Contacts</button></a>` : `<span class="muted">Google OAuth is not configured.</span>`}
+            ${!google.configured ? `<span class="muted">Google OAuth is not configured.</span>` : google.contactsConnected ? `<button type="button" class="secondary disconnectGoogleAccount">Disconnect</button>` : `<a href="/api/google/connect?feature=contacts"><button class="secondary" type="button">Connect Google Contacts</button></a>`}
           </div>
         </div>
         <div class="account-block">
@@ -5184,19 +5184,19 @@ function accountBillingView() {
   node.querySelectorAll("[data-one-time-plan]").forEach((btn) => btn.addEventListener("click", () => startOneTimePlan(btn.dataset.oneTimePlan)));
   node.querySelectorAll("[data-subscribe]").forEach((btn) => btn.addEventListener("click", () => startSubscription(btn.dataset.subscribe)));
   node.querySelector("#buyTopup")?.addEventListener("click", requestTopupPurchase);
-  node.querySelector("#disconnectGoogle")?.addEventListener("click", () => {
+  node.querySelectorAll(".disconnectGoogleAccount").forEach((btn) => btn.addEventListener("click", () => {
     state.modal = {
-      title: "Disconnect Google Sheets?",
-      body: "Card2Leads will remove the stored Google tokens. Existing Google Sheets stay in your Google Drive.",
+      title: "Disconnect Google?",
+      body: "Sheets and Contacts share one Google account, so both will be disconnected. Card2Leads removes its stored tokens; sheets and contacts already in your Google account are left untouched. You can reconnect at any time.",
       confirmText: "Disconnect",
       onConfirm: async () => {
         await api("/api/google/disconnect", { method: "POST", body: {} });
         await refreshAll();
-        setMessage("Google Sheets disconnected.");
+        setMessage("Google disconnected. Reconnect from Account whenever you need it.");
       }
     };
     render();
-  });
+  }));
   node.querySelectorAll(".editWhatsappSettings").forEach((btn) => btn.addEventListener("click", showWhatsappSettingsModal));
   node.querySelector("#deleteAccount").addEventListener("click", () => {
     state.modal = {

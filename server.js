@@ -6079,12 +6079,20 @@ async function handleApi(req, res, pathname) {
           const groupName = googleContactGroupLabel(contact.exhibitionName, contact.exhibitionDate);
           labels.add(groupName);
           let groupResourceName = exhibitionGroups.get(groupName);
-          if (!groupResourceName) {
-            groupResourceName = await ensureGoogleContactGroup(accessToken, groupName);
+          if (groupResourceName === undefined) {
+            try {
+              groupResourceName = await ensureGoogleContactGroup(accessToken, groupName);
+            } catch (groupError) {
+              // A narrower contacts scope cannot manage groups. Saving the contact
+              // matters more than filing it, so continue ungrouped rather than
+              // failing the whole sync.
+              console.error("[google] contact group unavailable:", groupError.message);
+              groupResourceName = "";
+            }
             exhibitionGroups.set(groupName, groupResourceName);
           }
           const person = await syncContactToGooglePeople(accessToken, contact);
-          await addGoogleContactToGroup(accessToken, groupResourceName, person.resourceName);
+          if (groupResourceName) await addGoogleContactToGroup(accessToken, groupResourceName, person.resourceName);
           contact.googlePeopleResourceName = person.resourceName;
           contact.googlePeopleEtag = person.etag || "";
           contact.googleContactsSyncStatus = "synced";
@@ -6667,7 +6675,10 @@ function googleConfigured() {
 }
 
 const GOOGLE_SHEETS_SCOPE = "https://www.googleapis.com/auth/drive.file";
-const GOOGLE_CONTACTS_SCOPE = "https://www.googleapis.com/auth/contacts";
+// Overridable so a narrower scope can be trialled. contacts.app_created limits
+// access to contacts this app created, but Google does not allow contact-group
+// management under it, so exhibition groups are skipped when it is in use.
+const GOOGLE_CONTACTS_SCOPE = process.env.GOOGLE_CONTACTS_SCOPE || "https://www.googleapis.com/auth/contacts";
 
 function googleScopes(feature = "sheets") {
   // drive.file limits Card2Leads to files it creates or files explicitly opened with it.
