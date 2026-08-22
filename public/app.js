@@ -308,6 +308,7 @@ function ensureQueuePolling() {
   }
   if (queuePollTimer) return;
   let lastQueuedCount = state.cards.filter((card) => card.status === "queued").length;
+  const contactsBeforeBatch = state.contacts.length;
   // A single card is extracted server-side in well under a second, so a fixed
   // 4s poll made a one-card scan at the stall feel slow. Poll quickly for small
   // batches (the stall case) and back off for bulk uploads.
@@ -330,6 +331,27 @@ function ensureQueuePolling() {
         state.cards = result.cards;
       }
       lastQueuedCount = state.cards.filter((card) => card.status === "queued").length;
+      if (queuedNow === 0) {
+        clearTimeout(queuePollTimer);
+        queuePollTimer = null;
+        const added = Math.max(0, state.contacts.length - contactsBeforeBatch);
+        const needsReview = state.cards.filter((card) => card.status === "completed" || card.status === "requires_review").length;
+        if (!state.modal) {
+          state.modal = {
+            title: added ? `${added} contact${added === 1 ? "" : "s"} added` : "All cards processed",
+            tone: "info",
+            body: needsReview
+              ? `${needsReview} card${needsReview === 1 ? "" : "s"} still need a quick check in Review.`
+              : "Every card was read and saved to Contacts.",
+            cancelText: "Stay here",
+            confirmText: needsReview ? "Go to Review" : "View contacts",
+            confirmClass: "primary",
+            onConfirm: () => navigateToView(needsReview ? "review" : "contacts")
+          };
+        }
+        render();
+        return;
+      }
       const activeTag = document.activeElement?.tagName;
       const isTyping = activeTag === "INPUT" || activeTag === "TEXTAREA" || activeTag === "SELECT";
       const isRecording = document.querySelector(".voice-recorder.recording") || document.querySelector(".voice-recorder.recorded");
@@ -3795,7 +3817,16 @@ function contactsView() {
             ? `<span class="workflow-note">Google is not configured yet.</span>`
             : !google.contactsConnected
               ? `<a class="workflow-btn primary" href="/api/google/connect?feature=contacts">${googleGlyph} Connect Google</a>`
-              : `<button type="button" class="workflow-btn primary" id="workflowSyncContacts" ${!selectedIds.length || state.googleContactsSyncing ? "disabled" : ""}>${googleGlyph} ${state.googleContactsSyncing ? "Syncing…" : selectedIds.length ? `Sync ${selectedIds.length} contact${selectedIds.length === 1 ? "" : "s"}` : "Select contacts"}</button>`}
+              : `<button type="button" class="workflow-btn primary" id="workflowSyncContacts" ${state.googleContactsSyncing ? "disabled" : ""}>${googleGlyph} ${state.googleContactsSyncing ? "Syncing…" : selectedIds.length ? `Sync ${selectedIds.length} contact${selectedIds.length === 1 ? "" : "s"}` : "Sync contacts"}</button>`}
+          ${!google.configured
+            ? ""
+            : !google.sheetsConnected
+              ? `<a class="workflow-btn ghost" href="/api/google/connect?feature=sheets">${googleGlyph} Connect Google Sheets</a>`
+              : !activeCollectionId
+                ? `<span class="workflow-note">Choose an exhibition to sync its sheet.</span>`
+                : hasGoogleSheet
+                  ? `<button type="button" class="workflow-btn ghost" id="workflowSyncSheet">${googleGlyph} Sync Google Sheet</button>`
+                  : `<button type="button" class="workflow-btn ghost" id="workflowCreateSheet">${googleGlyph} Create Google Sheet</button>`}
         </div>
         <div class="workflow-card">
           <div class="workflow-card-top"><span class="workflow-step">2</span><strong>Assign to Team</strong></div>
@@ -4301,6 +4332,12 @@ function contactsView() {
   });
   node.querySelector("#syncGoogleContacts")?.addEventListener("click", async (event) => {
     await prepareGoogleContactsSync(event.currentTarget, selectedIds, activeCollectionId, activeCollection);
+  });
+  node.querySelector("#workflowCreateSheet")?.addEventListener("click", async (event) => {
+    await createContactsGoogleSheet(event.currentTarget, activeCollectionId);
+  });
+  node.querySelector("#workflowSyncSheet")?.addEventListener("click", async (event) => {
+    await syncContactsGoogleSheet(event.currentTarget, activeCollectionId);
   });
   node.querySelector('[data-menu-action="create-sheet"]')?.addEventListener("click", async (event) => {
     await createContactsGoogleSheet(event.currentTarget, activeCollectionId);
