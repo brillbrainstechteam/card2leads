@@ -4410,16 +4410,22 @@ async function syncContactsGoogleSheet(button, collectionId, selectedIds = []) {
     const synced = result.synced || 0;
     const sheets = Array.isArray(result.sheets) ? result.sheets.filter((sheet) => sheet.url) : [];
     setMessage(result.message || `${synced} contact(s) synced to Google Sheets.`);
+    // Report what the user asked for first. A sheet holds every contact for its
+    // exhibition, so the number of rows written is usually larger than the
+    // selection - saying only the larger number reads like the wrong thing synced.
+    const picked = selectedIds.length;
     state.modal = {
-      title: `${synced} contact${synced === 1 ? "" : "s"} synced to Google Sheets`,
+      title: picked
+        ? `${picked} selected contact${picked === 1 ? "" : "s"} synced`
+        : `${synced} contact${synced === 1 ? "" : "s"} synced to Google Sheets`,
       tone: "info",
-      body: sheets.length > 1
-        ? `Your selection spans ${sheets.length} exhibitions, so each one's sheet was updated.`
+      body: picked
+        ? `Each sheet holds every contact for its exhibition, so ${sheets.length === 1 ? "that sheet was" : `all ${sheets.length} sheets were`} brought up to date — ${synced} row${synced === 1 ? "" : "s"} in total.`
         : sheets.length === 1
           ? `The sheet for "${sheets[0].name}" is up to date.`
           : "The exhibition sheet is up to date.",
-      contentHtml: sheets.length > 1
-        ? `<ul class="dialog-list">${sheets.map((sheet) => `<li><a href="${escapeAttr(sheet.url)}" target="_blank" rel="noopener">${escapeHtml(sheet.name)}</a> — ${sheet.synced} contact(s)</li>`).join("")}</ul>`
+      contentHtml: sheets.length
+        ? `<ul class="dialog-list">${sheets.map((sheet) => `<li><a href="${escapeAttr(sheet.url)}" target="_blank" rel="noopener">${escapeHtml(sheet.name)}</a> — ${sheet.synced} row(s)</li>`).join("")}</ul>`
         : "",
       cancelText: "Close",
       confirmText: sheets.length === 1 ? "Open sheet" : "Done",
