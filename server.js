@@ -6053,7 +6053,9 @@ async function handleApi(req, res, pathname) {
       const contacts = db.contacts.filter((contact) =>
         contact.organisationId === user.organisationId
         && !contact.deletedAt
-        && (!collectionId || contact.collectionId === collectionId)
+        // A deliberate selection is honoured in full: the active exhibition only
+        // narrows the set when the caller did not name specific contacts.
+        && (!collectionId || requestedIds.size > 0 || contact.collectionId === collectionId)
         && (!requestedIds.size || requestedIds.has(contact.id))
       );
       if (!contacts.length) return error(res, 400, "Choose at least one saved contact to sync.");
@@ -6111,11 +6113,17 @@ async function handleApi(req, res, pathname) {
         failed: failures.length
       });
       await saveDb(db);
+      const groupResourceNames = [...exhibitionGroups.values()].filter(Boolean);
+      const singleGroupId = groupResourceNames.length === 1 ? String(groupResourceNames[0]).split("/").pop() : "";
       return send(res, 200, {
         synced,
         failed: failures.length,
         failures,
         label: labels.size === 1 ? [...labels][0] : "multiple exhibition labels",
+        labels: [...labels],
+        // Deep-link to the single exhibition label when there is one, otherwise
+        // to Google Contacts itself.
+        groupUrl: singleGroupId ? `https://contacts.google.com/label/${singleGroupId}` : "https://contacts.google.com/",
         message: failures.length
           ? `${synced} contact(s) synced. ${failures.length} could not be synced.`
           : `${synced} contact(s) added to Google Contacts.`

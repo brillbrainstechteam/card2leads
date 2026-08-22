@@ -4405,7 +4405,21 @@ async function syncContactsGoogleSheet(button, collectionId) {
   try {
     const result = await api("/api/google/sync", { method: "POST", body: { collectionId } });
     await refreshAll();
-    setMessage(`${result.synced || state.contacts.length} contact(s) synced to Google Sheets.`);
+    const synced = result.synced || state.contacts.length;
+    const collection = state.overview.collections?.find((item) => item.id === collectionId);
+    const sheetUrl = collection?.spreadsheetUrl || (collection?.spreadsheetId ? `https://docs.google.com/spreadsheets/d/${collection.spreadsheetId}/edit` : "");
+    setMessage(`${synced} contact(s) synced to Google Sheets.`);
+    // Offer the sheet itself, rather than leaving the user to find it in Drive.
+    state.modal = {
+      title: `${synced} contact${synced === 1 ? "" : "s"} synced to Google Sheets`,
+      tone: "info",
+      body: collection ? `The sheet for "${collection.exhibitionName || collection.name}" is up to date.` : "The exhibition sheet is up to date.",
+      cancelText: "Close",
+      confirmText: sheetUrl ? "Open sheet" : "Done",
+      confirmClass: "primary",
+      onConfirm: () => { if (sheetUrl) window.open(sheetUrl, "_blank", "noopener"); }
+    };
+    render();
   } catch (err) {
     button.disabled = false;
     setMessage(err.message, true);
@@ -4500,6 +4514,19 @@ async function syncGoogleContacts(_button, selectedIds, _collectionId, context) 
     if (result.failed) {
       setMessage(resultText, true);
     } else {
+      // Offer the destination, so the user can confirm where the contacts landed
+      // instead of having to hunt for the label in Google Contacts.
+      state.modal = {
+        title: `${result.synced} contact${result.synced === 1 ? "" : "s"} saved to Google`,
+        tone: "info",
+        body: (result.labels && result.labels.length > 1)
+          ? `Saved under ${result.labels.length} exhibition labels: ${result.labels.join(", ")}.`
+          : `Saved under "${result.label || "Card2Leads contacts"}".`,
+        cancelText: "Close",
+        confirmText: "Open Google Contacts",
+        confirmClass: "primary",
+        onConfirm: () => window.open(result.groupUrl || "https://contacts.google.com/", "_blank", "noopener")
+      };
       setMessage(resultText);
     }
   } catch (err) {
