@@ -4365,7 +4365,7 @@ function contactsView() {
     await createContactsGoogleSheet(event.currentTarget, activeCollectionId);
   });
   node.querySelector("#syncContactsGoogleSheet")?.addEventListener("click", async (event) => {
-    await syncContactsGoogleSheet(event.currentTarget, activeCollectionId);
+    await syncContactsGoogleSheet(event.currentTarget, activeCollectionId, [...state.selectedContactIds]);
   });
   node.querySelector("#syncGoogleContacts")?.addEventListener("click", async (event) => {
     await prepareGoogleContactsSync(event.currentTarget, selectedIds, activeCollectionId, activeCollection);
@@ -4374,13 +4374,13 @@ function contactsView() {
     await createContactsGoogleSheet(event.currentTarget, activeCollectionId);
   });
   node.querySelector("#workflowSyncSheet")?.addEventListener("click", async (event) => {
-    await syncContactsGoogleSheet(event.currentTarget, activeCollectionId);
+    await syncContactsGoogleSheet(event.currentTarget, activeCollectionId, [...state.selectedContactIds]);
   });
   node.querySelector('[data-menu-action="create-sheet"]')?.addEventListener("click", async (event) => {
     await createContactsGoogleSheet(event.currentTarget, activeCollectionId);
   });
   node.querySelector('[data-menu-action="sync-sheet"]')?.addEventListener("click", async (event) => {
-    await syncContactsGoogleSheet(event.currentTarget, activeCollectionId);
+    await syncContactsGoogleSheet(event.currentTarget, activeCollectionId, [...state.selectedContactIds]);
   });
   node.querySelector('[data-menu-action="sync-contacts"]')?.addEventListener("click", async (event) => {
     await prepareGoogleContactsSync(event.currentTarget, selectedIds, activeCollectionId, activeCollection);
@@ -4400,24 +4400,31 @@ async function createContactsGoogleSheet(button, collectionId) {
   }
 }
 
-async function syncContactsGoogleSheet(button, collectionId) {
+async function syncContactsGoogleSheet(button, collectionId, selectedIds = []) {
   button.disabled = true;
   try {
-    const result = await api("/api/google/sync", { method: "POST", body: { collectionId } });
+    // Pass the selection so contacts from other exhibitions reach their own
+    // sheet instead of being skipped.
+    const result = await api("/api/google/sync", { method: "POST", body: { collectionId, contactIds: selectedIds } });
     await refreshAll();
-    const synced = result.synced || state.contacts.length;
-    const collection = state.overview.collections?.find((item) => item.id === collectionId);
-    const sheetUrl = collection?.spreadsheetUrl || (collection?.spreadsheetId ? `https://docs.google.com/spreadsheets/d/${collection.spreadsheetId}/edit` : "");
-    setMessage(`${synced} contact(s) synced to Google Sheets.`);
-    // Offer the sheet itself, rather than leaving the user to find it in Drive.
+    const synced = result.synced || 0;
+    const sheets = Array.isArray(result.sheets) ? result.sheets.filter((sheet) => sheet.url) : [];
+    setMessage(result.message || `${synced} contact(s) synced to Google Sheets.`);
     state.modal = {
       title: `${synced} contact${synced === 1 ? "" : "s"} synced to Google Sheets`,
       tone: "info",
-      body: collection ? `The sheet for "${collection.exhibitionName || collection.name}" is up to date.` : "The exhibition sheet is up to date.",
+      body: sheets.length > 1
+        ? `Your selection spans ${sheets.length} exhibitions, so each one's sheet was updated.`
+        : sheets.length === 1
+          ? `The sheet for "${sheets[0].name}" is up to date.`
+          : "The exhibition sheet is up to date.",
+      contentHtml: sheets.length > 1
+        ? `<ul class="dialog-list">${sheets.map((sheet) => `<li><a href="${escapeAttr(sheet.url)}" target="_blank" rel="noopener">${escapeHtml(sheet.name)}</a> — ${sheet.synced} contact(s)</li>`).join("")}</ul>`
+        : "",
       cancelText: "Close",
-      confirmText: sheetUrl ? "Open sheet" : "Done",
+      confirmText: sheets.length === 1 ? "Open sheet" : "Done",
       confirmClass: "primary",
-      onConfirm: () => { if (sheetUrl) window.open(sheetUrl, "_blank", "noopener"); }
+      onConfirm: () => { if (sheets.length === 1) window.open(sheets[0].url, "_blank", "noopener"); }
     };
     render();
   } catch (err) {

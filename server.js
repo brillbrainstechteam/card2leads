@@ -6032,16 +6032,61 @@ async function handleApi(req, res, pathname) {
 
     if (req.method === "POST" && pathname === "/api/google/sync") {
       const body = await readJson(req);
-      const collection = collectionForUser(db, user, body.collectionId);
-      const result = await syncCollectionToGoogle(db, user, collection);
-      audit(db, user, "google.synced", "collection", collection.id, result);
+      const requestedIds = Array.isArray(body.contactIds) ? body.contactIds.map(String).filter(Boolean) : [];
+      // A sheet mirrors one exhibition, so a selection spanning several of them
+      // syncs each exhibition's own sheet rather than forcing everything into
+      // the active one (which would drop the rest of that sheet's contacts).
+      let collections;
+      if (requestedIds.length) {
+        const selected = new Set(requestedIds);
+        const collectionIds = [...new Set(db.contacts
+          .filter((contact) => contact.organisationId === user.organisationId && !contact.deletedAt && selected.has(contact.id))
+          .map((contact) => contact.collectionId)
+          .filter(Boolean))];
+        if (!collectionIds.length) return error(res, 400, "The selected contacts are not part of an exhibition yet.");
+        collections = collectionIds.map((collectionId) => collectionForUser(db, user, collectionId));
+      } else {
+        collections = [collectionForUser(db, user, body.collectionId)];
+      }
+
+      const accessToken = await googleAccessToken(db, user, GOOGLE_SHEETS_SCOPE);
+      const sheets = [];
+      let synced = 0;
+      let failed = 0;
+      for (const collection of collections) {
+        // An exhibition picked up through a selection may not have a sheet yet.
+        if (!collection.spreadsheetId) {
+          const title = String(collection.destinationName || `${collection.exhibitionName || collection.name} Contacts`).trim();
+          const spreadsheet = await createGoogleSpreadsheet(accessToken, title);
+          await writeGoogleHeaders(accessToken, spreadsheet.spreadsheetId);
+          collection.destinationName = title;
+          collection.spreadsheetId = spreadsheet.spreadsheetId;
+          collection.worksheetId = spreadsheet.worksheetId;
+          collection.spreadsheetUrl = spreadsheet.spreadsheetUrl;
+          collection.nextSheetRow = 2;
+        }
+        collection.destinationType = "google";
+        collection.updatedAt = now();
+        const result = await syncCollectionToGoogle(db, user, collection);
+        synced += result.synced || 0;
+        failed += result.failed || 0;
+        sheets.push({
+          collectionId: collection.id,
+          name: collection.exhibitionName || collection.name,
+          url: collection.spreadsheetUrl || (collection.spreadsheetId ? `https://docs.google.com/spreadsheets/d/${collection.spreadsheetId}/edit` : ""),
+          synced: result.synced || 0
+        });
+        audit(db, user, "google.synced", "collection", collection.id, result);
+      }
       await saveDb(db);
       return send(res, 200, {
-        status: result.failed ? "partial" : "synced",
-        ...result,
-        message: result.failed
-          ? `${result.synced} contact(s) synced. ${result.failed} contact(s) failed and remain marked for review.`
-          : `${result.synced} contact(s) synced to Google Sheets.`
+        status: failed ? "partial" : "synced",
+        synced,
+        failed,
+        sheets,
+        message: failed
+          ? `${synced} contact(s) synced. ${failed} contact(s) failed and remain marked for review.`
+          : `${synced} contact(s) synced across ${sheets.length} sheet${sheets.length === 1 ? "" : "s"}.`
       });
     }
 
