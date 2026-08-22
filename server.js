@@ -6476,7 +6476,8 @@ function expandCardPeople(fields) {
   for (const person of people) {
     const numbers = [];
     const seenNumbers = new Set();
-    for (const candidate of [person.mobileNumber, ...splitPhoneValues(person.secondaryMobileNumber)]) {
+    // Both fields can hold several numbers printed with a slash, so split each.
+    for (const candidate of [...splitPhoneValues(person.mobileNumber), ...splitPhoneValues(person.secondaryMobileNumber)]) {
       const value = String(candidate || "").trim();
       const key = normalizeMobile(value);
       if (!value || !key || seenNumbers.has(key)) continue;
