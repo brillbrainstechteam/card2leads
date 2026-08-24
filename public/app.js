@@ -538,80 +538,38 @@ function authView() {
             <h2>Simple plans for every business-card workflow.</h2>
           </div>
         </div>
-        <div class="pricing-tabs" role="tablist" aria-label="Pricing options">
-          <button type="button" class="pricing-tab active" role="tab" aria-selected="true" data-pricing-tab="one-time">Pay once</button>
-          <button type="button" class="pricing-tab" role="tab" aria-selected="false" data-pricing-tab="subscription">Subscribe</button>
-        </div>
         <div class="pricing-panel active" data-pricing-panel="one-time">
           <div class="pricing-grid">
           <article class="price-card">
-            <span class="price-label">Trial</span>
-            <h3>Free</h3>
-            <p>20 card scans to try extraction, review, labels, voice input and export features.</p>
-            <button type="button" class="secondary" data-auth-mode="signup">Sign up</button>
-          </article>
-          <article class="price-card">
-            <span class="price-label">1 month</span>
+            <span class="price-label">Starter Pack</span>
             <h3><span>&#8377;499</span> once</h3>
-            <p>150 card scans valid for 1 month. Pay once with no recurring charge.</p>
+            <p>150 card scans valid for 30 days. Pay once with no recurring charge.</p>
             <span class="plan-cancel">No auto-renewal</span>
-            <button type="button" class="secondary" data-auth-mode="signup" data-plan="monthly" data-billing-mode="one_time">Buy 1 month</button>
+            <button type="button" class="secondary" data-auth-mode="signup" data-plan="monthly" data-billing-mode="one_time">Buy Starter Pack</button>
           </article>
           <article class="price-card featured">
             <span class="popular-badge">Most popular</span>
-            <span class="price-label">3 months</span>
-            <h3><span>&#8377;799</span> once</h3>
-            <p>300 card scans valid for 3 months. Ideal for exhibitions, events and regular lead capture.</p>
+            <span class="price-label">Exhibition Pass</span>
+            <h3><span>&#8377;899</span> once</h3>
+            <p>300 card scans valid for 90 days. Ideal for exhibitions, events and regular lead capture.</p>
             <span class="plan-cancel">No auto-renewal</span>
-            <button type="button" data-auth-mode="signup" data-plan="quarterly" data-billing-mode="one_time">Buy 3 months</button>
+            <button type="button" data-auth-mode="signup" data-plan="quarterly" data-billing-mode="one_time">Buy Exhibition Pass</button>
           </article>
           <article class="price-card">
-            <span class="price-label">1 year</span>
-            <h3><span>&#8377;2,999</span> once</h3>
-            <p>1,500 card scans valid for one year, at the lowest included cost per scan.</p>
+            <span class="popular-badge value-badge">Best value</span>
+            <span class="price-label">Pro Annual</span>
+            <h3><span>&#8377;3,999</span> once</h3>
+            <p>1,500 card scans valid for 12 months, at the lowest included cost per scan.</p>
             <span class="plan-cancel">No auto-renewal</span>
-            <button type="button" class="secondary" data-auth-mode="signup" data-plan="annual" data-billing-mode="one_time">Buy 1 year</button>
+            <button type="button" class="secondary" data-auth-mode="signup" data-plan="annual" data-billing-mode="one_time">Buy Pro Annual</button>
           </article>
-        </div>
-        </div>
-        <div class="pricing-panel" data-pricing-panel="subscription" hidden>
-          <div class="pricing-subscription-block" aria-label="Recurring subscription plans">
-          <div>
-            <p class="section-kicker">Subscription option</p>
-            <h3>Prefer automatic renewal?</h3>
-            <p>Choose the same scan packages as recurring plans. These renew automatically and can be cancelled anytime.</p>
-          </div>
-          <div class="pricing-grid subscription-grid">
-            <article class="price-card compact">
-              <span class="price-label">Monthly</span>
-              <h3><span>&#8377;499</span> / month</h3>
-              <p>150 scans every month.</p>
-              <span class="plan-cancel">Cancel anytime</span>
-              <button type="button" class="secondary" data-auth-mode="signup" data-plan="monthly" data-billing-mode="subscription">Subscribe monthly</button>
-            </article>
-            <article class="price-card compact featured">
-              <span class="popular-badge">Most popular</span>
-              <span class="price-label">Quarterly</span>
-              <h3><span>&#8377;799</span> / 3 months</h3>
-              <p>300 scans every 3 months.</p>
-              <span class="plan-cancel">Cancel anytime</span>
-              <button type="button" class="secondary" data-auth-mode="signup" data-plan="quarterly" data-billing-mode="subscription">Subscribe quarterly</button>
-            </article>
-            <article class="price-card compact">
-              <span class="price-label">Annual</span>
-              <h3><span>&#8377;2,999</span> / year</h3>
-              <p>1,500 scans every year.</p>
-              <span class="plan-cancel">Cancel anytime</span>
-              <button type="button" class="secondary" data-auth-mode="signup" data-plan="annual" data-billing-mode="subscription">Subscribe yearly</button>
-            </article>
-          </div>
         </div>
         </div>
         <aside class="pricing-note" aria-label="Additional scan credits">
           <span class="pricing-note-icon" aria-hidden="true">+</span>
           <div class="pricing-note-copy">
             <strong>Need more scans?</strong>
-            <span>Add 100 extra card scans for <strong>&#8377;499</strong> with any active paid plan.</span>
+            <span>Add 200 extra card scans for <strong>&#8377;499</strong> with any active paid plan.</span>
           </div>
           <button type="button" class="secondary pricing-note-action" data-topup-entry>Add scan credits</button>
         </aside>
@@ -2341,9 +2299,9 @@ function handleScanBlocked(err) {
 
 function showPaymentPrompt(message) {
   const billing = state.overview?.billing || {};
-  const planLabel = { monthly: "1 month", quarterly: "3 months", annual: "1 year" };
+  const planLabel = { monthly: "Starter Pack", quarterly: "Exhibition Pass", annual: "Pro Annual" };
   const scansFor = { monthly: 150, quarterly: 300, annual: 1500 };
-  const priceFor = { monthly: 499, quarterly: 799, annual: 2999 };
+  const priceFor = { monthly: 499, quarterly: 899, annual: 3999 };
   const oneTime = (Array.isArray(billing.oneTimePlans) && billing.oneTimePlans.length
     ? billing.oneTimePlans.map((p) => p.plan)
     : ["monthly", "quarterly", "annual"]);
@@ -2472,6 +2430,7 @@ async function uploadFiles(node) {
   const processingEstimate = node.querySelector("#processingEstimate");
   const processingElapsed = node.querySelector("#processingElapsed");
   const cardCount = state.selectedFiles.length;
+  if (cardCount && !window.confirm(`Read ${cardCount} card${cardCount === 1 ? "" : "s"}?\n\nThis will use ${cardCount} scan credit${cardCount === 1 ? "" : "s"} — one per card. A credit is used whenever a card is sent for reading, including blurry or hard-to-read cards. You won't be charged for an exact re-upload of the same image, an image too small or low-resolution to read, or a failure on our side.`)) return;
   const startedAt = Date.now();
   const preventExit = (event) => {
     event.preventDefault();
@@ -4939,7 +4898,7 @@ function requestTopupPurchase() {
     return;
   }
   if (!billing.canTopup) {
-    const scans = Number(billing.topupScans || 100);
+    const scans = Number(billing.topupScans || 200);
     const amount = Number(billing.topupAmount || 499).toLocaleString("en-IN");
     state.modal = {
       className: "plan-required-dialog",
@@ -4971,7 +4930,7 @@ function requestTopupPurchase() {
     return;
   }
   state.modal = {
-    title: `Add ${Number(billing.topupScans || 100)} scan credits?`,
+    title: `Add ${Number(billing.topupScans || 200)} scan credits?`,
     body: `These credits are added immediately to your active plan after payment is verified.`,
     detail: `One-time payment: ₹${Number(billing.topupAmount || 499).toLocaleString("en-IN")}. This does not start or change a subscription.`,
     cancelText: "Not now",
@@ -5016,6 +4975,47 @@ async function startTopup() {
   }
 }
 
+function supportBlockHtml() {
+  const email = "tech@brillbrainsconsultants.com";
+  return `
+        <div class="account-block">
+          <h3>Help &amp; support</h3>
+          <p class="muted">Email <a href="mailto:${email}">${email}</a> or call <a href="tel:9093400666">9093400666</a> / <a href="tel:9093400777">9093400777</a>.</p>
+          <div class="support-form">
+            <label>Email or phone to reach you<input id="supportContact" type="text" placeholder="you@example.com or 98XXXXXXXX" value="${escapeAttr(state.user?.email || "")}" /></label>
+            <label>Your query<textarea id="supportMessage" rows="4" placeholder="Tell us what you need help with…"></textarea></label>
+            <div class="actions"><button type="button" id="supportSubmit" class="secondary">Send message</button></div>
+            <p id="supportStatus" class="muted" role="status" aria-live="polite"></p>
+          </div>
+        </div>`;
+}
+
+function wireSupportForm(node) {
+  const btn = node.querySelector("#supportSubmit");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    const contact = (node.querySelector("#supportContact")?.value || "").trim();
+    const message = (node.querySelector("#supportMessage")?.value || "").trim();
+    const status = node.querySelector("#supportStatus");
+    if (!contact) { if (status) status.textContent = "Add an email or phone number so we can reply."; return; }
+    if (!message) { if (status) status.textContent = "Please describe your query."; return; }
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = "Sending…";
+    try {
+      await api("/api/support/query", { method: "POST", body: { contact, message, source: "web" } });
+      if (status) status.textContent = "Thanks — your query has been sent to our support team. We'll reply to the contact you provided.";
+      const messageField = node.querySelector("#supportMessage");
+      if (messageField) messageField.value = "";
+    } catch (err) {
+      if (status) status.textContent = err.message || "Could not send right now. Please email or call us instead.";
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  });
+}
+
 function accountView() {
   const google = state.overview?.google || {};
   const usage = state.overview?.usage || {};
@@ -5028,7 +5028,7 @@ function accountView() {
   const periodVerb = billing.mode === "one_time" ? "expires" : "renews";
   const planStatusText = billing.status && billing.status !== "trial"
     ? `Your <strong>${escapeHtml(statusLabel(billing.plan || "trial"))}</strong> plan is <strong>${escapeHtml(statusLabel(billing.status))}</strong>${billing.currentPeriodEnd ? ` &middot; ${periodVerb} ${escapeHtml(displayDate(billing.currentPeriodEnd))}` : ""}.`
-    : "You are on the <strong>Free</strong> plan with 20 scans. Choose a paid plan when you need more.";
+    : "You don't have an active plan yet. Choose a plan below to start scanning.";
   const node = el(`
     <section class="panel account-panel">
       <div class="account-profile-header">
@@ -5048,12 +5048,12 @@ function accountView() {
         <div class="usage-meter"><span style="width:${usagePercent}%"></span></div>
         ${billing.status && billing.status !== "trial"
           ? `<p class="muted">Your <strong>${escapeHtml(statusLabel(billing.plan || "trial"))}</strong> plan is <strong>${escapeHtml(billing.status)}</strong>${billing.currentPeriodEnd ? ` · renews ${escapeHtml(displayDate(billing.currentPeriodEnd))}` : ""}.</p>`
-          : `<p class="muted">You are on the <strong>Free</strong> plan with 20 scans. Choose a paid plan when you need more.</p>`}
+          : `<p class="muted">You don't have an active plan yet. Choose a plan below to start scanning.</p>`}
         ${billing.configured ? `
           <div class="plan-choices">
-            <button type="button" class="secondary" data-subscribe="monthly" ${billing.availablePlans.includes("monthly") ? "" : "disabled"}>Monthly · ₹499 / 150 scans</button>
-            <button type="button" class="secondary" data-subscribe="quarterly" ${billing.availablePlans.includes("quarterly") ? "" : "disabled"}>Quarterly · ₹799 / 300 scans</button>
-            <button type="button" class="secondary" data-subscribe="annual" ${billing.availablePlans.includes("annual") ? "" : "disabled"}>Annual · ₹2,999 / 1,500 scans</button>
+            <button type="button" class="secondary" data-subscribe="monthly" ${billing.availablePlans.includes("monthly") ? "" : "disabled"}>Starter Pack · ₹499 / 150 scans</button>
+            <button type="button" class="secondary" data-subscribe="quarterly" ${billing.availablePlans.includes("quarterly") ? "" : "disabled"}>Exhibition Pass · ₹899 / 300 scans</button>
+            <button type="button" class="secondary" data-subscribe="annual" ${billing.availablePlans.includes("annual") ? "" : "disabled"}>Pro Annual · ₹3,999 / 1,500 scans</button>
           </div>
           <p class="muted">Cancel anytime.</p>
           <div class="actions">
@@ -5101,6 +5101,7 @@ function accountView() {
             <a href="/retention.html" target="_blank"><button class="secondary" type="button">Data retention</button></a>
           </div>
         </div>
+        ${supportBlockHtml()}
         <div class="account-block danger-zone">
           <h3>Delete account</h3>
           <p class="muted">This permanently removes the workspace, contacts, card images, voice recordings and stored Google tokens.</p>
@@ -5125,6 +5126,7 @@ function accountView() {
     render();
   }));
   node.querySelectorAll(".editWhatsappSettings").forEach((btn) => btn.addEventListener("click", showWhatsappSettingsModal));
+  wireSupportForm(node);
   node.querySelector("#deleteAccount").addEventListener("click", () => {
     state.modal = {
       tone: "danger",
@@ -5180,13 +5182,13 @@ function accountBillingView() {
   const periodVerb = billing.mode === "one_time" ? "expires" : "renews";
   const planStatusText = billing.status && billing.status !== "trial"
     ? `Your <strong>${escapeHtml(statusLabel(billing.plan || "trial"))}</strong> plan is <strong>${escapeHtml(statusLabel(billing.status))}</strong>${billing.currentPeriodEnd ? ` &middot; ${periodVerb} ${escapeHtml(displayDate(billing.currentPeriodEnd))}` : ""}.`
-    : "You are on the <strong>Free</strong> plan with 20 scans. Choose a paid plan when you need more.";
+    : "You don't have an active plan yet. Choose a plan below to start scanning.";
   const oneTimeButtons = oneTimePlans.map((item) => `
     <button type="button" class="billing-plan-option ${item.plan === "quarterly" ? "recommended" : ""}" data-one-time-plan="${escapeAttr(item.plan)}">
       ${item.plan === "quarterly" ? `<span class="billing-recommended-label">Most popular</span>` : ""}
-      <span class="billing-plan-name">${escapeHtml(item.months === 12 ? "1 year" : `${item.months} month${item.months > 1 ? "s" : ""}`)}</span>
+      <span class="billing-plan-name">${escapeHtml(item.name || (item.months === 12 ? "1 year" : `${item.months} month${item.months > 1 ? "s" : ""}`))}</span>
       <strong>&#8377;${Number(item.amount).toLocaleString("en-IN")}</strong>
-      <small>${Number(item.scans).toLocaleString("en-IN")} scans &middot; no renewal</small>
+      <small>${Number(item.scans).toLocaleString("en-IN")} scans &middot; ${item.months === 12 ? "12 months" : `${item.months * 30} days`} &middot; no renewal</small>
     </button>
   `).join("");
   const node = el(`
@@ -5225,9 +5227,9 @@ function accountBillingView() {
               <p class="muted">Scans renew automatically. Cancel anytime.</p>
             </div>
             <div class="plan-choices billing-plan-grid">
-              <button type="button" class="billing-plan-option" data-subscribe="monthly" ${billing.availablePlans.includes("monthly") ? "" : "disabled"}><span class="billing-plan-name">Monthly</span><strong>&#8377;499</strong><small>150 scans every month</small></button>
-              <button type="button" class="billing-plan-option recommended" data-subscribe="quarterly" ${billing.availablePlans.includes("quarterly") ? "" : "disabled"}><span class="billing-recommended-label">Most popular</span><span class="billing-plan-name">Quarterly</span><strong>&#8377;799</strong><small>300 scans every 3 months</small></button>
-              <button type="button" class="billing-plan-option" data-subscribe="annual" ${billing.availablePlans.includes("annual") ? "" : "disabled"}><span class="billing-plan-name">Annual</span><strong>&#8377;2,999</strong><small>1,500 scans every year</small></button>
+              <button type="button" class="billing-plan-option" data-subscribe="monthly" ${billing.availablePlans.includes("monthly") ? "" : "disabled"}><span class="billing-plan-name">Starter Pack</span><strong>&#8377;499</strong><small>150 scans every month</small></button>
+              <button type="button" class="billing-plan-option recommended" data-subscribe="quarterly" ${billing.availablePlans.includes("quarterly") ? "" : "disabled"}><span class="billing-recommended-label">Most popular</span><span class="billing-plan-name">Exhibition Pass</span><strong>&#8377;899</strong><small>300 scans every 3 months</small></button>
+              <button type="button" class="billing-plan-option" data-subscribe="annual" ${billing.availablePlans.includes("annual") ? "" : "disabled"}><span class="billing-plan-name">Pro Annual</span><strong>&#8377;3,999</strong><small>1,500 scans every year</small></button>
             </div>
           </div>
           <div class="credit-pack-card ${billing.canTopup ? "available" : "locked"}">
@@ -5286,6 +5288,7 @@ function accountBillingView() {
             <a href="/retention.html" target="_blank"><button class="secondary" type="button">Data retention</button></a>
           </div>
         </div>
+        ${supportBlockHtml()}
         <div class="account-block danger-zone">
           <h3>Delete account</h3>
           <p class="muted">This permanently removes the workspace, contacts, card images, voice recordings and stored Google tokens.</p>
@@ -5312,6 +5315,7 @@ function accountBillingView() {
     render();
   }));
   node.querySelectorAll(".editWhatsappSettings").forEach((btn) => btn.addEventListener("click", showWhatsappSettingsModal));
+  wireSupportForm(node);
   node.querySelector("#deleteAccount").addEventListener("click", () => {
     state.modal = {
       tone: "danger",
@@ -5338,6 +5342,9 @@ function accountBillingView() {
 }
 
 function statusLabel(status) {
+  const planNames = { monthly: "Starter Pack", quarterly: "Exhibition Pass", annual: "Pro Annual" };
+  const key = String(status || "").toLowerCase();
+  if (planNames[key]) return planNames[key];
   return String(status || "").replace(/_/g, " ");
 }
 

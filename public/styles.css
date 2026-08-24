@@ -3907,6 +3907,32 @@ label {
   background: #fff;
 }
 
+.support-form {
+  display: grid;
+  gap: 10px;
+}
+.support-form label {
+  display: grid;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--muted, #5b6472);
+}
+.support-form input,
+.support-form textarea {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+  color: inherit;
+  background: #fff;
+  box-sizing: border-box;
+}
+.support-form textarea {
+  resize: vertical;
+  min-height: 84px;
+}
+
 .danger-zone {
   border-color: #f3b9ae;
   background: #fffafa;

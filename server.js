@@ -149,10 +149,13 @@ const RAZORPAY_PLAN_IDS = {
 };
 // Number of billing cycles a subscription runs before completing.
 const RAZORPAY_TOTAL_COUNTS = { monthly: 12, quarterly: 8, annual: 5 };
-const PLAN_PRICES_PAISE = Object.freeze({ monthly: 49900, quarterly: 79900, annual: 299900 });
+// Public plan names (kept here so web and mobile render the same labels).
+// monthly = Starter Pack, quarterly = Exhibition Pass, annual = Pro Annual.
+const PLAN_DISPLAY_NAMES = Object.freeze({ monthly: "Starter Pack", quarterly: "Exhibition Pass", annual: "Pro Annual" });
+const PLAN_PRICES_PAISE = Object.freeze({ monthly: 49900, quarterly: 89900, annual: 399900 });
 const PLAN_DURATIONS_MONTHS = Object.freeze({ monthly: 1, quarterly: 3, annual: 12 });
 const TOPUP_AMOUNT_PAISE = 49900; // ₹499
-const TOPUP_SCANS = 100;
+const TOPUP_SCANS = 200;
 
 let dbCache = null;
 let pgPool = null;
@@ -1938,6 +1941,45 @@ async function deliverAccountEmail(type, email, link) {
   console.log(`[${type}] ${EMAIL_FROM} -> ${email}: ${link}`);
 }
 
+// Generic transactional email. Reuses the same Resend/SendGrid transport as
+// account email so support queries land in the same inbox pipeline. Falls back
+// to a console log when no provider is configured (local/dev).
+async function sendRawEmail({ to, subject, html, replyTo }) {
+  if (process.env.RESEND_API_KEY) {
+    const payload = { from: EMAIL_FROM, to, subject, html };
+    if (replyTo) payload.reply_to = replyTo;
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) throw new Error(`Email delivery failed (${response.status}).`);
+    return true;
+  }
+  if (process.env.SENDGRID_API_KEY) {
+    const payload = {
+      personalizations: [{ to: [{ email: to }] }],
+      from: { email: EMAIL_FROM },
+      subject,
+      content: [{ type: "text/html", value: html }]
+    };
+    if (replyTo) payload.reply_to = { email: replyTo };
+    const response = await fetch("https://api.sendgrid.com/v3/mail/send", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${process.env.SENDGRID_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) throw new Error(`Email delivery failed (${response.status}).`);
+    return true;
+  }
+  console.log(`[support] ${EMAIL_FROM} -> ${to}: ${subject}\n${html}`);
+  return false;
+}
+
+// Inbox that receives in-app support queries. Every message is prefixed with
+// "Card2Leads Query" in the subject so it can be filtered in the mailbox.
+const SUPPORT_INBOX = process.env.SUPPORT_INBOX || "tech@brillbrainsconsultants.com";
+
 function findCollectionForUser(db, user, requestedId) {
   let collection = requestedId && db.collections.find((c) => c.id === requestedId && c.organisationId === user.organisationId && c.status !== "deleted");
   if (!collection) {
@@ -2085,6 +2127,7 @@ function topupUnavailableReason(organisation) {
 function oneTimePlanOptions() {
   return Object.keys(PLAN_DURATIONS_MONTHS).map((plan) => ({
     plan,
+    name: PLAN_DISPLAY_NAMES[plan] || plan,
     months: PLAN_DURATIONS_MONTHS[plan],
     scans: PLAN_LIMITS[plan],
     amount: PLAN_PRICES_PAISE[plan] / 100
@@ -2255,6 +2298,26 @@ function applyCardImageRetention(db) {
       }
       card.storagePurgedAt = now();
       card.storageUrl = "";
+      changed = true;
+    }
+  }
+  // Voice notes: the transcript and structured follow-up fields are kept
+  // permanently, but the raw audio file is only needed transiently. Purge the
+  // audio once it passes the same retention window as card images so voice
+  // recordings do not accumulate unbounded storage.
+  for (const note of (db.voiceNotes || [])) {
+    if (note.audioPurgedAt || !note.audioPath) continue;
+    const org = orgs.get(note.organisationId);
+    const days = retentionDays(org?.retentionPolicy);
+    const createdAt = new Date(note.createdAt || 0).getTime();
+    const expired = createdAt && Date.now() - createdAt > days * 24 * 60 * 60 * 1000;
+    if (expired) {
+      try {
+        if (fs.existsSync(note.audioPath)) fs.unlinkSync(note.audioPath);
+      } catch (err) {
+        console.error("Unable to purge retained voice audio:", err.message);
+      }
+      note.audioPurgedAt = now();
       changed = true;
     }
   }
@@ -5757,6 +5820,35 @@ async function handleApi(req, res, pathname) {
         catalogueUrl: organisation.whatsappCatalogueUrl,
         defaultTemplateId: organisation.whatsappDefaultTemplateId
       });
+    }
+
+    if (req.method === "POST" && pathname === "/api/support/query") {
+      const body = await readJson(req);
+      const contact = String(body.contact || "").trim().slice(0, 200);
+      const message = String(body.message || "").trim().slice(0, 4000);
+      if (!contact) return error(res, 400, "Add an email or phone number so we can reply.");
+      if (!message) return error(res, 400, "Please describe your query.");
+      const organisation = db.organisations.find((o) => o.id === user.organisationId);
+      const esc = (value) => String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      const subject = `Card2Leads Query · ${organisation?.name || "Workspace"}`;
+      const html = `
+        <h3>New Card2Leads support query</h3>
+        <p><strong>From:</strong> ${esc(user.name)} (${esc(user.email)})</p>
+        <p><strong>Workspace:</strong> ${esc(organisation?.name || "")}${organisation?.plan ? ` &middot; plan ${esc(organisation.plan)}` : ""}</p>
+        <p><strong>Reply to:</strong> ${esc(contact)}</p>
+        <p><strong>Source:</strong> ${esc(String(body.source || "app").slice(0, 40))}</p>
+        <hr />
+        <p style="white-space:pre-wrap">${esc(message)}</p>
+      `;
+      let delivered = false;
+      try {
+        delivered = await sendRawEmail({ to: SUPPORT_INBOX, subject, html, replyTo: /@/.test(contact) ? contact : undefined });
+      } catch (err) {
+        console.error("[support] query email failed:", err.message);
+      }
+      audit(db, user, "support.query_submitted", "organisation", user.organisationId, { delivered, contact });
+      await saveDb(db);
+      return send(res, 200, { ok: true, delivered });
     }
 
     if (req.method === "POST" && pathname === "/api/team") {
