@@ -4620,8 +4620,16 @@ async function handleApi(req, res, pathname) {
       if (!code || !returnedState || returnedState !== expectedState) {
         return redirect(res, "/?auth=google_failed");
       }
-      const tokens = await exchangeGoogleCode(code, googleLoginRedirectUri(req));
-      const profile = await fetchGoogleProfile(tokens.access_token);
+      let tokens, profile;
+      try {
+        tokens = await exchangeGoogleCode(code, googleLoginRedirectUri(req));
+        profile = await fetchGoogleProfile(tokens.access_token);
+      } catch (err) {
+        // Most often a redirect_uri mismatch (http vs https / wrong host) or an
+        // expired code. Redirect to a visible error instead of hanging blank.
+        console.error("[google-login] token exchange failed:", err.message, "redirect_uri:", googleLoginRedirectUri(req));
+        return redirect(res, "/?auth=google_failed");
+      }
       if (!profile.email || profile.email_verified !== true || !profile.sub) return redirect(res, "/?auth=google_failed");
       const googleEmail = String(profile.email).trim().toLowerCase();
       let user = db.users.find((u) => u.googleSubject === profile.sub);
@@ -4997,8 +5005,14 @@ async function handleApi(req, res, pathname) {
       }
       if (!code) return error(res, 400, "Google did not return an authorization code.");
       const feature = session.googleOAuthFeature === "contacts" ? "contacts" : "sheets";
-      const tokens = await exchangeGoogleCode(code, googleRedirectUri(req));
-      const profile = await fetchGoogleProfile(tokens.access_token);
+      let tokens, profile;
+      try {
+        tokens = await exchangeGoogleCode(code, googleRedirectUri(req));
+        profile = await fetchGoogleProfile(tokens.access_token);
+      } catch (err) {
+        console.error("[google-connect] token exchange failed:", err.message, "redirect_uri:", googleRedirectUri(req));
+        return redirect(res, "/?google=failed#contacts/sheets");
+      }
       let connection = activeGoogleConnection(db, user);
       if (!connection) {
         connection = {
@@ -6886,7 +6900,11 @@ function selectedExportIds(url) {
 }
 
 function googleRedirectUri(req) {
-  return process.env.GOOGLE_REDIRECT_URI || `http://${req.headers.host}/api/google/callback`;
+  // Mirror googleLoginRedirectUri: fall back to baseUrl(req) (which honors
+  // APP_BASE_URL / x-forwarded-proto) instead of a hardcoded http:// origin,
+  // so the redirect_uri is https behind a TLS-terminating proxy and matches
+  // the URI registered in the Google OAuth client.
+  return process.env.GOOGLE_REDIRECT_URI || `${baseUrl(req)}/api/google/callback`;
 }
 
 function googleLoginRedirectUri(req) {
