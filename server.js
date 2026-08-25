@@ -4765,7 +4765,7 @@ async function handleApi(req, res, pathname) {
     // the app hand-off can be tested on its own, away from the OAuth flow.
     // Chrome will not open a typed custom-scheme URL, so a real tappable link is
     // the only way to exercise it. Safe: the code is never a valid grant.
-    if (req.method === "GET" && pathname === "/deeplink-test") {
+    if (req.method === "GET" && pathname === "/api/deeplink-test") {
       console.log("[deeplink-test] serving bridge page with a throwaway code");
       return sendDeepLinkBridge(res, "easysave://auth?code=deeplinktest123");
     }
