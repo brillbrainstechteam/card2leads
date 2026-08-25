@@ -1777,8 +1777,61 @@ function currentSession(req, db) {
 }
 
 function redirect(res, location) {
+  // Chrome / Android Custom Tabs block a plain 302 to a custom scheme when there
+  // was no user gesture, which leaves the in-app browser stuck on a blank page.
+  // Hand those off through an HTML bridge instead (auto-attempt + tappable link).
+  if (/^easysave:\/\//i.test(String(location))) return sendDeepLinkBridge(res, location);
   res.writeHead(302, { Location: location });
   res.end();
+}
+
+// Returns the app deep link as a real HTML page. The script attempts the launch
+// immediately, and the button gives the user-gesture fallback that Custom Tabs
+// always honours, so sign-in never dead-ends on a blank screen.
+function sendDeepLinkBridge(res, deepLink, extraHeaders = {}) {
+  const href = String(deepLink)
+    .replace(/&/g, "&amp;").replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const js = JSON.stringify(String(deepLink));
+  const failed = /=failed\b/i.test(String(deepLink));
+  const heading = failed ? "Could not complete" : "All done";
+  const detail = failed
+    ? "Returning you to Card2Leads so you can try again. If nothing happens, tap the button below."
+    : "Returning you to Card2Leads. If nothing happens, tap the button below.";
+  const html = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Returning to Card2Leads…</title>
+<style>
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background:#1B2942;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:24px}
+  .box{text-align:center;max-width:340px}
+  h1{font-size:19px;margin:0 0 8px}
+  p{font-size:14px;line-height:20px;color:#C9D2E0;margin:0 0 22px}
+  a{display:inline-block;background:#D6B25E;color:#1B2942;text-decoration:none;
+    font-weight:700;font-size:15px;padding:14px 26px;border-radius:10px}
+</style></head>
+<body><div class="box">
+  <h1>${heading}</h1>
+  <p>${detail}</p>
+  <a id="go" href="${href}">Open Card2Leads</a>
+</div>
+<script>
+  (function () {
+    var target = ${js};
+    try { window.location.replace(target); } catch (e) {}
+    setTimeout(function () { try { window.location.href = target; } catch (e) {} }, 400);
+  })();
+</script>
+</body></html>`;
+  const payload = Buffer.from(html, "utf8");
+  res.writeHead(200, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Length": payload.length,
+    "Cache-Control": "no-store",
+    ...extraHeaders
+  });
+  res.end(payload);
 }
 
 function send(res, status, body, headers = {}) {
@@ -4684,15 +4737,13 @@ async function handleApi(req, res, pathname) {
           expiresAt: Date.now() + 2 * 60 * 1000
         });
         await saveDb(db);
-        console.log("[google-login] success — redirecting to easysave://auth deep link (mobile)");
-        res.writeHead(302, {
-          Location: `easysave://auth?code=${encodeURIComponent(mobileCode)}`,
+        console.log("[google-login] success — handing off to easysave://auth deep link (mobile)");
+        return sendDeepLinkBridge(res, `easysave://auth?code=${encodeURIComponent(mobileCode)}`, {
           "Set-Cookie": [
             tempCookie(req, "google_login_state", "", 0),
             tempCookie(req, "google_login_mobile", "", 0)
           ]
         });
-        return res.end();
       }
       await createSession(req, res, db, user, existingAccount ? "/?auth=google_existing" : "/?auth=google_ok", [
         tempCookie(req, "google_login_state", "", 0),
