@@ -1819,8 +1819,15 @@ function sendDeepLinkBridge(res, deepLink, extraHeaders = {}) {
 <script>
   (function () {
     var target = ${js};
+    // Attempt the hand-off at most once per code. Without this guard the page
+    // re-fires when the browser regains focus after the app opens, which
+    // bounces the user between the browser and the app in a loop.
+    try {
+      if (sessionStorage.getItem('c2l_deeplink') === target) return;
+      sessionStorage.setItem('c2l_deeplink', target);
+    } catch (e) {}
+    if (document.visibilityState !== 'visible') return;
     try { window.location.replace(target); } catch (e) {}
-    setTimeout(function () { try { window.location.href = target; } catch (e) {} }, 400);
   })();
 </script>
 </body></html>`;
