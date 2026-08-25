@@ -4929,6 +4929,7 @@ async function handleApi(req, res, pathname) {
           );
           connection.status = "active";
           connection.updatedAt = now();
+          markGoogleFeatureConnected(db, mobileUser, connection.scopes);
           audit(db, mobileUser, "google.connected", "google_connection", connection.id, {
             googleEmail: connection.googleEmail,
             source: "mobile"
@@ -5188,6 +5189,7 @@ async function handleApi(req, res, pathname) {
       );
       connection.status = "active";
       connection.updatedAt = now();
+      markGoogleFeatureConnected(db, user, connection.scopes);
       delete session.googleOAuthState;
       delete session.googleOAuthCreatedAt;
       delete session.googleOAuthFeature;
@@ -6207,7 +6209,24 @@ async function handleApi(req, res, pathname) {
     }
 
     if (req.method === "POST" && pathname === "/api/google/disconnect") {
+      const disconnectBody = await readJson(req).catch(() => ({}));
+      const feature = disconnectBody.feature === "sheets" || disconnectBody.feature === "contacts" ? disconnectBody.feature : "";
       const connection = activeGoogleConnection(db, user);
+      // Sheets and Contacts share one Google authorisation. Dropping a single
+      // feature keeps the other working by removing only its scopes; the grant
+      // itself is revoked once nothing is using it any more.
+      if (connection && feature) {
+        const drop = feature === "contacts" ? GOOGLE_CONTACTS_SCOPE : GOOGLE_SHEETS_SCOPE;
+        const kept = String(connection.scopes || "").split(/\s+/).filter((scope) => scope && scope !== drop);
+        const stillUsed = kept.some((scope) => scope === GOOGLE_SHEETS_SCOPE || scope === GOOGLE_CONTACTS_SCOPE);
+        if (stillUsed) {
+          connection.scopes = kept.join(" ");
+          connection.updatedAt = now();
+          audit(db, user, "google.feature_disconnected", "google_connection", connection.id, { feature });
+          await saveDb(db);
+          return send(res, 200, { ok: true, google: googleStatus(db, user) });
+        }
+      }
       if (connection) {
         const refreshToken = decryptSecret(connection.encryptedRefreshToken);
         connection.status = "disconnected";
@@ -7100,12 +7119,24 @@ function mergeGoogleScopes(...scopeValues) {
   )].join(" ");
 }
 
+// Remembering that a feature was connected once lets the UI offer "Reconnect"
+// rather than "Connect" after someone disconnects it.
+function markGoogleFeatureConnected(db, user, scopes) {
+  const organisation = db.organisations.find((o) => o.id === user.organisationId);
+  if (!organisation) return;
+  const value = String(scopes || "");
+  if (value.includes(GOOGLE_SHEETS_SCOPE)) organisation.googleSheetsEverConnected = true;
+  if (value.includes(GOOGLE_CONTACTS_SCOPE)) organisation.googleContactsEverConnected = true;
+  organisation.updatedAt = now();
+}
+
 function activeGoogleConnection(db, user) {
   return db.googleConnections.find((c) => c.organisationId === user.organisationId && c.status === "active") || null;
 }
 
 function googleStatus(db, user) {
   const connection = user ? activeGoogleConnection(db, user) : null;
+  const organisation = user ? db.organisations.find((o) => o.id === user.organisationId) : null;
   const scopes = connection?.scopes || "";
   return {
     configured: googleConfigured(),
@@ -7114,6 +7145,8 @@ function googleStatus(db, user) {
     contactsConnected: Boolean(connection && scopes.includes(GOOGLE_CONTACTS_SCOPE)),
     googleEmail: connection?.googleEmail || "",
     needsReconnect: Boolean(connection && !scopes.includes(GOOGLE_SHEETS_SCOPE)),
+    sheetsEverConnected: Boolean(organisation?.googleSheetsEverConnected),
+    contactsEverConnected: Boolean(organisation?.googleContactsEverConnected),
     openAiConfigured: Boolean(process.env.OPENAI_API_KEY),
     geminiConfigured: Boolean(process.env.GEMINI_API_KEY),
     extractionProvider: process.env.GEMINI_API_KEY ? "gemini" : process.env.OPENAI_API_KEY ? "openai" : "manual"
