@@ -5998,7 +5998,8 @@ async function handleApi(req, res, pathname) {
       if (!message) return error(res, 400, "Please describe your query.");
       const organisation = db.organisations.find((o) => o.id === user.organisationId);
       const esc = (value) => String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      const subject = `Card2Leads Query · ${organisation?.name || "Workspace"}`;
+      const preview = message.replace(/\s+/g, " ").slice(0, 60);
+      const subject = `Card2Leads Query · ${organisation?.name || "Workspace"} · ${preview}${message.length > 60 ? "…" : ""}`;
       const html = `
         <h3>New Card2Leads support query</h3>
         <p><strong>From:</strong> ${esc(user.name)} (${esc(user.email)})</p>
@@ -6006,7 +6007,8 @@ async function handleApi(req, res, pathname) {
         <p><strong>Reply to:</strong> ${esc(contact)}</p>
         <p><strong>Source:</strong> ${esc(String(body.source || "app").slice(0, 40))}</p>
         <hr />
-        <p style="white-space:pre-wrap">${esc(message)}</p>
+        <p><strong>Message:</strong></p>
+        <div style="white-space:pre-wrap;border-left:3px solid #D6B25E;padding:8px 12px;background:#FAFAFA">${esc(message)}</div>
       `;
       let delivered = false;
       try {
