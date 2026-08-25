@@ -4734,7 +4734,9 @@ async function handleApi(req, res, pathname) {
         const mobileCode = randomToken("mob");
         mobileAuthCodes.set(mobileCode, {
           userId: user.id,
-          expiresAt: Date.now() + 2 * 60 * 1000
+          // The deep-link bridge adds a user tap between issuing and redeeming
+          // this code, so a 2-minute window was easy to miss. Still single-use.
+          expiresAt: Date.now() + 10 * 60 * 1000
         });
         await saveDb(db);
         console.log("[google-login] success — handing off to easysave://auth deep link (mobile)");
@@ -4753,14 +4755,28 @@ async function handleApi(req, res, pathname) {
     }
 
     if (req.method === "POST" && pathname === "/api/auth/mobile/exchange") {
-      if (!rateLimit(req, res, "auth-mobile-exchange", 12, 15 * 60 * 1000)) return;
+      // Raised from 12: a user retrying sign-in a few times (or the bridge page
+      // delivering the link twice) could otherwise exhaust the window and get
+      // locked out of signing in entirely.
+      if (!rateLimit(req, res, "auth-mobile-exchange", 40, 15 * 60 * 1000)) {
+        console.error("[mobile-exchange] rate limited — sign-in blocked for this client");
+        return;
+      }
       const body = await readJson(req);
       const code = String(body.code || "");
       const grant = mobileAuthCodes.get(code);
       mobileAuthCodes.delete(code);
-      if (!grant || grant.expiresAt < Date.now()) return error(res, 400, "This mobile sign-in request has expired. Please try again.");
+      console.log("[mobile-exchange] attempt", { hasCode: Boolean(code), knownCode: Boolean(grant), expired: grant ? grant.expiresAt < Date.now() : null, codesInStore: mobileAuthCodes.size });
+      if (!grant || grant.expiresAt < Date.now()) {
+        console.error("[mobile-exchange] rejected:", !grant ? "code not found in this process (already used, or issued by another instance / before a restart)" : "code expired");
+        return error(res, 400, "This mobile sign-in request has expired. Please try again.");
+      }
       const user = db.users.find((candidate) => candidate.id === grant.userId && candidate.status === "active");
-      if (!user) return error(res, 400, "This account is not available.");
+      if (!user) {
+        console.error("[mobile-exchange] rejected: user not found or inactive");
+        return error(res, 400, "This account is not available.");
+      }
+      console.log("[mobile-exchange] success — creating session for", user.email);
       return await createSession(req, res, db, user);
     }
 
