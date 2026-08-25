@@ -4617,7 +4617,9 @@ async function handleApi(req, res, pathname) {
       const returnedState = url.searchParams.get("state");
       const expectedState = parseCookies(req).google_login_state;
       const mobileLogin = parseCookies(req).google_login_mobile === "1";
+      console.log("[google-login] callback hit", { hasCode: Boolean(code), returnedState: returnedState ? "yes" : "no", expectedState: expectedState ? "yes" : "no", stateMatch: Boolean(returnedState) && returnedState === expectedState, mobileLogin });
       if (!code || !returnedState || returnedState !== expectedState) {
+        console.error("[google-login] state check failed — cookie likely dropped on the cross-site redirect back from Google");
         return redirect(res, "/?auth=google_failed");
       }
       let tokens, profile;
@@ -4682,6 +4684,7 @@ async function handleApi(req, res, pathname) {
           expiresAt: Date.now() + 2 * 60 * 1000
         });
         await saveDb(db);
+        console.log("[google-login] success — redirecting to easysave://auth deep link (mobile)");
         res.writeHead(302, {
           Location: `easysave://auth?code=${encodeURIComponent(mobileCode)}`,
           "Set-Cookie": [
