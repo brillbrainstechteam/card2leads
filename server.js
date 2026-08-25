@@ -4800,8 +4800,13 @@ async function handleApi(req, res, pathname) {
       if (!grant || grant.expiresAt < Date.now()) return redirect(res, "/#account");
       const checkoutUser = db.users.find((candidate) => candidate.id === grant.userId && candidate.status === "active");
       if (!checkoutUser) return redirect(res, "/#account");
-      console.log("[checkout] opening web checkout as", checkoutUser.email);
-      return await createSession(req, res, db, checkoutUser, "/#account");
+      console.log("[checkout] opening web checkout as", checkoutUser.email, grant.plan || grant.topup ? `(${grant.plan || "top-up"})` : "");
+      const target = grant.topup
+        ? "/?checkoutTopup=1#account"
+        : grant.plan
+          ? `/?checkoutPlan=${encodeURIComponent(grant.plan)}#account`
+          : "/#account";
+      return await createSession(req, res, db, checkoutUser, target);
     }
 
     // Mints the hand-off reference the app polls with. Server-generated so the
@@ -5953,8 +5958,10 @@ async function handleApi(req, res, pathname) {
     // so a template written on the office laptop is there for every user on the
     // stall — and on every device they pick up.
     if (req.method === "POST" && pathname === "/api/billing/checkout-link") {
+      const linkBody = await readJson(req).catch(() => ({}));
+      const wantedPlan = Object.keys(PLAN_DURATIONS_MONTHS).includes(String(linkBody.plan || "")) ? String(linkBody.plan) : "";
       const token = randomToken("cko");
-      checkoutHandoffs.set(token, { userId: user.id, expiresAt: Date.now() + 5 * 60 * 1000 });
+      checkoutHandoffs.set(token, { userId: user.id, plan: wantedPlan, topup: Boolean(linkBody.topup), expiresAt: Date.now() + 5 * 60 * 1000 });
       return send(res, 200, { url: `${baseUrl(req)}/api/billing/checkout?token=${encodeURIComponent(token)}` });
     }
 

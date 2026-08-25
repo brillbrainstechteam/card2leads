@@ -187,6 +187,8 @@ async function init() {
     state.authMode = "reset";
     state.authOpen = true;
   }
+  const checkoutPlan = url.searchParams.get("checkoutPlan") || "";
+  const checkoutTopup = url.searchParams.get("checkoutTopup") === "1";
   const authNotice = url.searchParams.get("auth");
   if (authNotice === "verify_failed" || authNotice === "google_failed") state.authOpen = true;
   if (authNotice === "verified") state.authInfo = "Email verified. You are signed in. Complete the workspace setup to start scanning cards.";
@@ -212,6 +214,10 @@ async function init() {
     window.history.replaceState({}, "", `${window.location.pathname}${routeForView()}`);
   }
   render();
+  // Arriving from the app's checkout link: open the payment the user already
+  // chose there, instead of making them find and pick the plan again.
+  if (state.user && checkoutPlan) setTimeout(() => { startOneTimePlan(checkoutPlan); }, 250);
+  else if (state.user && checkoutTopup) setTimeout(() => { startTopup(); }, 250);
 }
 
 window.addEventListener("popstate", () => applyRouteFromLocation());
