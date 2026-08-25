@@ -166,6 +166,10 @@ const mobileAuthCodes = new Map();
 // browser and then polls /api/auth/mobile/claim for the finished session, so
 // sign-in no longer depends on the easysave:// deep link reaching the app.
 const mobileHandoffs = new Map();
+// One-time tokens that carry a signed-in mobile user into the web checkout, so
+// the browser lands on THEIR account instead of whoever was last signed in
+// there. Single-use and short-lived.
+const checkoutHandoffs = new Map();
 // Short-lived Google OAuth state for the mobile connect flow: state -> { userId,
 // feature, createdAt }. Held in memory (like otpStore/mobileAuthCodes) rather
 // than on the session, because persisting it would rewrite the whole database
@@ -4785,6 +4789,21 @@ async function handleApi(req, res, pathname) {
       return sendDeepLinkBridge(res, "easysave://auth?code=deeplinktest123");
     }
 
+    // Opens web checkout as the mobile user. The app's session cookie lives in
+    // its own cookie jar, so without this the browser would show whichever
+    // account it happened to be signed into — and payment could land on the
+    // wrong workspace.
+    if (req.method === "GET" && pathname === "/api/billing/checkout") {
+      const token = String(new URL(req.url, `http://${req.headers.host}`).searchParams.get("token") || "");
+      const grant = checkoutHandoffs.get(token);
+      if (grant) checkoutHandoffs.delete(token);
+      if (!grant || grant.expiresAt < Date.now()) return redirect(res, "/#account");
+      const checkoutUser = db.users.find((candidate) => candidate.id === grant.userId && candidate.status === "active");
+      if (!checkoutUser) return redirect(res, "/#account");
+      console.log("[checkout] opening web checkout as", checkoutUser.email);
+      return await createSession(req, res, db, checkoutUser, "/#account");
+    }
+
     // Mints the hand-off reference the app polls with. Server-generated so the
     // token is cryptographically random rather than guessable.
     if (req.method === "POST" && pathname === "/api/auth/mobile/handoff") {
@@ -5933,6 +5952,12 @@ async function handleApi(req, res, pathname) {
     // WhatsApp outreach settings live on the organisation, not in the browser,
     // so a template written on the office laptop is there for every user on the
     // stall — and on every device they pick up.
+    if (req.method === "POST" && pathname === "/api/billing/checkout-link") {
+      const token = randomToken("cko");
+      checkoutHandoffs.set(token, { userId: user.id, expiresAt: Date.now() + 5 * 60 * 1000 });
+      return send(res, 200, { url: `${baseUrl(req)}/api/billing/checkout?token=${encodeURIComponent(token)}` });
+    }
+
     if (req.method === "PUT" && pathname === "/api/settings/whatsapp") {
       const organisation = db.organisations.find((o) => o.id === user.organisationId);
       if (!organisation) return error(res, 404, "Workspace not found.");
