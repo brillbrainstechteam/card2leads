@@ -189,6 +189,9 @@ async function init() {
   }
   const checkoutPlan = url.searchParams.get("checkoutPlan") || "";
   const checkoutTopup = url.searchParams.get("checkoutTopup") === "1";
+  // Arriving to pay: pull the checkout script now, in parallel with sign-in and
+  // the workspace load, so it is cached by the time the payment opens.
+  if (checkoutPlan || checkoutTopup) void loadRazorpay().catch(() => {});
   const authNotice = url.searchParams.get("auth");
   if (authNotice === "verify_failed" || authNotice === "google_failed") state.authOpen = true;
   if (authNotice === "verified") state.authInfo = "Email verified. You are signed in. Complete the workspace setup to start scanning cards.";
@@ -216,8 +219,8 @@ async function init() {
   render();
   // Arriving from the app's checkout link: open the payment the user already
   // chose there, instead of making them find and pick the plan again.
-  if (state.user && checkoutPlan) setTimeout(() => { startOneTimePlan(checkoutPlan); }, 250);
-  else if (state.user && checkoutTopup) setTimeout(() => { startTopup(); }, 250);
+  if (state.user && checkoutPlan) void startOneTimePlan(checkoutPlan);
+  else if (state.user && checkoutTopup) void startTopup();
 }
 
 window.addEventListener("popstate", () => applyRouteFromLocation());
@@ -4860,8 +4863,12 @@ async function startSubscription(plan) {
 
 async function startOneTimePlan(plan) {
   try {
-    const Razorpay = await loadRazorpay();
-    const order = await api("/api/billing/one-time", { method: "POST", body: { plan } });
+    // Fetch the checkout script and create the order together: they do not
+    // depend on each other, and serialising them doubled the wait.
+    const [Razorpay, order] = await Promise.all([
+      loadRazorpay(),
+      api("/api/billing/one-time", { method: "POST", body: { plan } })
+    ]);
     const rzp = new Razorpay({
       key: order.keyId,
       order_id: order.orderId,
@@ -4945,8 +4952,10 @@ function requestTopupPurchase() {
 
 async function startTopup() {
   try {
-    const Razorpay = await loadRazorpay();
-    const order = await api("/api/billing/topup", { method: "POST", body: {} });
+    const [Razorpay, order] = await Promise.all([
+      loadRazorpay(),
+      api("/api/billing/topup", { method: "POST", body: {} })
+    ]);
     const rzp = new Razorpay({
       key: order.keyId,
       order_id: order.orderId,
