@@ -162,6 +162,10 @@ let pgPool = null;
 let geminiUnavailableUntil = 0;
 const rateLimitBuckets = new Map();
 const mobileAuthCodes = new Map();
+// Sign-in hand-offs for mobile. The app generates a token before opening the
+// browser and then polls /api/auth/mobile/claim for the finished session, so
+// sign-in no longer depends on the easysave:// deep link reaching the app.
+const mobileHandoffs = new Map();
 // Short-lived Google OAuth state for the mobile connect flow: state -> { userId,
 // feature, createdAt }. Held in memory (like otpStore/mobileAuthCodes) rather
 // than on the session, because persisting it would rewrite the whole database
@@ -4654,6 +4658,7 @@ async function handleApi(req, res, pathname) {
       if (!googleConfigured()) return error(res, 400, "Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to .env before Google login.");
       const oauthState = randomToken("glg");
       const mobileLogin = new URL(req.url, `http://${req.headers.host}`).searchParams.get("mobile") === "1";
+      const handoff = String(new URL(req.url, `http://${req.headers.host}`).searchParams.get("handoff") || "").slice(0, 80);
       const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
       authUrl.searchParams.set("client_id", process.env.GOOGLE_CLIENT_ID);
       authUrl.searchParams.set("redirect_uri", googleLoginRedirectUri(req));
@@ -4665,7 +4670,8 @@ async function handleApi(req, res, pathname) {
         Location: authUrl.toString(),
         "Set-Cookie": [
           tempCookie(req, "google_login_state", oauthState, 10 * 60),
-          tempCookie(req, "google_login_mobile", mobileLogin ? "1" : "", 10 * 60)
+          tempCookie(req, "google_login_mobile", mobileLogin ? "1" : "", 10 * 60),
+          tempCookie(req, "google_login_handoff", handoff, 10 * 60)
         ]
       });
       return res.end();
@@ -4746,11 +4752,17 @@ async function handleApi(req, res, pathname) {
           expiresAt: Date.now() + 10 * 60 * 1000
         });
         await saveDb(db);
+        const handoffToken = parseCookies(req).google_login_handoff || "";
+        if (handoffToken) {
+          mobileHandoffs.set(handoffToken, { userId: user.id, expiresAt: Date.now() + 10 * 60 * 1000 });
+          console.log("[google-login] recorded hand-off for polling claim");
+        }
         console.log("[google-login] success — handing off to easysave://auth deep link (mobile)");
         return sendDeepLinkBridge(res, `easysave://auth?code=${encodeURIComponent(mobileCode)}`, {
           "Set-Cookie": [
             tempCookie(req, "google_login_state", "", 0),
-            tempCookie(req, "google_login_mobile", "", 0)
+            tempCookie(req, "google_login_mobile", "", 0),
+            tempCookie(req, "google_login_handoff", "", 0)
           ]
         });
       }
@@ -4768,6 +4780,34 @@ async function handleApi(req, res, pathname) {
     if (req.method === "GET" && pathname === "/api/deeplink-test") {
       console.log("[deeplink-test] serving bridge page with a throwaway code");
       return sendDeepLinkBridge(res, "easysave://auth?code=deeplinktest123");
+    }
+
+    // Mints the hand-off reference the app polls with. Server-generated so the
+    // token is cryptographically random rather than guessable.
+    if (req.method === "POST" && pathname === "/api/auth/mobile/handoff") {
+      if (!rateLimit(req, res, "auth-mobile-handoff", 60, 15 * 60 * 1000)) return;
+      return send(res, 200, { handoff: randomToken("hof") });
+    }
+
+    // The app polls this after opening the sign-in browser. Returns the session
+    // as soon as Google's callback has completed, so a failed deep-link
+    // hand-off can no longer strand the user on the login screen.
+    if (req.method === "POST" && pathname === "/api/auth/mobile/claim") {
+      if (!rateLimit(req, res, "auth-mobile-claim", 400, 15 * 60 * 1000)) return;
+      const body = await readJson(req);
+      const handoff = String(body.handoff || "").slice(0, 80);
+      if (!handoff) return error(res, 400, "Missing sign-in reference.");
+      const grant = mobileHandoffs.get(handoff);
+      if (!grant) return send(res, 200, { pending: true });
+      if (grant.expiresAt < Date.now()) {
+        mobileHandoffs.delete(handoff);
+        return error(res, 400, "This sign-in request has expired. Please try again.");
+      }
+      mobileHandoffs.delete(handoff);
+      const claimUser = db.users.find((candidate) => candidate.id === grant.userId && candidate.status === "active");
+      if (!claimUser) return error(res, 400, "This account is not available.");
+      console.log("[mobile-claim] success — creating session for", claimUser.email);
+      return await createSession(req, res, db, claimUser);
     }
 
     if (req.method === "POST" && pathname === "/api/auth/mobile/exchange") {
