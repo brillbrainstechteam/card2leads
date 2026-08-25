@@ -2319,16 +2319,12 @@ function showPaymentPrompt(message) {
     tone: "warn",
     className: "payment-modal",
     title: "Activate a plan to start scanning",
-    body: message || "You've used up your free access. Choose a one-time pack or a subscription to keep scanning.",
+    body: message || "Choose a plan to keep scanning.",
     contentHtml: `
       <div class="pay-groups">
         <div class="pay-group">
-          <div class="pay-group-head"><span class="pay-group-name">Pay once</span><span class="pay-group-tag">no auto-renewal</span></div>
+          <div class="pay-group-head"><span class="pay-group-name">Choose a plan</span><span class="pay-group-tag">pay once &middot; no auto-renewal</span></div>
           <div class="pay-options">${oneTime.map((p) => optionBtn(p, "data-pay-once")).join("")}</div>
-        </div>
-        <div class="pay-group">
-          <div class="pay-group-head"><span class="pay-group-name">Subscribe</span><span class="pay-group-tag">auto-renews &middot; cancel anytime</span></div>
-          <div class="pay-options">${subs.map((p) => optionBtn(p, "data-subscribe-plan")).join("")}</div>
         </div>
       </div>`,
     actions: [{ label: "See full pricing", className: "secondary", onClick: () => navigateToView("account") }],
@@ -4922,7 +4918,7 @@ function requestTopupPurchase() {
         {
           label: "Choose a plan",
           className: "primary",
-          onClick: () => setTimeout(() => document.querySelector(".billing-mode-tabs")?.scrollIntoView({ behavior: "smooth", block: "center" }), 120)
+          onClick: () => setTimeout(() => document.querySelector(".billing-plan-grid")?.scrollIntoView({ behavior: "smooth", block: "center" }), 120)
         }
       ]
     };
@@ -5210,27 +5206,12 @@ function accountBillingView() {
         <div class="usage-meter"><span style="width:${usagePercent}%"></span></div>
         <p class="muted">${planStatusText}</p>
         ${billing.configured ? `
-          <div class="billing-mode-tabs" role="tablist" aria-label="Billing options">
-            <button type="button" class="active" role="tab" aria-selected="true" data-account-billing-tab="one-time">Pay once</button>
-            <button type="button" role="tab" aria-selected="false" data-account-billing-tab="subscription">Subscribe</button>
-          </div>
           <div class="billing-choice-group" data-account-billing-panel="one-time">
             <div>
-              <h4>Choose a one-time plan</h4>
-              <p class="muted">Pay once and use the scans during the selected validity period.</p>
+              <h4>Choose a plan</h4>
+              <p class="muted">Pay once and use the scans during the plan's validity period. No auto-renewal.</p>
             </div>
             <div class="plan-choices billing-plan-grid">${oneTimeButtons}</div>
-          </div>
-          <div class="billing-choice-group" data-account-billing-panel="subscription" hidden>
-            <div>
-              <h4>Choose a subscription</h4>
-              <p class="muted">Scans renew automatically. Cancel anytime.</p>
-            </div>
-            <div class="plan-choices billing-plan-grid">
-              <button type="button" class="billing-plan-option" data-subscribe="monthly" ${billing.availablePlans.includes("monthly") ? "" : "disabled"}><span class="billing-plan-name">Starter Pack</span><strong>&#8377;499</strong><small>150 scans every month</small></button>
-              <button type="button" class="billing-plan-option recommended" data-subscribe="quarterly" ${billing.availablePlans.includes("quarterly") ? "" : "disabled"}><span class="billing-recommended-label">Most popular</span><span class="billing-plan-name">Exhibition Pass</span><strong>&#8377;899</strong><small>300 scans every 3 months</small></button>
-              <button type="button" class="billing-plan-option" data-subscribe="annual" ${billing.availablePlans.includes("annual") ? "" : "disabled"}><span class="billing-plan-name">Pro Annual</span><strong>&#8377;3,999</strong><small>1,500 scans every year</small></button>
-            </div>
           </div>
           <div class="credit-pack-card ${billing.canTopup ? "available" : "locked"}">
             <div class="credit-pack-icon" aria-hidden="true">+</div>
