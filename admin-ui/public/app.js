@@ -141,10 +141,11 @@
     { key: "clients", label: "Clients", icon: "clients" },
     { key: "analytics", label: "Analytics", icon: "analytics" },
     { key: "payments", label: "Payments", icon: "payments" },
-    { key: "activity", label: "Activity", icon: "activity" },
+    { key: "appactivity", label: "App activity", icon: "activity" },
+    { key: "activity", label: "Admin audit", icon: "activity" },
     { key: "settings", label: "Settings", icon: "settings" }
   ];
-  var TITLES = { dashboard: "Dashboard", clients: "Clients", analytics: "Analytics", payments: "Payments", activity: "Activity / Audit", settings: "Settings" };
+  var TITLES = { dashboard: "Dashboard", clients: "Clients", analytics: "Analytics", payments: "Payments", appactivity: "App activity", activity: "Admin audit", settings: "Settings" };
 
   function renderShell() {
     var nav = NAV.map(function (n) {
@@ -182,6 +183,7 @@
     if (state.route === "clients") return renderClients(view);
     if (state.route === "analytics") return renderAnalytics(view);
     if (state.route === "payments") return renderPayments(view);
+    if (state.route === "appactivity") return renderAppActivity(view);
     if (state.route === "activity") return renderActivity(view);
     if (state.route === "settings") return renderSettings(view);
     return renderPlaceholder(view, TITLES[state.route]);
@@ -735,6 +737,98 @@
       wirePager(bodyEl, d, function (p) { page = p; load(); });
     }
     document.getElementById("payStatus").addEventListener("change", function (e) { status = e.target.value; page = 1; load(); });
+    load();
+  }
+
+  // ================= APP ACTIVITY (what customers do) =================
+  function renderAppActivity(view) {
+    var page = 1;
+    var range = "7d";
+    var eventName = "";
+    view.innerHTML =
+      '<div class="toolbar" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">' +
+        '<select id="actRange">' +
+          '<option value="today">Today</option>' +
+          '<option value="1d">Last 24 hours</option>' +
+          '<option value="7d" selected>Last 7 days</option>' +
+          '<option value="30d">Last 30 days</option>' +
+          '<option value="90d">Last 90 days</option>' +
+          '<option value="all">All time</option>' +
+        '</select>' +
+        '<select id="actEvent"><option value="">All events</option></select>' +
+        '<button class="btn" id="actRefresh">Refresh</button>' +
+      '</div><div id="actBody"></div>';
+    var bodyEl = document.getElementById("actBody");
+    var rangeEl = document.getElementById("actRange");
+    var eventEl = document.getElementById("actEvent");
+
+    function label(name) { return String(name || "").replace(/_/g, " "); }
+    function platformBadge(row) {
+      if (row.platform === "android") return '<span class="badge b-ok">Android app</span>';
+      if (row.platform === "ios") return '<span class="badge b-ok">iOS app</span>';
+      if (row.platform === "web") return '<span class="badge b-reg">Web</span>';
+      return '<span class="cell-sub">' + esc(row.source || "—") + "</span>";
+    }
+    function detail(row) {
+      var m = row.metadata || {};
+      var bits = [];
+      if (m.plan) bits.push("plan " + m.plan);
+      if (m.mode) bits.push(m.mode.replace(/_/g, " "));
+      if (m.feature) bits.push("Google " + m.feature);
+      if (typeof m.contacts === "number") bits.push(m.contacts + (m.all ? " contacts (all)" : " contacts"));
+      if (m.hasName === false) bits.push("no name read");
+      if (m.demo) bits.push("demo account");
+      if (m.self_service) bits.push("self-service");
+      return bits.join(" · ");
+    }
+
+    async function load() {
+      loading(bodyEl);
+      var query = "/api/admin/events?page=" + page + "&pageSize=40&range=" + encodeURIComponent(range);
+      if (eventName) query += "&event=" + encodeURIComponent(eventName);
+      var d;
+      try { d = await api(query); }
+      catch (err) { if (err.status === 401) return forceLogin(); return errorState(bodyEl, err.message); }
+
+      if (eventEl.options.length <= 1 && d.eventNames) {
+        d.eventNames.forEach(function (e) {
+          var opt = document.createElement("option");
+          opt.value = e.event_name;
+          opt.textContent = label(e.event_name) + " (" + e.n + ")";
+          eventEl.appendChild(opt);
+        });
+      }
+      if (!d.logs.length) {
+        bodyEl.innerHTML = '<div class="state"><div class="big">No activity in this period</div>Customer actions in the app and web appear here.</div>';
+        return;
+      }
+      var rows = d.logs.map(function (l) {
+        return '<tr style="cursor:default">' +
+          '<td class="cell-sub">' + fmtDateTime(l.createdAt) + "</td>" +
+          '<td><span class="badge b-reg">' + esc(label(l.event)) + "</span></td>" +
+          "<td>" + (l.clientName ? esc(l.clientName) : '<span class="cell-sub">—</span>') + "</td>" +
+          "<td>" + (l.user ? esc(l.user) : '<span class="cell-sub">—</span>') + "</td>" +
+          "<td>" + platformBadge(l) + "</td>" +
+          '<td class="cell-sub">' + esc(detail(l)) + "</td></tr>";
+      }).join("");
+      bodyEl.innerHTML =
+        '<div class="card"><table class="tbl"><thead><tr>' +
+        "<th>When</th><th>Event</th><th>Client</th><th>User</th><th>Source</th><th>Detail</th>" +
+        "</tr></thead><tbody>" + rows + "</tbody></table></div>" +
+        '<div class="pager" style="display:flex;gap:10px;align-items:center;margin-top:12px">' +
+          '<button class="btn" id="actPrev"' + (page <= 1 ? " disabled" : "") + ">Previous</button>" +
+          '<span class="cell-sub">Page ' + d.page + " of " + d.totalPages + " · " + d.total + " events</span>" +
+          '<button class="btn" id="actNext"' + (page >= d.totalPages ? " disabled" : "") + ">Next</button>" +
+        "</div>";
+      var prev = document.getElementById("actPrev");
+      var next = document.getElementById("actNext");
+      if (prev) prev.onclick = function () { if (page > 1) { page -= 1; load(); } };
+      if (next) next.onclick = function () { if (page < d.totalPages) { page += 1; load(); } };
+    }
+
+    rangeEl.onchange = function () { range = rangeEl.value; page = 1; load(); };
+    eventEl.onchange = function () { eventName = eventEl.value; page = 1; load(); };
+    document.getElementById("actRefresh").onclick = function () { load(); };
     load();
   }
 
