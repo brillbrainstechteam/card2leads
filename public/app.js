@@ -731,7 +731,7 @@ function phoneAuthMarkup() {
     ${state.authError ? `<div class="notice bad compact">${escapeHtml(state.authError)}</div>` : ""}
     <form class="auth-form" id="phoneForm">
       ${otp ? `
-        <p class="field-help">We sent a 6-digit code to <strong>${escapeHtml(state.phoneNumber || "your number")}</strong> on WhatsApp. It expires in 5 minutes.</p>
+        <p class="field-help">We sent a 6-digit code to <strong>${escapeHtml(state.phoneNumber || "your number")}</strong> on WhatsApp. It expires in 10 minutes.</p>
         <label>Verification code <input name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*" placeholder="6-digit code" required /></label>
         <div class="actions"><button type="submit">Verify &amp; continue</button></div>
         <button type="button" class="link-button" data-phone-resend>Resend code</button>

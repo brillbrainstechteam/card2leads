@@ -79,7 +79,7 @@ const WHATSAPP_OTP_TEMPLATE = process.env.WHATSAPP_OTP_TEMPLATE || "";       // 
 const WHATSAPP_OTP_LANG = process.env.WHATSAPP_OTP_LANG || "en_US";         // template language code
 const WHATSAPP_OTP_INCLUDE_BUTTON = String(process.env.WHATSAPP_OTP_INCLUDE_BUTTON ?? "true") === "true"; // standard auth templates carry a copy-code button
 const DEFAULT_PHONE_COUNTRY = process.env.DEFAULT_PHONE_COUNTRY || "91";     // India
-const OTP_TTL_MS = 5 * 60 * 1000;
+const OTP_TTL_MS = 10 * 60 * 1000; // matches the approved WhatsApp template copy
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
 const OTP_MAX_SENDS_PER_HOUR = 5;
 const OTP_MAX_ATTEMPTS = 5;
