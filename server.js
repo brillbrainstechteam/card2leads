@@ -1495,6 +1495,7 @@ async function processQueueCycle() {
           userId: uploaderId,
           referenceId: card.id,
           demo: Boolean(organisation.isDemoAccount),
+          platform: card.uploadPlatform || "",
           name: (finalExtraction?.name || "").trim() || null
         });
       }
@@ -1535,7 +1536,7 @@ async function processQueueCycle() {
     await saveDb(db);
     await Promise.all(scanLogEntries.map((s) => recordProductEvent({
         name: "scan_completed", clientId: s.clientId, userId: s.userId,
-        source: "queue", metadata: { cardId: s.referenceId, demo: s.demo, hasName: Boolean(s.name) }
+        source: "queue", metadata: { cardId: s.referenceId, demo: s.demo, hasName: Boolean(s.name), platform: s.platform || "" }
       })));
     nextDelay = queuedCards.length > toProcess.length ? 600 : 3000;
   } catch (err) {
@@ -5118,7 +5119,7 @@ async function handleApi(req, res, pathname) {
         await recordPayment({ clientId: organisation.id, userId: user.id, amountPaise: PLAN_PRICES_PAISE[pendingOrder.plan] || 0, plan: pendingOrder.plan, status: "paid", providerPaymentId: paymentId, providerOrderId: orderId });
         await setLedgerBalance({ clientId: organisation.id, userId: user.id, type: "PLAN_ALLOCATION", quantity: organisation.scanLimit, targetBalance: organisation.scanLimit, source: "plan", referenceId: orderId, idempotencyKey: `allocation:${orderId}`, metadata: { plan: pendingOrder.plan, mode: "one_time" } });
         await recordSubscription({ clientId: organisation.id, plan: pendingOrder.plan, status: "active", billingMode: "one_time", providerReference: orderId, startDate: now(), currentPeriodEnd: organisation.currentPeriodEnd, source: "verify", eventId: `verified:${paymentId}`, metadata: { paymentId } });
-        await recordProductEvent({ name: "plan_activated", clientId: organisation.id, userId: user.id, source: "verify", idempotencyKey: `plan:${orderId}`, metadata: { plan: pendingOrder.plan, mode: "one_time" } });
+        await recordProductEvent({ name: "plan_activated", clientId: organisation.id, userId: user.id, source: "verify", idempotencyKey: `plan:${orderId}`, metadata: { plan: pendingOrder.plan, mode: "one_time", platform: clientPlatform(req) } });
       }
       await saveDb(db);
       return send(res, 200, { ok: true, usage: await authoritativePlanUsage(organisation), billing: billingSummary(organisation) });
@@ -5259,7 +5260,7 @@ async function handleApi(req, res, pathname) {
       delete session.googleOAuthFeature;
       audit(db, user, "google.connected", "google_connection", connection.id, { googleEmail: connection.googleEmail });
       await saveDb(db);
-      await recordProductEvent({ name: "google_connected", clientId: user.organisationId, userId: user.id, source: "google", metadata: { feature } });
+      await recordProductEvent({ name: "google_connected", clientId: user.organisationId, userId: user.id, source: "google", metadata: { feature, platform: clientPlatform(req) } });
       return redirect(res, feature === "contacts" ? "/?google_contacts=connected#contacts" : "/?google=connected#contacts/sheets");
     }
 
@@ -5691,6 +5692,7 @@ async function handleApi(req, res, pathname) {
           status: stage ? "staged" : "queued",
           extraction: null,
           queuedImageWarning: imageWarning,
+          uploadPlatform: clientPlatform(req),
           queuedDuplicateInBatchId: duplicateInBatchId || "",
           queuedDuplicateImageId: duplicateImageId || "",
           duplicateImageOf: duplicateImageId || null,
@@ -6240,7 +6242,7 @@ async function handleApi(req, res, pathname) {
       const fileName = `${baseName}.xlsx`;
       audit(db, user, "excel.downloaded", "collection", collection?.id || "", { contacts: contacts.length, all: exportAll });
       await saveDb(db);
-      await recordProductEvent({ name: "export_excel", clientId: user.organisationId, userId: user.id, source: "export", metadata: { contacts: contacts.length, all: exportAll } });
+      await recordProductEvent({ name: "export_excel", clientId: user.organisationId, userId: user.id, source: "export", metadata: { contacts: contacts.length, all: exportAll, platform: clientPlatform(req) } });
       return send(res, 200, xlsx, {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "Content-Disposition": `attachment; filename="${fileName}"`
@@ -6256,7 +6258,7 @@ async function handleApi(req, res, pathname) {
       const fileName = `${baseName}.csv`;
       audit(db, user, "csv.downloaded", "collection", collection?.id || "", { contacts: contacts.length, all: exportAll });
       await saveDb(db);
-      await recordProductEvent({ name: "export_csv", clientId: user.organisationId, userId: user.id, source: "export", metadata: { contacts: contacts.length, all: exportAll } });
+      await recordProductEvent({ name: "export_csv", clientId: user.organisationId, userId: user.id, source: "export", metadata: { contacts: contacts.length, all: exportAll, platform: clientPlatform(req) } });
       return send(res, 200, csv, {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="${fileName}"`
@@ -6271,7 +6273,7 @@ async function handleApi(req, res, pathname) {
       const fileName = `${baseName}.vcf`;
       audit(db, user, "vcf.downloaded", "collection", collection?.id || "", { contacts: contacts.length, all: exportAll, assigneeId });
       await saveDb(db);
-      await recordProductEvent({ name: "export_vcf", clientId: user.organisationId, userId: user.id, source: "export", metadata: { contacts: contacts.length, all: exportAll } });
+      await recordProductEvent({ name: "export_vcf", clientId: user.organisationId, userId: user.id, source: "export", metadata: { contacts: contacts.length, all: exportAll, platform: clientPlatform(req) } });
       return send(res, 200, vcf, {
         "Content-Type": "text/vcard; charset=utf-8",
         "Content-Disposition": `attachment; filename="${fileName}"`
