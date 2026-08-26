@@ -1760,6 +1760,7 @@ function onboardingView() {
           <form id="onboardingForm" class="grid two setup-form">
             <label>Your name <input name="contactName" value="${escapeAttr(state.user?.name || "")}" placeholder="Your full name" autocomplete="name" required /></label>
             <label>Company name <input name="companyName" value="${escapeAttr(workspaceName)}" placeholder="Your company or business name" autocomplete="organization" required /></label>
+            ${state.user?.email ? "" : `<label>Email address <span class="optional-label">Optional</span><input name="email" type="email" placeholder="you@company.com" autocomplete="email" /><small class="field-help">Used for receipts and to recover your account if you change your number.</small></label>`}
             <label>Phone number <input name="phone" type="tel" value="${escapeAttr(state.user?.phone || "")}" placeholder="e.g. +91 90000 00000" autocomplete="tel" required /></label>
             <label>Exhibition or event <span class="optional-label">Optional</span><input name="defaultExhibitionName" placeholder="For example, IIJS Premiere 2026" /></label>
             <div class="setup-reassurance wide">

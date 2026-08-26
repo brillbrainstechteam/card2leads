@@ -5243,6 +5243,17 @@ async function handleApi(req, res, pathname) {
       const phone = String(body.phone || "").trim();
       if (phone.replace(/\D/g, "").length < 7) return error(res, 400, "A valid phone number is required.");
       const destinationType = ["excel", "google"].includes(body.destinationType) ? body.destinationType : "excel";
+      // Someone who signed in with WhatsApp has no email yet, which leaves the
+      // account with no recovery address and no way to receive receipts. Let
+      // them add one here — optional, and never overwrites an existing email.
+      const providedEmail = String(body.email || "").trim().toLowerCase();
+      if (providedEmail && !user.email) {
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(providedEmail)) return error(res, 400, "Enter a valid email address, or leave it blank.");
+        const takenBy = db.users.find((candidate) => candidate.id !== user.id && String(candidate.email || "").toLowerCase() === providedEmail && candidate.status !== "deleted");
+        if (takenBy) return error(res, 400, "Another Card2Leads account already uses that email address.");
+        user.email = providedEmail;
+        user.emailVerified = false; // unconfirmed until they use a reset link
+      }
       user.name = contactName;
       user.phone = phone;
       user.updatedAt = now();
