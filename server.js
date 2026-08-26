@@ -3567,6 +3567,16 @@ async function setLedgerBalance(entry) {
   });
 }
 
+// The mobile app identifies itself with X-Card2Leads-Client (e.g. expo-android),
+// so activity in the admin panel can distinguish app usage from the web app.
+function clientPlatform(req) {
+  const header = String(req?.headers?.["x-card2leads-client"] || "");
+  if (/expo-android/i.test(header)) return "android";
+  if (/expo-ios/i.test(header)) return "ios";
+  if (header) return header.slice(0, 40);
+  return "web";
+}
+
 async function recordProductEvent(event) {
   if (!pgPool || !event?.name) return;
   try {
@@ -4224,6 +4234,60 @@ async function handleAdminApi(req, res, pathname) {
   }
 
   // ---- ADM-07 Activity / Audit ----
+  // What customers are doing in the product, as opposed to /api/admin/audit
+  // which records what admins did. Reads product_events, newest first, with
+  // optional filters on time range, event name and client.
+  if (req.method === "GET" && pathname === "/api/admin/events") {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const page = Math.max(1, Number(url.searchParams.get("page") || 1));
+    const pageSize = Math.min(100, Math.max(1, Number(url.searchParams.get("pageSize") || 40)));
+    const range = String(url.searchParams.get("range") || "7d");
+    const eventName = String(url.searchParams.get("event") || "").trim();
+    const clientId = String(url.searchParams.get("clientId") || "").trim();
+    const days = { today: 0, "1d": 1, "7d": 7, "30d": 30, "90d": 90 };
+    let startIso = null;
+    if (range === "today") { const d = new Date(); d.setHours(0, 0, 0, 0); startIso = d.toISOString(); }
+    else if (days[range] != null) startIso = new Date(Date.now() - days[range] * 24 * 60 * 60 * 1000).toISOString();
+
+    const where = [];
+    const args = [];
+    if (startIso) { args.push(startIso); where.push(`created_at >= $${args.length}`); }
+    if (eventName) { args.push(eventName); where.push(`event_name = $${args.length}`); }
+    if (clientId) { args.push(clientId); where.push(`client_id = $${args.length}`); }
+    const clause = where.length ? `where ${where.join(" and ")}` : "";
+
+    const total = (await pgPool.query(`select count(*)::int as n from product_events ${clause}`, args)).rows[0].n;
+    const rows = (await pgPool.query(
+      `select id, event_name, client_id, user_id, source, metadata, created_at
+         from product_events ${clause}
+         order by created_at desc
+         limit ${pageSize} offset ${(page - 1) * pageSize}`,
+      args
+    )).rows;
+    const names = (await pgPool.query(
+      `select event_name, count(*)::int as n from product_events ${clause} group by event_name order by n desc`, args
+    )).rows;
+
+    const db = readDb();
+    const orgById = new Map(db.organisations.map((o) => [o.id, o.name]));
+    const userById = new Map(db.users.map((u) => [u.id, u.email || u.name || u.phone || ""]));
+    const logs = rows.map((r) => {
+      const meta = r.metadata && typeof r.metadata === "object" ? r.metadata : {};
+      return {
+        id: r.id,
+        event: r.event_name,
+        createdAt: r.created_at,
+        clientId: r.client_id,
+        clientName: r.client_id ? (orgById.get(r.client_id) || r.client_id) : null,
+        user: r.user_id ? (userById.get(r.user_id) || r.user_id) : null,
+        source: r.source || "",
+        platform: String(meta.platform || ""),
+        metadata: meta
+      };
+    });
+    return send(res, 200, { total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)), logs, eventNames: names });
+  }
+
   if (req.method === "GET" && pathname === "/api/admin/audit") {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const page = Math.max(1, Number(url.searchParams.get("page") || 1));
@@ -6506,8 +6570,9 @@ async function createSession(req, res, db, user, redirectTo = "", extraCookies =
   db.sessions.push(session);
   await saveDb(db);
   // Funnel: every entry into the product, plus a once-per-user first_login milestone.
-  await recordProductEvent({ name: "login_success", clientId: user.organisationId, userId: user.id, source: "auth" });
-  await recordProductEvent({ name: "first_login", clientId: user.organisationId, userId: user.id, source: "auth", idempotencyKey: `first_login:${user.id}` });
+  const platform = clientPlatform(req);
+  await recordProductEvent({ name: "login_success", clientId: user.organisationId, userId: user.id, source: "auth", metadata: { platform } });
+  await recordProductEvent({ name: "first_login", clientId: user.organisationId, userId: user.id, source: "auth", idempotencyKey: `first_login:${user.id}`, metadata: { platform } });
   const cookies = [sessionCookie(req, signSession(session.id), SESSION_DAYS * 24 * 60 * 60), ...extraCookies];
   if (redirectTo) {
     res.writeHead(302, { Location: redirectTo, "Set-Cookie": cookies });
