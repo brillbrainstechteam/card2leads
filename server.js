@@ -7315,6 +7315,7 @@ async function googleApi(accessToken, url, options = {}) {
     // only one feature so the stored token no longer carries the other's scope.
     // Say that plainly instead of passing Google's wording through.
     if (res.status === 401 || res.status === 403) {
+      console.error("[google] %s on %s :: %s", res.status, String(url).split("?")[0], detail);
       const authError = new Error(`Google access is no longer authorised for this action. Reconnect your Google account from Account, then try again. (Google said: ${detail})`);
       authError.googleAuthFailed = true;
       throw authError;
