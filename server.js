@@ -6447,7 +6447,26 @@ async function handleApi(req, res, pathname) {
         }
         collection.destinationType = "google";
         collection.updatedAt = now();
-        const result = await syncCollectionToGoogle(db, user, collection);
+        let result;
+        try {
+          result = await syncCollectionToGoogle(db, user, collection);
+        } catch (syncError) {
+          // drive.file only grants access to files this app created, and that
+          // claim is lost for good once the user revokes access. Reconnecting
+          // cannot reopen the old sheet, so replace it with a fresh one rather
+          // than failing every future sync for this exhibition.
+          if (!syncError?.googleAuthFailed || !collection.spreadsheetId) throw syncError;
+          console.error("[google] sheet %s is no longer reachable; creating a replacement", collection.spreadsheetId);
+          const title = String(collection.destinationName || `${collection.exhibitionName || collection.name} Contacts`).trim();
+          const replacement = await createGoogleSpreadsheet(accessToken, title);
+          await writeGoogleHeaders(accessToken, replacement.spreadsheetId);
+          collection.spreadsheetId = replacement.spreadsheetId;
+          collection.worksheetId = replacement.worksheetId;
+          collection.spreadsheetUrl = replacement.spreadsheetUrl;
+          collection.nextSheetRow = 2;
+          db.syncRecords = db.syncRecords.filter((record) => record.collectionId !== collection.id);
+          result = await syncCollectionToGoogle(db, user, collection);
+        }
         synced += result.synced || 0;
         failed += result.failed || 0;
         sheets.push({

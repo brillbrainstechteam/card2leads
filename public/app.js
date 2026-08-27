@@ -5097,7 +5097,7 @@ function accountView() {
           <h3>WhatsApp messages</h3>
           <p class="muted">${(() => {
             const count = whatsappTemplateLibrary().length;
-            return `${count} saved message${count === 1 ? "" : "s"}${whatsappCatalogueUrl() ? " · catalogue link set" : " · no catalogue link yet"}. Shared with everyone in this workspace, on every device.`;
+            return `${count} saved message${count === 1 ? "" : "s"}${whatsappCatalogueUrl() ? " · catalogue link set" : ""}`;
           })()}</p>
           <div class="actions">
             <button class="secondary editWhatsappSettings" type="button">Edit messages &amp; catalogue</button>
@@ -5105,7 +5105,7 @@ function accountView() {
         </div>
         <div class="account-block">
           <h3>Privacy documents</h3>
-          <p class="muted">Use these as starter pages before selling. Replace with lawyer-reviewed terms for production.</p>
+          
           <div class="actions">
             <a href="/privacy-policy" target="_blank"><button class="secondary" type="button">Privacy policy</button></a>
             <a href="/terms" target="_blank"><button class="secondary" type="button">Terms</button></a>
@@ -5269,7 +5269,7 @@ function accountBillingView() {
           <h3>WhatsApp messages</h3>
           <p class="muted">${(() => {
             const count = whatsappTemplateLibrary().length;
-            return `${count} saved message${count === 1 ? "" : "s"}${whatsappCatalogueUrl() ? " · catalogue link set" : " · no catalogue link yet"}. Shared with everyone in this workspace, on every device.`;
+            return `${count} saved message${count === 1 ? "" : "s"}${whatsappCatalogueUrl() ? " · catalogue link set" : ""}`;
           })()}</p>
           <div class="actions">
             <button class="secondary editWhatsappSettings" type="button">Edit messages &amp; catalogue</button>
@@ -5277,7 +5277,7 @@ function accountBillingView() {
         </div>
         <div class="account-block">
           <h3>Privacy documents</h3>
-          <p class="muted">Use these as starter pages before selling. Replace with lawyer-reviewed terms for production.</p>
+          
           <div class="actions">
             <a href="/privacy-policy" target="_blank"><button class="secondary" type="button">Privacy policy</button></a>
             <a href="/terms" target="_blank"><button class="secondary" type="button">Terms</button></a>
