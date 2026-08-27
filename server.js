@@ -41,12 +41,12 @@ const GOOGLE_STT_ALTERNATIVE_LANGUAGE_CODES = process.env.GOOGLE_STT_ALTERNATIVE
 const MAX_BATCH_FILES = 200;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_BATCH_BYTES = 150 * 1024 * 1024;
-const EXTRACTION_CONCURRENCY = Math.min(5, Math.max(1, Number(process.env.EXTRACTION_CONCURRENCY || 3)));
+const EXTRACTION_CONCURRENCY = Math.min(10, Math.max(1, Number(process.env.EXTRACTION_CONCURRENCY || 6)));
 // How many queued cards the background processor pulls per cycle. Kept at 5
 // with extraction concurrency capped at 5 too, so at most 5 AI calls are ever
 // in flight at once from this loop — comfortably under any reasonable
 // provider rate limit even if a request-time extraction is also running.
-const QUEUE_BATCH_SIZE = 5;
+const QUEUE_BATCH_SIZE = Math.min(24, Math.max(1, Number(process.env.QUEUE_BATCH_SIZE || 12)));
 const DELETION_RETENTION_MS = Math.max(1, Number(process.env.DELETION_RETENTION_DAYS || 30)) * 24 * 60 * 60 * 1000;
 const DELETION_WORKER_INTERVAL_MS = Math.max(60 * 1000, Number(process.env.DELETION_WORKER_INTERVAL_MS || 6 * 60 * 60 * 1000));
 const PLAN_LIMITS = Object.freeze({
@@ -175,6 +175,11 @@ const checkoutHandoffs = new Map();
 // than on the session, because persisting it would rewrite the whole database
 // on both the start and the callback of every Google connection.
 const googleMobileOAuthStates = new Map();
+// Browser Google-connect states. Kept in memory rather than on the session:
+// storing them meant a full saveDb() on every connect, and any other request
+// that saved a slightly older snapshot in the meantime wiped the state, so the
+// callback failed with "connection state did not match".
+const googleWebOAuthStates = new Map();
 
 const EXPORT_COLUMNS = [
   "Saved Contact Name",
@@ -1538,7 +1543,7 @@ async function processQueueCycle() {
         name: "scan_completed", clientId: s.clientId, userId: s.userId,
         source: "queue", metadata: { cardId: s.referenceId, demo: s.demo, hasName: Boolean(s.name), platform: s.platform || "" }
       })));
-    nextDelay = queuedCards.length > toProcess.length ? 600 : 3000;
+    nextDelay = queuedCards.length > toProcess.length ? 200 : 3000;
   } catch (err) {
     console.error("[queue] processing cycle failed:", err.message);
     nextDelay = 15000;
@@ -5207,10 +5212,7 @@ async function handleApi(req, res, pathname) {
         googleMobileOAuthStates.set(oauthState, { userId: session.userId, feature, createdAt: Date.now() });
         return send(res, 200, { authUrl: authUrl.toString() });
       }
-      session.googleOAuthState = oauthState;
-      session.googleOAuthCreatedAt = now();
-      session.googleOAuthFeature = feature;
-      await saveDb(db);
+      googleWebOAuthStates.set(oauthState, { userId: session.userId, feature, createdAt: Date.now() });
       return redirect(res, authUrl.toString());
     }
 
@@ -5219,11 +5221,16 @@ async function handleApi(req, res, pathname) {
       const code = url.searchParams.get("code");
       const returnedState = url.searchParams.get("state");
       const session = currentSession(req, db);
-      if (!session || !returnedState || session.googleOAuthState !== returnedState) {
+      const webFlow = returnedState ? googleWebOAuthStates.get(returnedState) : null;
+      if (webFlow) googleWebOAuthStates.delete(returnedState);
+      const stateOk = webFlow
+        ? webFlow.userId === user.id && Date.now() - Number(webFlow.createdAt || 0) < 10 * 60 * 1000
+        : Boolean(session && returnedState && session.googleOAuthState === returnedState);
+      if (!stateOk) {
         return error(res, 400, "Google connection state did not match. Please try connecting again.");
       }
       if (!code) return error(res, 400, "Google did not return an authorization code.");
-      const feature = session.googleOAuthFeature === "contacts" ? "contacts" : "sheets";
+      const feature = (webFlow ? webFlow.feature : session?.googleOAuthFeature) === "contacts" ? "contacts" : "sheets";
       let tokens, profile;
       try {
         tokens = await exchangeGoogleCode(code, googleRedirectUri(req));
