@@ -7303,7 +7303,18 @@ async function googleApi(accessToken, url, options = {}) {
   });
   const text = await res.text();
   const data = text ? JSON.parse(text) : {};
-  if (!res.ok) throw new Error(data.error?.message || "Google request failed.");
+  if (!res.ok) {
+    const detail = data.error?.message || "Google request failed.";
+    // 401/403 here almost always means the user revoked access, or reconnected
+    // only one feature so the stored token no longer carries the other's scope.
+    // Say that plainly instead of passing Google's wording through.
+    if (res.status === 401 || res.status === 403) {
+      const authError = new Error(`Google access is no longer authorised for this action. Reconnect your Google account from Account, then try again. (Google said: ${detail})`);
+      authError.googleAuthFailed = true;
+      throw authError;
+    }
+    throw new Error(detail);
+  }
   return data;
 }
 
