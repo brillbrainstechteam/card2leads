@@ -4413,21 +4413,27 @@ async function prepareGoogleContactsSync(button, selectedIds, collectionId, acti
   const defaultName = activeCollection?.exhibitionName || activeCollection?.name || targetContacts.find((contact) => contact.exhibitionName)?.exhibitionName || "";
   const defaultDate = activeCollection?.exhibitionDate || targetContacts.find((contact) => contact.exhibitionDate)?.exhibitionDate || "";
   const needsContext = targetContacts.some((contact) => !contact.exhibitionName || !contact.exhibitionDate);
-  if (!needsContext) {
-    await syncGoogleContacts(button, selectedIds, collectionId, {});
-    return;
-  }
+  // Always confirm before writing to someone's Google account, and show the
+  // name each contact will be saved under — that naming format is the point of
+  // the feature, so it should be visible before the sync, not discovered after.
+  const preview = targetContacts.slice(0, 3).map((contact) => contactSavedDisplayName(contact)).filter(Boolean);
+  const previewHtml = preview.length
+    ? `<div class="google-name-preview"><span class="eyebrow">Contacts will be saved as</span>${preview.map((name) => `<strong>${escapeHtml(name)}</strong>`).join("")}${targetContacts.length > preview.length ? `<span class="muted">and ${targetContacts.length - preview.length} more</span>` : ""}</div>`
+    : "";
 
   state.modal = {
-    title: "Label these Google Contacts",
-    body: "Add the exhibition name and date so these contacts are easy to filter on your phone.",
+    title: `Save ${selectedIds.length} contact${selectedIds.length === 1 ? "" : "s"} to Google`,
+    body: needsContext
+      ? "Add the exhibition name and date so these contacts are easy to filter on your phone."
+      : "These contacts will be added to your Google Contacts under the label below.",
     contentHtml: `
       <form id="googleContactsContextForm" class="google-contacts-context-form">
+        ${previewHtml}
         <label>Exhibition or event
-          <input name="exhibitionName" required value="${escapeAttr(defaultName)}" placeholder="For example, IIJS 2026" />
+          <input name="exhibitionName" ${needsContext ? "required" : ""} value="${escapeAttr(defaultName)}" placeholder="For example, IIJS 2026" />
         </label>
         <label>Event date
-          <input name="exhibitionDate" type="date" required value="${escapeAttr(defaultDate)}" />
+          <input name="exhibitionDate" type="date" ${needsContext ? "required" : ""} value="${escapeAttr(defaultDate)}" />
         </label>
         <p class="muted">Google Contacts label preview: <strong id="googleLabelPreview"></strong></p>
       </form>
