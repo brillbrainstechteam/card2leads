@@ -4993,10 +4993,7 @@ async function handleApi(req, res, pathname) {
             ? encryptSecret(tokens.refresh_token)
             : connection.encryptedRefreshToken;
           connection.tokenExpiry = new Date(Date.now() + Number(tokens.expires_in || 3600) * 1000).toISOString();
-          connection.scopes = mergeGoogleScopes(
-            connection.scopes,
-            tokens.scope || googleScopes(feature),
-          );
+          connection.scopes = scopesForNewToken(connection.scopes, tokens.scope, feature);
           connection.status = "active";
           connection.updatedAt = now();
           markGoogleFeatureConnected(db, mobileUser, connection.scopes);
@@ -5255,10 +5252,7 @@ async function handleApi(req, res, pathname) {
         ? encryptSecret(tokens.refresh_token)
         : connection.encryptedRefreshToken;
       connection.tokenExpiry = new Date(Date.now() + Number(tokens.expires_in || 3600) * 1000).toISOString();
-      connection.scopes = mergeGoogleScopes(
-        connection.scopes,
-        tokens.scope || googleScopes(feature),
-      );
+      connection.scopes = scopesForNewToken(connection.scopes, tokens.scope, feature);
       connection.status = "active";
       connection.updatedAt = now();
       markGoogleFeatureConnected(db, user, connection.scopes);
@@ -7194,6 +7188,18 @@ function googleScopes(feature = "sheets") {
   if (feature === "sheets" || feature === "all") scopes.unshift(GOOGLE_SHEETS_SCOPE);
   if (feature === "contacts" || feature === "all") scopes.unshift(GOOGLE_CONTACTS_SCOPE);
   return scopes.join(" ");
+}
+
+// The access token is replaced on every connect, so the scopes we record must
+// describe THAT token. Google returns the token's full scope set (the auth
+// request asks for include_granted_scopes), so trust it outright — merging with
+// what we previously believed meant the record could keep claiming a feature
+// the current token could no longer perform, and the sync then failed with a
+// bare "caller does not have permission".
+function scopesForNewToken(previousScopes, grantedScopes, feature) {
+  const granted = String(grantedScopes || "").trim();
+  if (granted) return mergeGoogleScopes(granted);
+  return mergeGoogleScopes(previousScopes, googleScopes(feature));
 }
 
 function mergeGoogleScopes(...scopeValues) {
