@@ -2436,7 +2436,6 @@ async function uploadFiles(node) {
   const processingEstimate = node.querySelector("#processingEstimate");
   const processingElapsed = node.querySelector("#processingElapsed");
   const cardCount = state.selectedFiles.length;
-  if (cardCount && !window.confirm(`Read ${cardCount} card${cardCount === 1 ? "" : "s"}?\n\nThis will use ${cardCount} scan credit${cardCount === 1 ? "" : "s"} — one per card. A credit is used whenever a card is sent for reading, including blurry or hard-to-read cards. You won't be charged for an exact re-upload of the same image, an image too small or low-resolution to read, or a failure on our side.`)) return;
   const startedAt = Date.now();
   const preventExit = (event) => {
     event.preventDefault();
