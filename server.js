@@ -4776,50 +4776,10 @@ async function handleApi(req, res, pathname) {
         return redirect(res, "/?auth=google_failed");
       }
       if (!profile.email || profile.email_verified !== true || !profile.sub) return redirect(res, "/?auth=google_failed");
-      const googleEmail = String(profile.email).trim().toLowerCase();
-      let user = db.users.find((u) => u.googleSubject === profile.sub);
-      if (!user) user = db.users.find((u) => u.email === googleEmail);
-      if (user?.googleSubject && user.googleSubject !== profile.sub) return redirect(res, "/?auth=google_failed");
-      const existingAccount = Boolean(user);
-      if (!user) {
-        const demoAccount = isDemoEmail(googleEmail);
-        const org = {
-          id: id("org"),
-          name: `${profile.name || profile.email}'s Workspace`,
-          plan: demoAccount ? "demo" : "trial",
-          scanLimit: demoAccount ? DEMO_ACCOUNT_SCANS : 0,
-          scansUsed: 0,
-          isDemoAccount: demoAccount,
-          topupScans: 0,
-          retentionPolicy: "90-days",
-          setupComplete: false,
-          createdAt: now(),
-          updatedAt: now()
-        };
-        user = {
-          id: id("usr"),
-          organisationId: org.id,
-          name: profile.name || profile.email,
-          email: googleEmail,
-          passwordHash: "",
-          emailVerified: true,
-          authProvider: "google",
-          googleSubject: profile.sub,
-          status: "active",
-          createdAt: now(),
-          updatedAt: now()
-        };
-        db.organisations.push(org);
-        db.users.push(user);
-        audit(db, user, "user.google_registered", "user", user.id);
-      } else {
-        user.googleSubject = profile.sub;
-        user.emailVerified = true;
-        user.status = "active";
-        user.authProvider = user.authProvider || "email";
-        user.updatedAt = now();
-        audit(db, user, "user.google_logged_in", "user", user.id);
-      }
+      const outcome = findOrCreateGoogleUser(db, profile);
+      if (outcome.conflict) return redirect(res, "/?auth=google_failed");
+      const user = outcome.user;
+      const existingAccount = outcome.existingAccount;
       if (mobileLogin) {
         const mobileCode = randomToken("mob");
         mobileAuthCodes.set(mobileCode, {
@@ -4877,6 +4837,28 @@ async function handleApi(req, res, pathname) {
           ? `/?checkoutPlan=${encodeURIComponent(grant.plan)}#account`
           : "/#account";
       return await createSession(req, res, db, checkoutUser, target);
+    }
+
+    // Native Google Sign-In: the app obtains an ID token from Google Play
+    // Services directly, with no browser and no redirect, and exchanges it here
+    // for a session. The browser flow stays in place as a fallback.
+    if (req.method === "POST" && pathname === "/api/auth/google/native") {
+      if (!rateLimit(req, res, "auth-google-native", 30, 15 * 60 * 1000)) return;
+      const body = await readJson(req);
+      const idToken = String(body.idToken || "");
+      if (!idToken) return error(res, 400, "Missing Google sign-in token.");
+      let profile;
+      try {
+        profile = await verifyGoogleIdToken(idToken);
+      } catch (err) {
+        console.error("[google-native] verification failed:", err.message);
+        return error(res, 401, err.message || "That Google sign-in could not be verified.");
+      }
+      const outcome = findOrCreateGoogleUser(db, profile);
+      if (outcome.conflict) return error(res, 409, "This email already signs in with a different Google account.");
+      await saveDb(db);
+      console.log("[google-native] success —", outcome.existingAccount ? "signed in" : "registered", profile.email);
+      return await createSession(req, res, db, outcome.user);
     }
 
     // Mints the hand-off reference the app polls with. Server-generated so the
@@ -7481,6 +7463,72 @@ async function addGoogleContactToGroup(accessToken, groupResourceName, contactRe
     method: "POST",
     body: JSON.stringify({ resourceNamesToAdd: [contactResourceName] })
   });
+}
+
+// Verifies an ID token minted by Google Sign-In on the device. The token is
+// checked with Google rather than decoded locally, and the audience must be our
+// own client, so a token issued to some other app cannot be replayed here.
+async function verifyGoogleIdToken(idToken) {
+  const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
+  if (!res.ok) throw new Error("That Google sign-in could not be verified.");
+  const data = await res.json().catch(() => ({}));
+  const audience = String(data.aud || "");
+  const allowed = [process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_ANDROID_CLIENT_ID, process.env.GOOGLE_IOS_CLIENT_ID]
+    .filter(Boolean);
+  if (!allowed.includes(audience)) throw new Error("That Google sign-in was issued for a different application.");
+  if (String(data.email_verified) !== "true" || !data.email || !data.sub) {
+    throw new Error("That Google account does not have a verified email address.");
+  }
+  return { sub: String(data.sub), email: String(data.email), name: String(data.name || ""), email_verified: true };
+}
+
+// Shared by the browser callback and the native sign-in endpoint so both paths
+// resolve to exactly the same account.
+function findOrCreateGoogleUser(db, profile) {
+  const googleEmail = String(profile.email).trim().toLowerCase();
+  let user = db.users.find((u) => u.googleSubject === profile.sub);
+  if (!user) user = db.users.find((u) => u.email === googleEmail);
+  if (user?.googleSubject && user.googleSubject !== profile.sub) return { conflict: true };
+  if (!user) {
+    const demoAccount = isDemoEmail(googleEmail);
+    const org = {
+      id: id("org"),
+      name: `${profile.name || profile.email}'s Workspace`,
+      plan: demoAccount ? "demo" : "trial",
+      scanLimit: demoAccount ? DEMO_ACCOUNT_SCANS : 0,
+      scansUsed: 0,
+      isDemoAccount: demoAccount,
+      topupScans: 0,
+      retentionPolicy: "90-days",
+      setupComplete: false,
+      createdAt: now(),
+      updatedAt: now()
+    };
+    user = {
+      id: id("usr"),
+      organisationId: org.id,
+      name: profile.name || profile.email,
+      email: googleEmail,
+      passwordHash: "",
+      emailVerified: true,
+      authProvider: "google",
+      googleSubject: profile.sub,
+      status: "active",
+      createdAt: now(),
+      updatedAt: now()
+    };
+    db.organisations.push(org);
+    db.users.push(user);
+    audit(db, user, "user.google_registered", "user", user.id);
+    return { user, existingAccount: false };
+  }
+  user.googleSubject = profile.sub;
+  user.emailVerified = true;
+  user.status = "active";
+  user.authProvider = user.authProvider || "email";
+  user.updatedAt = now();
+  audit(db, user, "user.google_logged_in", "user", user.id);
+  return { user, existingAccount: true };
 }
 
 async function fetchGoogleProfile(accessToken) {
