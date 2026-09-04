@@ -409,8 +409,9 @@ function buildContactDisplayName(contact) {
     sameAsPerson ? "" : company,
     String(contact.city || "").trim()
     // Joined without a following space so the whole label reads as one token in
-    // a phone's contact list, which is where people search for it.
-  ].filter(Boolean).join(".");
+    // a phone's contact list, which is where people search for it. A part that
+    // already ends in a dot ("Pvt. Ltd.") would otherwise produce "Ltd..Jaipur".
+  ].filter(Boolean).map((part) => String(part).replace(/\.+$/, "").trim()).filter(Boolean).join(".");
 }
 
 // Digits-only international form for wa.me links.
@@ -7877,7 +7878,7 @@ function buildVcf(contacts) {
       "BEGIN:VCARD",
       "VERSION:3.0",
       `FN:${vCardEscape(displayName)}`,
-      `N:;${vCardEscape(displayName)};;;`
+      `N:${vCardEscape(displayName)};;;;`
     ];
     if (contact.mobileNumber) lines.push(`TEL;TYPE=CELL:${vCardEscape(contact.mobileNumber)}`);
     if (contact.secondaryMobileNumber) lines.push(`TEL;TYPE=CELL:${vCardEscape(contact.secondaryMobileNumber)}`);
