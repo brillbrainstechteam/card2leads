@@ -1446,12 +1446,12 @@ async function processQueueCycle() {
       delete card.queuedDuplicateImageId;
 
       const hasIdentity = REVIEW_KEEPS_SAVED_CARDS
-        ? isValidMobile(finalExtraction.mobileNumber)
+        ? Boolean(isValidMobile(finalExtraction.mobileNumber) || cleanText(finalExtraction.name) || cleanText(finalExtraction.companyName))
         : Boolean(cleanText(finalExtraction.name) || cleanText(finalExtraction.companyName));
       if (!hasIdentity) {
         status = "requires_review";
         card.status = "requires_review";
-        finalExtraction.warnings = [...(finalExtraction.warnings || []), REVIEW_KEEPS_SAVED_CARDS ? "No phone number could be read. Add one so this lead can be followed up." : "No name or company could be read. Retake a sharper photo or add the visible details before saving."];
+        finalExtraction.warnings = [...(finalExtraction.warnings || []), REVIEW_KEEPS_SAVED_CARDS ? "Nothing could be read from this card. Retake it in better light, or fill the details in here." : "No name or company could be read. Retake a sharper photo or add the visible details before saving."];
       } else {
         // Contacts are owned by whoever uploaded the batch; the queue runs
         // detached from any request, so there's no session user to fall back on.
