@@ -4507,7 +4507,11 @@ async function handleApi(req, res, pathname) {
         isDemoAccount: demoAccount,
         topupScans: 0,
         retentionPolicy: "90-days",
-        setupComplete: false,
+        // Signup no longer collects a workspace profile up front. The first
+        // contact list is created on demand by collectionForUser, and the
+        // exhibition is set from the upload screen, so there is nothing left
+        // to block on.
+        setupComplete: true,
         createdAt: now(),
         updatedAt: now()
       };
@@ -4619,7 +4623,7 @@ async function handleApi(req, res, pathname) {
           isDemoAccount: false,
           topupScans: 0,
           retentionPolicy: "90-days",
-          setupComplete: false,
+          setupComplete: true,
           createdAt: now(),
           updatedAt: now()
         };
@@ -7500,7 +7504,7 @@ function findOrCreateGoogleUser(db, profile) {
       isDemoAccount: demoAccount,
       topupScans: 0,
       retentionPolicy: "90-days",
-      setupComplete: false,
+      setupComplete: true,
       createdAt: now(),
       updatedAt: now()
     };
