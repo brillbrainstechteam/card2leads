@@ -30,6 +30,7 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
 const APP_BASE_URL = process.env.APP_BASE_URL || "";
 const GOOGLE_AUTH_REDIRECT_URI = process.env.GOOGLE_AUTH_REDIRECT_URI || "";
 const EMAIL_FROM = process.env.EMAIL_FROM || "no-reply@easysave.local";
+const REVIEW_KEEPS_SAVED_CARDS = String(process.env.REVIEW_KEEPS_SAVED_CARDS || "1") !== "0";
 const VOICE_STT_PROVIDER = String(process.env.VOICE_STT_PROVIDER || "auto").toLowerCase();
 const GOOGLE_STT_MODEL = process.env.GOOGLE_STT_MODEL || "latest_short";
 const GOOGLE_STT_LANGUAGE_CODE = process.env.GOOGLE_STT_LANGUAGE_CODE || "hi-IN";
@@ -1444,11 +1445,13 @@ async function processQueueCycle() {
       delete card.queuedDuplicateInBatchId;
       delete card.queuedDuplicateImageId;
 
-      const hasIdentity = Boolean(cleanText(finalExtraction.name) || cleanText(finalExtraction.companyName));
+      const hasIdentity = REVIEW_KEEPS_SAVED_CARDS
+        ? isValidMobile(finalExtraction.mobileNumber)
+        : Boolean(cleanText(finalExtraction.name) || cleanText(finalExtraction.companyName));
       if (!hasIdentity) {
         status = "requires_review";
         card.status = "requires_review";
-        finalExtraction.warnings = [...(finalExtraction.warnings || []), "No name or company could be read. Retake a sharper photo or add the visible details before saving."];
+        finalExtraction.warnings = [...(finalExtraction.warnings || []), REVIEW_KEEPS_SAVED_CARDS ? "No phone number could be read. Add one so this lead can be followed up." : "No name or company could be read. Retake a sharper photo or add the visible details before saving."];
       } else {
         // Contacts are owned by whoever uploaded the batch; the queue runs
         // detached from any request, so there's no session user to fall back on.
@@ -5779,7 +5782,31 @@ async function handleApi(req, res, pathname) {
     }
 
     if (req.method === "GET" && pathname === "/api/cards") {
-      const cards = db.cards.filter((c) => c.organisationId === user.organisationId && !c.deletedAt && !["saved", "deleted", "skipped", "skipped_duplicate"].includes(c.status)).map(publicCard);
+      // A saved card stays in Review so the scan can be acted on there — notes,
+      // a WhatsApp message — rather than only ever being a row in Contacts. Its
+      // contact already exists, so the outreach state travels with it.
+      const hidden = REVIEW_KEEPS_SAVED_CARDS
+        ? ["deleted", "skipped", "skipped_duplicate"]
+        : ["saved", "deleted", "skipped", "skipped_duplicate"];
+      const contactByCard = new Map();
+      if (REVIEW_KEEPS_SAVED_CARDS) {
+        for (const contact of db.contacts) {
+          if (contact.organisationId !== user.organisationId || contact.deletedAt || !contact.sourceCardId) continue;
+          if (!contactByCard.has(contact.sourceCardId)) contactByCard.set(contact.sourceCardId, contact);
+        }
+      }
+      const cards = db.cards
+        .filter((c) => c.organisationId === user.organisationId && !c.deletedAt && !hidden.includes(c.status))
+        .map((c) => {
+          const card = publicCard(c);
+          const contact = contactByCard.get(c.id);
+          if (contact) {
+            card.contactId = contact.id;
+            card.contactSavedName = contact.contactDisplayName || "";
+            card.messageSentAt = contact.messageSentAt || "";
+          }
+          return card;
+        });
       return send(res, 200, { cards });
     }
 
