@@ -2714,7 +2714,7 @@ function readOriginalFile(file, preprocessing) {
 
 // Staged cards live in the Upload → Pending sub-tab, not in Review.
 function reviewCards() {
-  return state.cards.filter((card) => card.status !== "staged");
+  return state.cards.filter((card) => card.status !== "staged" && card.status !== "saved");
 }
 
 function pendingCards() {
