@@ -407,7 +407,9 @@ function buildContactDisplayName(contact) {
     person,
     sameAsPerson ? "" : company,
     String(contact.city || "").trim()
-  ].filter(Boolean).join(". ");
+    // Joined without a following space so the whole label reads as one token in
+    // a phone's contact list, which is where people search for it.
+  ].filter(Boolean).join(".");
 }
 
 // Digits-only international form for wa.me links.
@@ -478,7 +480,8 @@ async function ensureStorage() {
       const exhibitionAssignmentsChanged = repairCollectionExhibitionAssignments(dbCache);
       const locationsChanged = normalizeContactLocations(dbCache);
       const extractionFallbacksChanged = repairStoredCardExtractionFallbacks(dbCache);
-      if (retentionChanged || exhibitionAssignmentsChanged || locationsChanged || extractionFallbacksChanged) await saveDb(dbCache);
+      const displayNamesChanged = repairStoredContactDisplayNames(dbCache);
+      if (retentionChanged || exhibitionAssignmentsChanged || locationsChanged || extractionFallbacksChanged || displayNamesChanged) await saveDb(dbCache);
       console.log("Storage: PostgreSQL");
       return;
     } catch (err) {
@@ -498,7 +501,8 @@ async function ensureStorage() {
   const exhibitionAssignmentsChanged = repairCollectionExhibitionAssignments(dbCache);
   const locationsChanged = normalizeContactLocations(dbCache);
   const extractionFallbacksChanged = repairStoredCardExtractionFallbacks(dbCache);
-  if (retentionChanged || exhibitionAssignmentsChanged || locationsChanged || extractionFallbacksChanged) await saveDb(dbCache);
+  const displayNamesChanged = repairStoredContactDisplayNames(dbCache);
+  if (retentionChanged || exhibitionAssignmentsChanged || locationsChanged || extractionFallbacksChanged || displayNamesChanged) await saveDb(dbCache);
   console.log("Storage: local JSON fallback");
 }
 
@@ -2475,6 +2479,22 @@ function normalizeContactLocations(db) {
 
 // Idempotently repairs review cards created before required-field fallbacks and
 // warning deduplication were applied during extraction.
+// The saved-contact label is derived on save, so a change to its format would
+// otherwise reach exports and Google immediately (they rebuild it) while the
+// stored copy the app lists stayed on the old one. Re-derive any that drifted.
+function repairStoredContactDisplayNames(db) {
+  let changed = false;
+  for (const contact of db.contacts) {
+    if (contact.deletedAt) continue;
+    const rebuilt = buildContactDisplayName(contact);
+    if (rebuilt && rebuilt !== contact.contactDisplayName) {
+      contact.contactDisplayName = rebuilt;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 function repairStoredCardExtractionFallbacks(db) {
   let changed = false;
   for (const card of db.cards) {
