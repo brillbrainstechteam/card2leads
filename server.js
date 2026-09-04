@@ -3075,8 +3075,19 @@ const INDIA_REGION_TO_STATE = {
 };
 
 function inferStateFromCity(city) {
-  const key = String(city || "").toLowerCase().replace(/[^a-z]/g, "");
-  return INDIA_CITY_STATE_MAP[key] || "";
+  const raw = String(city || "").trim();
+  if (!raw) return "";
+  const lookup = (value) => INDIA_CITY_STATE_MAP[String(value).toLowerCase().replace(/[^a-z]/g, "")] || "";
+  // Cards often print two branches in one line ("Mumbai / Pune", "Jaipur, Delhi").
+  // Splitting only on separators keeps two-word cities like Navi Mumbai intact,
+  // and the first city listed is the one the card is really from.
+  const direct = lookup(raw);
+  if (direct) return direct;
+  for (const part of raw.split(/\s*(?:[\/,&|]|\band\b)\s*/i)) {
+    const match = lookup(part);
+    if (match) return match;
+  }
+  return "";
 }
 
 // Turns whatever was printed in the "state" position into a real state name:
