@@ -880,8 +880,6 @@ function resumePendingPlanCheckout() {
   setTimeout(() => {
     if (pendingTopup) {
       requestTopupPurchase();
-    } else if (selection.billingMode === "subscription") {
-      startSubscription(selection.plan);
     } else {
       startOneTimePlan(selection.plan);
     }
@@ -2340,7 +2338,6 @@ function showPaymentPrompt(message) {
     actions: [{ label: "See full pricing", className: "secondary", onClick: () => navigateToView("account") }],
     onRender: (node) => {
       node.querySelectorAll("[data-pay-once]").forEach((b) => b.addEventListener("click", () => { closeModal(false); startOneTimePlan(b.dataset.payOnce); }));
-      node.querySelectorAll("[data-subscribe-plan]").forEach((b) => b.addEventListener("click", () => { closeModal(false); startSubscription(b.dataset.subscribePlan); }));
     }
   };
   render();
@@ -4841,32 +4838,6 @@ function loadRazorpay() {
   });
 }
 
-async function startSubscription(plan) {
-  try {
-    const Razorpay = await loadRazorpay();
-    const result = await api("/api/billing/subscribe", { method: "POST", body: { plan } });
-    const rzp = new Razorpay({
-      key: result.keyId,
-      subscription_id: result.subscriptionId,
-      name: "Card2Leads",
-      description: `${plan.charAt(0).toUpperCase() + plan.slice(1)} plan`,
-      prefill: { name: state.user?.name || "", email: state.user?.email || "" },
-      theme: { color: "#223558" },
-      handler: () => {
-        state.message = { text: "Payment received. Your plan will activate in a moment.", bad: false };
-        render();
-        setTimeout(() => refreshAll().then(render).catch(() => {}), 4000);
-      },
-      modal: { ondismiss: () => { state.message = { text: "Payment cancelled.", bad: false }; render(); } }
-    });
-    rzp.on("payment.failed", () => { state.message = { text: "Payment failed. Please try again.", bad: true }; render(); });
-    rzp.open();
-  } catch (err) {
-    state.message = { text: err.message, bad: true };
-    render();
-  }
-}
-
 async function startOneTimePlan(plan) {
   try {
     // Fetch the checkout script and create the order together: they do not
@@ -5068,11 +5039,11 @@ function accountView() {
           : `<p class="muted">You don't have an active plan yet. Choose a plan below to start scanning.</p>`}
         ${billing.configured ? `
           <div class="plan-choices">
-            <button type="button" class="secondary" data-subscribe="monthly" ${billing.availablePlans.includes("monthly") ? "" : "disabled"}>Starter Pack · ₹499 / 150 scans</button>
-            <button type="button" class="secondary" data-subscribe="quarterly" ${billing.availablePlans.includes("quarterly") ? "" : "disabled"}>Exhibition Pass · ₹899 / 300 scans</button>
-            <button type="button" class="secondary" data-subscribe="annual" ${billing.availablePlans.includes("annual") ? "" : "disabled"}>Pro Annual · ₹3,999 / 1,500 scans</button>
+            <button type="button" class="secondary" data-pay-once="monthly">Starter Pack · ₹499 / 150 scans</button>
+            <button type="button" class="secondary" data-pay-once="quarterly">Exhibition Pass · ₹899 / 300 scans</button>
+            <button type="button" class="secondary" data-pay-once="annual">Pro Annual · ₹3,999 / 1,500 scans</button>
           </div>
-          <p class="muted">Cancel anytime.</p>
+          <p class="muted">One-time purchase. Scans are valid for the plan period and do not renew.</p>
           <div class="actions">
             <button type="button" id="buyTopup">Add ${Number(billing.topupScans)} scans · ₹${Number(billing.topupAmount)}</button>
           </div>
@@ -5127,7 +5098,7 @@ function accountView() {
       </div>
     </section>
   `);
-  node.querySelectorAll("[data-subscribe]").forEach((btn) => btn.addEventListener("click", () => startSubscription(btn.dataset.subscribe)));
+  node.querySelectorAll("[data-pay-once]").forEach((btn) => btn.addEventListener("click", () => startOneTimePlan(btn.dataset.payOnce)));
   node.querySelector("#buyTopup")?.addEventListener("click", () => startTopup());
   node.querySelectorAll(".disconnectGoogleAccount").forEach((btn) => btn.addEventListener("click", () => {
     state.modal = {
@@ -5301,7 +5272,7 @@ function accountBillingView() {
   `);
   initAccountBillingTabs(node);
   node.querySelectorAll("[data-one-time-plan]").forEach((btn) => btn.addEventListener("click", () => startOneTimePlan(btn.dataset.oneTimePlan)));
-  node.querySelectorAll("[data-subscribe]").forEach((btn) => btn.addEventListener("click", () => startSubscription(btn.dataset.subscribe)));
+  node.querySelectorAll("[data-pay-once]").forEach((btn) => btn.addEventListener("click", () => startOneTimePlan(btn.dataset.payOnce)));
   node.querySelector("#buyTopup")?.addEventListener("click", requestTopupPurchase);
   node.querySelectorAll(".disconnectGoogleAccount").forEach((btn) => btn.addEventListener("click", () => {
     state.modal = {
