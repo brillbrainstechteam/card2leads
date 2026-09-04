@@ -210,6 +210,7 @@ const EXPORT_COLUMNS = [
   "Remarks",
   "Voice Note",
   "Tags",
+  "Message Sent",
   "Created Timestamp"
 ];
 
@@ -6188,6 +6189,27 @@ async function handleApi(req, res, pathname) {
       return send(res, 200, { contact });
     }
 
+    // Recorded when the user actually opens WhatsApp for a contact, so the
+    // outreach state survives closing the app and is visible to the whole team
+    // rather than only to the device that sent the message.
+    if (req.method === "POST" && pathname === "/api/contacts/mark-messaged") {
+      const body = await readJson(req);
+      const ids = new Set(Array.isArray(body.ids) ? body.ids.map(String) : []);
+      if (!ids.size) return error(res, 400, "Select at least one contact.");
+      const sent = body.sent === false ? null : now();
+      let updated = 0;
+      for (const contact of db.contacts) {
+        if (contact.organisationId !== user.organisationId || contact.deletedAt || !ids.has(contact.id)) continue;
+        contact.messageSentAt = sent;
+        contact.messageSentBy = sent ? user.id : "";
+        contact.updatedAt = now();
+        updated += 1;
+      }
+      audit(db, user, sent ? "contacts.marked_messaged" : "contacts.unmarked_messaged", "contact", "", { count: updated });
+      await saveDb(db);
+      return send(res, 200, { updated });
+    }
+
     if (req.method === "POST" && pathname === "/api/contacts/bulk-delete") {
       const body = await readJson(req);
       const ids = new Set(Array.isArray(body.ids) ? body.ids.map(String) : []);
@@ -7066,6 +7088,7 @@ function exportRow(contact) {
     exportRemarks(contact),
     exportVoiceNote(contact),
     contact.tags,
+    contact.messageSentAt ? "Yes" : "No",
     contact.createdAt
   ].map(safeSpreadsheetValue);
 }
@@ -7144,6 +7167,24 @@ function exportSelection(db, user, url) {
     contacts = contacts.filter((c) => (c.state || "") === stateName);
     nameParts.push(stateName);
   }
+  const messaged = params.get("messaged") || "";
+  if (messaged === "sent") {
+    contacts = contacts.filter((c) => Boolean(c.messageSentAt));
+    nameParts.push("Message sent");
+  } else if (messaged === "not-sent") {
+    contacts = contacts.filter((c) => !c.messageSentAt);
+    nameParts.push("Message not sent");
+  }
+
+  // The app has always put the date-added filter in the file name. Without it
+  // here the spreadsheet claimed a filter it had not applied.
+  const addedWithin = Number(params.get("addedWithinDays") || 0);
+  if (addedWithin > 0) {
+    const cutoff = Date.now() - addedWithin * 24 * 60 * 60 * 1000;
+    contacts = contacts.filter((c) => new Date(c.createdAt).getTime() >= cutoff);
+    nameParts.push(addedWithin === 1 ? "Today" : `Last ${addedWithin} days`);
+  }
+
   if (search) {
     contacts = contacts.filter((c) =>
       [c.name, c.mobileNumber, c.companyName, c.emailAddress, c.city, c.state, c.tags, c.notes, c.assignedToName, c.exhibitionName]
