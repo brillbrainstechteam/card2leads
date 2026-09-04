@@ -8441,3 +8441,15 @@ strong {
   word-break: break-word;
 }
 .google-name-preview .muted { font-size: 12px; }
+
+/* A lead that has already been messaged on WhatsApp. The tick sits beside the
+   action rather than replacing it, since messaging again is legitimate. */
+.wa-sent {
+  color: #137a4b;
+  font-weight: 700;
+  margin-right: 4px;
+  font-size: 0.95rem;
+}
+.row-btn.whatsapp.sent {
+  border-color: #137a4b;
+}
