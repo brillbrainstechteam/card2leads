@@ -8066,6 +8066,7 @@ function crc32(buffer) {
 module.exports = {
   EXPORT_COLUMNS,
   applyDerivedContactFields,
+  exportSelection,
   expandCardPeople,
   assertGoogleWritePolicy,
   buildContactDisplayName,
