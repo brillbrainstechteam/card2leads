@@ -3786,7 +3786,25 @@ async function expireOneTimeSubscriptionHistory(asOf = new Date()) {
   }
 }
 
+// Card images and voice recordings are purged once past the organisation's
+// retention window. This ran only at startup, so on a server that stays up for
+// weeks nothing expired until the next deploy - storage grew unbounded and the
+// retention we state was enforced by accident rather than on a schedule.
+//
+// It works on the live cache rather than a readDb() clone because the sweep is
+// entirely synchronous: nothing can interleave with it, and a clone would have
+// to be written back over whatever requests changed meanwhile.
+async function purgeExpiredCardStorage() {
+  const changed = applyCardImageRetention(dbCache);
+  if (changed) {
+    await saveDb(dbCache);
+    console.log("[maintenance] purged expired card images and voice audio");
+  }
+  return changed;
+}
+
 async function runMaintenance() {
+  await purgeExpiredCardStorage();
   await purgePendingDeletionAccounts();
   await expireOneTimeSubscriptionHistory();
 }
