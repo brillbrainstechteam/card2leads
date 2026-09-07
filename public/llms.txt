@@ -23,9 +23,9 @@
 
 ## Pricing
 
-- 499 INR - one month, 150 card scans
-- 799 INR - three months, 300 card scans
-- 2,999 INR - one year, 1,500 card scans
+- 499 INR - one month, 150 card scans (Starter Pack)
+- 899 INR - three months, 300 card scans (Exhibition Pass)
+- 3,999 INR - one year, 1,500 card scans (Pro Annual)
 
 ## Data handling
 
