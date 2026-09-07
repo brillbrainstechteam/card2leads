@@ -2765,12 +2765,10 @@ async function extractBusinessCardWithGemini(file, collection) {
   return normalizeExtraction(parseJsonContent(content), collection);
 }
 
-// A card without a name or a number is not a lead, so either one missing is
-// worth paying to resolve. An email is optional - plenty of cards genuinely
-// carry none - so a blank one is not evidence of a bad read, and treating it as
-// such would spend a verification call on every card that simply has no email.
+// A card without a name or a number is not a lead, so either one missing or
+// read with low confidence is worth paying to resolve. Nothing else is: an
+// email is optional and plenty of cards carry none.
 const VERIFICATION_REQUIRED_FIELDS = Object.freeze(["name", "mobileNumber"]);
-const VERIFICATION_OPTIONAL_FIELDS = Object.freeze(["emailAddress"]);
 
 // Decide whether a card is worth a second, more expensive pass. The extraction
 // prompt already makes the model score every field 0-100 and tells it to go
@@ -2792,19 +2790,6 @@ function verificationReason(extraction) {
     const score = Number(confidence[field] || 0);
     if (score < threshold) return `${field} confidence ${score} < ${threshold}`;
   }
-
-  // Optional fields are only judged when the model actually returned one.
-  for (const field of VERIFICATION_OPTIONAL_FIELDS) {
-    if (!cleanText(extraction?.[field])) continue;
-    const score = Number(confidence[field] || 0);
-    if (score < threshold) return `${field} confidence ${score} < ${threshold}`;
-  }
-
-  // A value the model felt sure about can still be malformed. These are the
-  // same checks the rest of the pipeline uses, so a failure here means the
-  // field would not survive export or sync anyway.
-  if (extraction.emailAddress && !isValidEmail(extraction.emailAddress)) return "email failed validation";
-  if (extraction.mobileNumber && !isValidMobile(extraction.mobileNumber)) return "mobile failed validation";
 
   return null;
 }
