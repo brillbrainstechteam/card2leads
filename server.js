@@ -2557,8 +2557,75 @@ function makeManualReviewExtraction(fileName, collection, reason = "") {
   };
 }
 
+// --- Image clamp applied before anything is sent to a model ---
+//
+// Both clients already shrink photos before upload - the browser to 1600px, the
+// Android app to 2000px - but that only covers the paths that reach their
+// resize code. The browser cannot decode HEIC, so an iPhone photo uploaded on
+// the web falls through to readOriginalFile and is sent at full resolution,
+// which is four times the image tokens of a resized one. Clamping here catches
+// that, any future client that forgets, and anything pasted straight into the
+// API.
+//
+// 1536 is deliberate rather than round. Gemini bills images in 768px tiles, so
+// a 4:3 photo costs four tiles up to 1536px on the long edge and six above it -
+// 1600px and 2000px are billed identically. Sitting just under the boundary
+// keeps a third of the image cost without a visible drop in card legibility.
+const MODEL_IMAGE_MAX_EDGE = Math.max(768, Number(process.env.MODEL_IMAGE_MAX_EDGE || 1536));
+const MODEL_IMAGE_QUALITY = Math.min(100, Math.max(50, Number(process.env.MODEL_IMAGE_QUALITY || 90)));
+
+let sharpModule; // undefined = not tried yet, null = unavailable
+function loadSharp() {
+  if (sharpModule !== undefined) return sharpModule;
+  try {
+    sharpModule = require("sharp");
+  } catch (err) {
+    sharpModule = null;
+    console.warn(`[extraction] sharp unavailable, images will be sent unresized: ${err.message}`);
+  }
+  return sharpModule;
+}
+
+// Returns a data URL no larger than the cap, or the original on any failure.
+// Never throws: a card that cannot be resized is still worth extracting, just
+// at full price, so this must not become a new way for an upload to fail.
+async function clampImageForModel(dataUrl) {
+  if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:")) return dataUrl;
+  const sharp = loadSharp();
+  if (!sharp) return dataUrl;
+  const comma = dataUrl.indexOf(",");
+  if (comma < 0 || !/;base64/i.test(dataUrl.slice(0, comma))) return dataUrl;
+  try {
+    const input = Buffer.from(dataUrl.slice(comma + 1), "base64");
+    const image = sharp(input, { failOn: "none" });
+    const meta = await image.metadata();
+    const longest = Math.max(meta.width || 0, meta.height || 0);
+    if (!longest) return dataUrl;
+    // Already small enough and already a format every provider accepts: leave
+    // it alone rather than re-encoding and losing quality for nothing.
+    if (longest <= MODEL_IMAGE_MAX_EDGE && /^(jpeg|png|webp)$/.test(meta.format || "")) return dataUrl;
+    const output = await image
+      .rotate() // honour EXIF orientation before resizing
+      .resize({ width: MODEL_IMAGE_MAX_EDGE, height: MODEL_IMAGE_MAX_EDGE, fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: MODEL_IMAGE_QUALITY, mozjpeg: true })
+      .toBuffer();
+    console.info(`[extraction] clamped image ${meta.width}x${meta.height} ${meta.format} ${Math.round(input.length / 1024)}KB -> <=${MODEL_IMAGE_MAX_EDGE}px jpeg ${Math.round(output.length / 1024)}KB`);
+    return `data:image/jpeg;base64,${output.toString("base64")}`;
+  } catch (err) {
+    console.warn(`[extraction] could not clamp image, sending original: ${err.message}`);
+    return dataUrl;
+  }
+}
+
 async function extractBusinessCard(file, collection) {
   const failures = [];
+  // Clamp onto a copy: the caller still holds the original for storage and for
+  // showing the user what they photographed.
+  const [dataUrl, backDataUrl] = await Promise.all([
+    clampImageForModel(file.dataUrl),
+    file.backDataUrl ? clampImageForModel(file.backDataUrl) : Promise.resolve(file.backDataUrl)
+  ]);
+  file = { ...file, dataUrl, backDataUrl };
   const order = EXTRACTION_PROVIDER === "openai" ? ["openai", "gemini"] : ["gemini", "openai"];
   for (const provider of order) {
     if (provider === "gemini" && process.env.GEMINI_API_KEY && Date.now() >= geminiUnavailableUntil) {
@@ -2698,15 +2765,70 @@ async function extractBusinessCardWithGemini(file, collection) {
   return normalizeExtraction(parseJsonContent(content), collection);
 }
 
+// A card without a name or a number is not a lead, so either one missing is
+// worth paying to resolve. An email is optional - plenty of cards genuinely
+// carry none - so a blank one is not evidence of a bad read, and treating it as
+// such would spend a verification call on every card that simply has no email.
+const VERIFICATION_REQUIRED_FIELDS = Object.freeze(["name", "mobileNumber"]);
+const VERIFICATION_OPTIONAL_FIELDS = Object.freeze(["emailAddress"]);
+
+// Decide whether a card is worth a second, more expensive pass. The extraction
+// prompt already makes the model score every field 0-100 and tells it to go
+// below 70 when text is cut, blurred, rotated, handwritten or inferred, so the
+// signal for this decision is already in the response and was simply unused:
+// every card was being re-verified, including the clean, well-lit ones that had
+// nothing wrong with them.
+//
+// Returns null when the card looks sound, or a short reason when it does not.
+function verificationReason(extraction) {
+  const threshold = Number(process.env.EXTRACTION_VERIFICATION_MIN_CONFIDENCE || 70);
+  const confidence = extraction?.fieldConfidence || {};
+
+  for (const field of VERIFICATION_REQUIRED_FIELDS) {
+    // A blank required field is the strongest reason to look again: either the
+    // card genuinely lacks it or the model missed it, and only a second pass
+    // can tell the two apart.
+    if (!cleanText(extraction?.[field])) return `${field} missing`;
+    const score = Number(confidence[field] || 0);
+    if (score < threshold) return `${field} confidence ${score} < ${threshold}`;
+  }
+
+  // Optional fields are only judged when the model actually returned one.
+  for (const field of VERIFICATION_OPTIONAL_FIELDS) {
+    if (!cleanText(extraction?.[field])) continue;
+    const score = Number(confidence[field] || 0);
+    if (score < threshold) return `${field} confidence ${score} < ${threshold}`;
+  }
+
+  // A value the model felt sure about can still be malformed. These are the
+  // same checks the rest of the pipeline uses, so a failure here means the
+  // field would not survive export or sync anyway.
+  if (extraction.emailAddress && !isValidEmail(extraction.emailAddress)) return "email failed validation";
+  if (extraction.mobileNumber && !isValidMobile(extraction.mobileNumber)) return "mobile failed validation";
+
+  return null;
+}
+
 async function maybeVerifyExtraction(file, collection, extraction) {
   const mode = String(process.env.EXTRACTION_VERIFICATION_MODE || "").toLowerCase();
-  if (!["paid", "high", "high_accuracy", "second_pass"].includes(mode)) return extraction;
+  if (!["paid", "high", "high_accuracy", "second_pass", "always"].includes(mode)) return extraction;
   if (!process.env.OPENAI_API_KEY) {
     extraction.warnings.push("Second-pass verification is enabled but OPENAI_API_KEY is not configured.");
     return extraction;
   }
+
+  // "always" keeps the previous behaviour of verifying every card, so the
+  // selective gate can be switched off without a deploy if accuracy regresses.
+  const reason = mode === "always" ? "mode=always" : verificationReason(extraction);
+  if (!reason) {
+    console.info("[extraction] verification=skipped reason=confident");
+    return extraction;
+  }
+
   try {
-    return await verifyExtractionWithOpenAI(file, collection, extraction);
+    const verified = await verifyExtractionWithOpenAI(file, collection, extraction);
+    console.info(`[extraction] verification=ran reason="${reason}"`);
+    return verified;
   } catch (err) {
     extraction.warnings.push(`Second-pass verification could not complete: ${err.message}`);
     return extraction;
