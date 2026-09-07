@@ -2399,6 +2399,24 @@ label {
   gap: 12px;
 }
 
+/* Google Play badge beside the hero CTA. The artwork is Google's official asset
+   and their brand guidelines forbid recolouring or redrawing it, so it is only
+   ever scaled - the aspect ratio stays that of the source 646x250 PNG. */
+.store-badge {
+  display: inline-flex;
+  line-height: 0;
+  border-radius: 8px;
+  transition: opacity .15s ease, transform .15s ease;
+}
+.store-badge img { width: 180px; height: auto; display: block; }
+.store-badge:hover { opacity: .85; transform: translateY(-1px); }
+.store-badge:focus-visible { outline: 2px solid #6c3fa4; outline-offset: 3px; }
+
+@media (max-width: 640px) {
+  .hero-actions { flex-wrap: wrap; }
+  .store-badge img { width: 160px; }
+}
+
 .public-links {
   flex: 1;
   justify-content: flex-start;

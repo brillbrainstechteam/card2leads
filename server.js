@@ -7806,14 +7806,28 @@ function serveStatic(req, res, pathname) {
   const filePath = path.normalize(path.join(PUBLIC_DIR, safePath));
   if (!filePath.startsWith(PUBLIC_DIR)) return error(res, 403, "Forbidden.");
   if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) return error(res, 404, "Not found.");
+  // robots.txt, sitemap.xml, llms.txt and the web manifest were all falling
+  // through to application/octet-stream, which makes crawlers treat them as
+  // opaque downloads rather than the documents they are, and makes a browser
+  // download llms.txt instead of showing it. Extensions are lower-cased first
+  // so an upper-case one does not miss the map.
   const contentType = {
     ".html": "text/html; charset=utf-8",
     ".css": "text/css; charset=utf-8",
     ".js": "application/javascript; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".webmanifest": "application/manifest+json; charset=utf-8",
+    ".txt": "text/plain; charset=utf-8",
+    ".xml": "application/xml; charset=utf-8",
     ".png": "image/png",
     ".jpg": "image/jpeg",
-    ".webp": "image/webp"
-  }[path.extname(filePath)] || "application/octet-stream";
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".webp": "image/webp",
+    ".woff2": "font/woff2"
+  }[path.extname(filePath).toLowerCase()] || "application/octet-stream";
   send(res, 200, fs.readFileSync(filePath), { "Content-Type": contentType });
 }
 

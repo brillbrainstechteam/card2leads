@@ -408,6 +408,9 @@ function authView() {
           <p class="hero-text">Card2Leads is a business-card scanning and contact-management application that converts individual or bulk card uploads into structured contact records. Review extracted details, add labels and voice notes, then export or sync approved contacts to Google Contacts and Google Sheets. Card2Leads is operated by BrillBrains Consultants Pvt. Ltd.</p>
           <div class="hero-actions">
             <button type="button" data-auth-mode="signup">Get Started</button>
+            <a class="store-badge" href="https://play.google.com/store/apps/details?id=com.brillbrainsconsultants.card2leads" target="_blank" rel="noopener" aria-label="Download Card2Leads on Google Play">
+              <img src="/badges/google-play-badge.png" alt="Get Card2Leads on Google Play" width="180" height="70" />
+            </a>
           </div>
         </div>
         <div class="hero-visual" aria-label="Card scanning preview">

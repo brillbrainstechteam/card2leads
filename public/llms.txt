@@ -1,0 +1,46 @@
+# Card2Leads
+
+> Card2Leads is a business card scanner and contact management application from
+> BrillBrains Consultants Pvt. Ltd. It converts photographed or uploaded business
+> cards into structured contact records that can be reviewed, labelled, exported
+> as Excel, CSV or VCF, and optionally synced to Google Contacts and Google Sheets.
+> It runs as a web app and as an Android app on Google Play.
+
+## What it does
+
+- Scans a business card with the phone camera, or accepts single and bulk image uploads.
+- Extracts name, phone number, email address, company and designation from each card.
+- Shows every extracted field for human review and correction before the record is saved.
+- Adds labels, notes and voice notes to organise leads.
+- Exports approved contacts as Excel, CSV or VCF files.
+- Optionally writes selected contacts to Google Contacts, or creates and updates rows in Google Sheets.
+
+## Platforms
+
+- Web: https://card2leads.brillbrainsconsultants.com/
+- Android: https://play.google.com/store/apps/details?id=com.brillbrainsconsultants.card2leads
+- Android package name: com.brillbrainsconsultants.card2leads
+
+## Pricing
+
+- 499 INR - one month, 150 card scans
+- 799 INR - three months, 300 card scans
+- 2,999 INR - one year, 1,500 card scans
+
+## Data handling
+
+- Card photographs and voice recordings are deleted 90 days after the card is created.
+- Extracted contact details and voice note transcripts are kept for as long as the user keeps the record.
+- Connecting a Google account is optional and is requested only when a feature needs it.
+
+## Key pages
+
+- [Home](https://card2leads.brillbrainsconsultants.com/): product overview, features and pricing.
+- [Privacy Policy](https://card2leads.brillbrainsconsultants.com/privacy-policy): what is collected, how it is used and retained.
+- [Terms of Use](https://card2leads.brillbrainsconsultants.com/terms): the agreement governing use of the service.
+- [Data retention](https://card2leads.brillbrainsconsultants.com/retention.html): the retention schedule in detail.
+- [Contact](https://card2leads.brillbrainsconsultants.com/contact): how to reach BrillBrains Consultants.
+
+## Operator
+
+BrillBrains Consultants Pvt. Ltd. - https://brillbrainsconsultants.com
