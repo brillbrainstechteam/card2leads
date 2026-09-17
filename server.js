@@ -397,6 +397,13 @@ function resolveStateName(stateValue, cityValue) {
 // repeats the person name, and any unknown part is dropped rather than leaving
 // an empty gap between separators.
 function buildContactDisplayName(contact) {
+  // A name the user typed on the review screen wins over the derived format.
+  // Without this the confirmation step the app shows before saving is theatre:
+  // the edit is accepted, then immediately overwritten by the rebuilt label -
+  // and rebuilt again by repairStoredContactDisplayNames on the next restart.
+  const override = String(contact.contactDisplayNameOverride || "").trim();
+  if (override) return override;
+
   const person = String(contact.name || "").trim();
   const company = String(contact.companyName || "").trim();
   const sameAsPerson = company.toLowerCase() === person.toLowerCase();
@@ -2486,6 +2493,23 @@ function normalizeContactLocations(db) {
 // The saved-contact label is derived on save, so a change to its format would
 // otherwise reach exports and Google immediately (they rebuild it) while the
 // stored copy the app lists stayed on the old one. Re-derive any that drifted.
+// The label a card would be saved under if it were saved right now. Runs the
+// card's extraction through the same cleaner and deriver the save path uses, so
+// a preview can never disagree with the result.
+function proposedSavedNameFor(card, collection) {
+  try {
+    const cleaned = cleanContactFields({
+      ...(card.extraction || {}),
+      exhibitionName: collection?.exhibitionName || collection?.name || "",
+      exhibitionDate: collection?.exhibitionDate || ""
+    });
+    return applyDerivedContactFields(cleaned).contactDisplayName || "";
+  } catch {
+    // A preview is never worth failing a card list over.
+    return "";
+  }
+}
+
 function repairStoredContactDisplayNames(db) {
   let changed = false;
   for (const contact of db.contacts) {
@@ -5914,6 +5938,7 @@ async function handleApi(req, res, pathname) {
       const hidden = REVIEW_KEEPS_SAVED_CARDS
         ? ["deleted", "skipped", "skipped_duplicate"]
         : ["saved", "deleted", "skipped", "skipped_duplicate"];
+      const collectionById = new Map(db.collections.map((item) => [item.id, item]));
       const contactByCard = new Map();
       if (REVIEW_KEEPS_SAVED_CARDS) {
         for (const contact of db.contacts) {
@@ -5930,6 +5955,14 @@ async function handleApi(req, res, pathname) {
             card.contactId = contact.id;
             card.contactSavedName = contact.contactDisplayName || "";
             card.messageSentAt = contact.messageSentAt || "";
+          } else {
+            // What this card WOULD be saved as, so the app's confirmation step
+            // can show the real label instead of approximating the format and
+            // getting the separator, the exhibition year and the
+            // company-equals-person rule subtly wrong. Built by the same two
+            // functions the save itself uses, in the same order, so the two can
+            // never drift apart.
+            card.proposedSavedName = proposedSavedNameFor(c, collectionById.get(c.collectionId));
           }
           return card;
         });
@@ -6939,6 +6972,10 @@ function cleanContactFields(fields) {
     mobileNumber: normalizedFields.mobileNumber
   };
   for (const field of OPTIONAL_FIELDS) cleaned[field] = String(normalizedFields[field] || "").trim();
+  // Only set when the client actually sent one, so an ordinary save never
+  // writes an empty override and pins the contact to a blank name.
+  const savedNameOverride = String(fields?.savedName || "").trim();
+  if (savedNameOverride) cleaned.contactDisplayNameOverride = savedNameOverride;
   if (cleaned.website) cleaned.website = normalizeUrl(cleaned.website);
   if (cleaned.linkedInUrl) cleaned.linkedInUrl = normalizeUrl(cleaned.linkedInUrl);
   cleaned.city = toTitleCase(cleaned.city);
@@ -7040,7 +7077,10 @@ function expandCardPeople(fields) {
     secondaryName: "",
     secondaryMobileNumber: "",
     tertiaryName: "",
-    tertiaryMobileNumber: ""
+    tertiaryMobileNumber: "",
+    // The saved-name the user confirmed describes the primary card holder;
+    // applying it to every split contact would name them all the same.
+    savedName: ""
   });
 
   const people = [primary];
