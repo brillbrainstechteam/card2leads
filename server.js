@@ -396,7 +396,34 @@ function resolveStateName(stateValue, cityValue) {
 // searchable whatever script the card used. Company is dropped when it merely
 // repeats the person name, and any unknown part is dropped rather than leaving
 // an empty gap between separators.
-function buildContactDisplayName(contact) {
+// --- Saved-contact name format ---
+//
+// Each workspace chooses which parts make up a saved contact's name and what
+// joins them. The default is the format every workspace has used so far, so a
+// workspace that never opens the setting sees no change at all.
+const SAVED_NAME_PARTS = Object.freeze(["state", "exhibition", "name", "company", "designation", "city"]);
+const SAVED_NAME_SEPARATORS = Object.freeze([".", " - ", " | ", " ", "_", ", "]);
+const DEFAULT_SAVED_NAME_FORMAT = Object.freeze({ parts: Object.freeze(["state", "exhibition", "name", "company", "city"]), separator: "." });
+
+// Returns a valid format, falling back to the default rather than producing a
+// label that identifies nobody.
+function normalizeSavedNameFormat(value) {
+  const parts = Array.isArray(value?.parts)
+    ? [...new Set(value.parts.map(String))].filter((part) => SAVED_NAME_PARTS.includes(part))
+    : [];
+  const separator = SAVED_NAME_SEPARATORS.includes(value?.separator) ? value.separator : DEFAULT_SAVED_NAME_FORMAT.separator;
+  if (!parts.includes("name") && !parts.includes("company")) {
+    return { parts: [...DEFAULT_SAVED_NAME_FORMAT.parts], separator: DEFAULT_SAVED_NAME_FORMAT.separator };
+  }
+  return { parts, separator };
+}
+
+function savedNameFormatFor(organisationId) {
+  const organisation = (dbCache?.organisations || []).find((item) => item.id === organisationId);
+  return normalizeSavedNameFormat(organisation?.savedNameFormat);
+}
+
+function buildContactDisplayName(contact, format = savedNameFormatFor(contact.organisationId)) {
   // A name the user typed on the review screen wins over the derived format.
   // Without this the confirmation step the app shows before saving is theatre:
   // the edit is accepted, then immediately overwritten by the rebuilt label -
@@ -407,18 +434,26 @@ function buildContactDisplayName(contact) {
   const person = String(contact.name || "").trim();
   const company = String(contact.companyName || "").trim();
   const sameAsPerson = company.toLowerCase() === person.toLowerCase();
-  const stateCode = String(contact.stateCode || "").trim()
-    || stateCodeFor(contact.state, contact.country, phoneCountryInfo(contact.mobileNumber, contact.country).iso, contact.city);
-  return [
-    stateCode,
-    exhibitionWithYear(contact.exhibitionName, contact.exhibitionDate),
-    person,
-    sameAsPerson ? "" : company,
-    String(contact.city || "").trim()
-    // Joined without a following space so the whole label reads as one token in
-    // a phone's contact list, which is where people search for it. A part that
-    // already ends in a dot ("Pvt. Ltd.") would otherwise produce "Ltd..Jaipur".
-  ].filter(Boolean).map((part) => String(part).replace(/\.+$/, "").trim()).filter(Boolean).join(".");
+  const values = {
+    state: String(contact.stateCode || "").trim()
+      || stateCodeFor(contact.state, contact.country, phoneCountryInfo(contact.mobileNumber, contact.country).iso, contact.city),
+    exhibition: exhibitionWithYear(contact.exhibitionName, contact.exhibitionDate),
+    name: person,
+    company: sameAsPerson ? "" : company,
+    designation: String(contact.designation || "").trim(),
+    city: String(contact.city || "").trim()
+  };
+  const { parts, separator } = normalizeSavedNameFormat(format);
+  // With the default "." separator the label is joined without a following
+  // space so it reads as one token in a phone's contact list, and a part that
+  // already ends in a dot ("Pvt. Ltd.") would otherwise produce "Ltd..Jaipur".
+  // Other separators keep a part's own trailing dot.
+  const stripDots = separator.startsWith(".");
+  return parts
+    .map((part) => String(values[part] || "").trim())
+    .map((part) => (stripDots ? part.replace(/\.+$/, "").trim() : part))
+    .filter(Boolean)
+    .join(separator);
 }
 
 // Digits-only international form for wa.me links.
@@ -2503,6 +2538,8 @@ function proposedSavedNameFor(card, collection) {
       exhibitionName: collection?.exhibitionName || collection?.name || "",
       exhibitionDate: collection?.exhibitionDate || ""
     });
+    // The workspace decides the format, so the preview must know whose it is.
+    cleaned.organisationId = card.organisationId;
     return applyDerivedContactFields(cleaned).contactDisplayName || "";
   } catch {
     // A preview is never worth failing a card list over.
@@ -2512,9 +2549,14 @@ function proposedSavedNameFor(card, collection) {
 
 function repairStoredContactDisplayNames(db) {
   let changed = false;
+  // One format lookup per workspace rather than one per contact.
+  const formats = new Map();
   for (const contact of db.contacts) {
     if (contact.deletedAt) continue;
-    const rebuilt = buildContactDisplayName(contact);
+    if (!formats.has(contact.organisationId)) {
+      formats.set(contact.organisationId, normalizeSavedNameFormat((db.organisations || []).find((item) => item.id === contact.organisationId)?.savedNameFormat));
+    }
+    const rebuilt = buildContactDisplayName(contact, formats.get(contact.organisationId));
     if (rebuilt && rebuilt !== contact.contactDisplayName) {
       contact.contactDisplayName = rebuilt;
       changed = true;
@@ -6268,6 +6310,37 @@ async function handleApi(req, res, pathname) {
       const token = randomToken("cko");
       checkoutHandoffs.set(token, { userId: user.id, plan: wantedPlan, topup: Boolean(linkBody.topup), expiresAt: Date.now() + 5 * 60 * 1000 });
       return send(res, 200, { url: `${baseUrl(req)}/api/billing/checkout?token=${encodeURIComponent(token)}` });
+    }
+
+    // The workspace's saved-contact name format. Saving it relabels every
+    // existing contact straight away, so the list, exports and the next Google
+    // sync all agree. Names a user typed by hand keep their text.
+    if (req.method === "PUT" && pathname === "/api/settings/name-format") {
+      const organisation = db.organisations.find((o) => o.id === user.organisationId);
+      if (!organisation) return error(res, 404, "Workspace not found.");
+      const body = await readJson(req);
+      const parts = Array.isArray(body.parts) ? body.parts.map(String) : [];
+      if (!parts.length) return error(res, 400, "Choose at least one part for the contact name.");
+      const unknown = parts.filter((part) => !SAVED_NAME_PARTS.includes(part));
+      if (unknown.length) return error(res, 400, "Unknown name part: " + unknown.join(", ") + ".");
+      if (!parts.includes("name") && !parts.includes("company")) {
+        return error(res, 400, "Include the person's name or the company so each contact can be recognised.");
+      }
+      if (!SAVED_NAME_SEPARATORS.includes(body.separator)) return error(res, 400, "Choose one of the offered separators.");
+      organisation.savedNameFormat = normalizeSavedNameFormat({ parts, separator: body.separator });
+      organisation.updatedAt = now();
+      let relabelled = 0;
+      for (const contact of db.contacts) {
+        if (contact.organisationId !== organisation.id || contact.deletedAt) continue;
+        const rebuilt = buildContactDisplayName(contact, organisation.savedNameFormat);
+        if (rebuilt && rebuilt !== contact.contactDisplayName) {
+          contact.contactDisplayName = rebuilt;
+          relabelled += 1;
+        }
+      }
+      audit(db, user, "settings.name_format_updated", "organisation", organisation.id, { ...organisation.savedNameFormat, relabelled });
+      await saveDb(db);
+      return send(res, 200, { savedNameFormat: organisation.savedNameFormat, relabelled });
     }
 
     if (req.method === "PUT" && pathname === "/api/settings/whatsapp") {
