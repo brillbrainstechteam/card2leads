@@ -5928,7 +5928,11 @@ async function handleApi(req, res, pathname) {
       audit(db, user, "cards.process_pending", "user", user.id, { count: staged.length });
       await saveDb(db);
       scheduleQueueProcessing();
-      return send(res, 200, { queued: staged.length });
+      // The ids let the app treat these as part of the current scan, so each
+      // card - and every person on a multi-name card - appears in Review once
+      // read, exactly as a card read straight away does. Without them a card
+      // from Pending was saved to Contacts and never shown in Review.
+      return send(res, 200, { queued: staged.length, cardIds: staged.map((card) => card.id) });
     }
 
     if (req.method === "GET" && pathname === "/api/cards") {
