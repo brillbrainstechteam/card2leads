@@ -5939,22 +5939,39 @@ async function handleApi(req, res, pathname) {
         ? ["deleted", "skipped", "skipped_duplicate"]
         : ["saved", "deleted", "skipped", "skipped_duplicate"];
       const collectionById = new Map(db.collections.map((item) => [item.id, item]));
-      const contactByCard = new Map();
+      // A card naming two or three people is saved as one contact each, but
+      // this used to keep only the first, so Review showed a single row where
+      // Contacts showed every person - and the others could not be messaged
+      // from Review at all. Every contact is kept, in save order, which puts
+      // the primary card holder first.
+      const contactsByCard = new Map();
       if (REVIEW_KEEPS_SAVED_CARDS) {
         for (const contact of db.contacts) {
           if (contact.organisationId !== user.organisationId || contact.deletedAt || !contact.sourceCardId) continue;
-          if (!contactByCard.has(contact.sourceCardId)) contactByCard.set(contact.sourceCardId, contact);
+          if (!contactsByCard.has(contact.sourceCardId)) contactsByCard.set(contact.sourceCardId, []);
+          contactsByCard.get(contact.sourceCardId).push(contact);
         }
       }
       const cards = db.cards
         .filter((c) => c.organisationId === user.organisationId && !c.deletedAt && !hidden.includes(c.status))
         .map((c) => {
           const card = publicCard(c);
-          const contact = contactByCard.get(c.id);
+          const linked = contactsByCard.get(c.id) || [];
+          const contact = linked[0];
           if (contact) {
+            // The single-contact fields stay for app builds that predate
+            // linkedContacts; they describe the primary card holder.
             card.contactId = contact.id;
             card.contactSavedName = contact.contactDisplayName || "";
             card.messageSentAt = contact.messageSentAt || "";
+            card.linkedContacts = linked.map((item) => ({
+              id: item.id,
+              name: item.name || "",
+              mobileNumber: item.mobileNumber || "",
+              companyName: item.companyName || "",
+              contactDisplayName: item.contactDisplayName || "",
+              messageSentAt: item.messageSentAt || ""
+            }));
           } else {
             // What this card WOULD be saved as, so the app's confirmation step
             // can show the real label instead of approximating the format and
