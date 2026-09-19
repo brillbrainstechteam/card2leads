@@ -5678,15 +5678,61 @@ async function handleApi(req, res, pathname) {
 
     if (req.method === "PATCH" && pathname.startsWith("/api/collections/")) {
       const collection = db.collections.find((c) => c.id === pathname.split("/").pop() && c.organisationId === user.organisationId && c.status !== "deleted");
-      if (!collection) return error(res, 404, "Collection not found.");
+      if (!collection) return error(res, 404, "Exhibition not found.");
       const body = await readJson(req);
-      ["name", "exhibitionName", "exhibitionDate", "destinationType", "destinationName"].forEach((field) => {
+      const previousName = String(collection.exhibitionName || collection.name || "");
+      const previousDate = String(collection.exhibitionDate || "");
+
+      // The app edits an exhibition as one name, so name and exhibitionName
+      // move together, exactly as they are set together on create.
+      const requestedName = body.exhibitionName ?? body.name;
+      if (requestedName != null) {
+        const nextName = String(requestedName).trim();
+        if (nextName.length < 2) return error(res, 400, "Enter an exhibition name.");
+        const clash = findExistingCollection(db, user, nextName);
+        if (clash && clash.id !== collection.id) {
+          return error(res, 409, `Another exhibition is already called "${clash.exhibitionName || clash.name}".`);
+        }
+        collection.name = nextName;
+        collection.exhibitionName = nextName;
+      }
+      if (body.exhibitionDate != null) {
+        const nextDate = String(body.exhibitionDate).trim();
+        if (nextDate && !/^\d{4}-\d{2}-\d{2}$/.test(nextDate)) return error(res, 400, "Enter the date as YYYY-MM-DD, or leave it blank.");
+        collection.exhibitionDate = nextDate;
+      }
+      ["destinationType", "destinationName"].forEach((field) => {
         if (body[field] != null) collection[field] = String(body[field]);
       });
       collection.updatedAt = now();
-      audit(db, user, "collection.updated", "collection", collection.id, body);
+
+      // A contact's exhibition is always its collection's - the startup repair
+      // (repairCollectionExhibitionAssignments) enforces that - and contacts
+      // copy it when saved. Carry the edit onto them and onto this exhibition's
+      // cards now, rather than leaving the old name in every saved contact's
+      // label until the next restart happens to fix it.
+      let updatedContacts = 0;
+      if (collection.exhibitionName !== previousName || collection.exhibitionDate !== previousDate) {
+        for (const contact of db.contacts) {
+          if (contact.collectionId !== collection.id || contact.organisationId !== user.organisationId || contact.deletedAt) continue;
+          if (contact.exhibitionName === collection.exhibitionName && String(contact.exhibitionDate || "") === collection.exhibitionDate) continue;
+          contact.exhibitionName = collection.exhibitionName;
+          contact.exhibitionDate = collection.exhibitionDate;
+          contact.contactDisplayName = buildContactDisplayName(contact) || contact.contactDisplayName;
+          contact.updatedAt = now();
+          if (contact.googleSheetsSyncStatus === "synced") contact.googleSheetsSyncStatus = "pending";
+          updatedContacts += 1;
+        }
+        for (const card of db.cards) {
+          if (card.collectionId !== collection.id || card.organisationId !== user.organisationId || !card.extraction) continue;
+          card.extraction.exhibitionName = collection.exhibitionName;
+          card.extraction.exhibitionDate = collection.exhibitionDate;
+          card.updatedAt = now();
+        }
+      }
+      audit(db, user, "collection.updated", "collection", collection.id, { ...body, updatedContacts });
       await saveDb(db);
-      return send(res, 200, { collection });
+      return send(res, 200, { collection, updatedContacts });
     }
 
     if (req.method === "POST" && pathname.startsWith("/api/collections/") && pathname.endsWith("/activate")) {
@@ -5707,11 +5753,22 @@ async function handleApi(req, res, pathname) {
     if (req.method === "DELETE" && pathname.startsWith("/api/collections/")) {
       const collectionId = pathname.split("/").pop();
       const collection = db.collections.find((c) => c.id === collectionId && c.organisationId === user.organisationId && c.status !== "deleted");
-      if (!collection) return error(res, 404, "Collection not found.");
+      if (!collection) return error(res, 404, "Exhibition not found.");
       const savedContacts = db.contacts.filter((c) => c.collectionId === collection.id && c.organisationId === user.organisationId && !c.deletedAt);
       const activeCards = db.cards.filter((c) => c.collectionId === collection.id && c.organisationId === user.organisationId && !c.deletedAt && c.status !== "deleted");
+      // Deleting an exhibition never deletes contacts or cards; it is refused
+      // while it still holds any, and the message says exactly what is left.
       if (savedContacts.length || activeCards.length) {
-        return error(res, 409, "This collection has saved contacts or scanned cards. Delete those records first, or keep the collection for audit safety.");
+        const label = collection.exhibitionName || collection.name;
+        const parts = [];
+        if (savedContacts.length) parts.push(`${savedContacts.length} saved contact${savedContacts.length === 1 ? "" : "s"}`);
+        const unsavedCards = activeCards.filter((card) => !savedContacts.some((contact) => contact.sourceCardId === card.id));
+        if (unsavedCards.length) parts.push(`${unsavedCards.length} scanned card${unsavedCards.length === 1 ? "" : "s"}`);
+        return error(res, 409, `"${label}" still has ${parts.join(" and ") || "scanned cards"}. Delete those first to remove this exhibition. Deleting an exhibition never deletes contacts.`, {
+          code: "exhibition_not_empty",
+          savedContacts: savedContacts.length,
+          scannedCards: unsavedCards.length
+        });
       }
       const wasActive = collection.status === "active";
       collection.status = "deleted";
