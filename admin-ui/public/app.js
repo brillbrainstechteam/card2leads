@@ -451,6 +451,14 @@
       '<div style="font-size:22px;font-weight:700">' + u.used + " / " + (u.limit || "—") + ' <span style="font-size:13px;color:var(--text-soft);font-weight:500">scans used</span></div>' +
       '<div class="usage-meter"><span class="' + meterClass + '" style="width:' + pct + '%"></span></div>' +
       '<div class="cell-sub">' + u.remaining + " remaining · billing mode: " + esc(c.billingMode) + " · subscription: " + esc(c.subscriptionStatus) + "</div>" +
+      (c.customAllowance
+        ? '<div class="cell-sub" style="margin-top:8px">' +
+            (c.customAllowance.expired
+              ? "Custom allowance expired on " + fmtDate(c.customAllowance.expiresAt) + " — back on standard plans."
+              : "Custom allowance: " + c.customAllowance.scans + " scans, valid until " + fmtDate(c.customAllowance.expiresAt)) +
+            (c.customAllowance.reason ? " · " + esc(c.customAllowance.reason) : "") +
+          "</div>"
+        : "") +
       '<div style="margin-top:14px"><div class="section-title" style="margin:0 0 8px">Usage ledger</div>' + ledger + "</div>" +
       "</div></div>" +
 
@@ -489,6 +497,7 @@
       (pendingInvitation ? '<button class="btn-sm btn-brand" data-act="resend-invitation">Resend invite</button>' : "") +
       '<button class="btn-sm btn-brand" data-act="credits">Adjust Credits</button>' +
       '<button class="btn-sm" data-act="change-plan">Change Plan</button>' +
+      '<button class="btn-sm" data-act="custom-allowance">Custom Allowance</button>' +
       (locked
         ? '<button class="btn-sm" data-act="reactivate">Reactivate</button>'
         : '<button class="btn-sm btn-warn" data-act="suspend">Suspend</button>') +
@@ -496,6 +505,8 @@
       '<div class="overflow"><button class="btn-sm" data-act="more" aria-haspopup="true">•••</button>' +
         '<div class="overflow-menu" hidden>' +
           (canCancel ? '<button data-act="cancel-subscription">Schedule cancellation</button>' : "") +
+          (c.customAllowance ? '<button data-act="extend-allowance">Change expiry date</button>' : "") +
+          (c.customAllowance ? '<button data-act="clear-allowance">Remove custom allowance</button>' : "") +
           '<button data-act="disconnect-google">Disconnect Google</button>' +
           '<button data-act="initiate-deletion" class="danger">Initiate Deletion</button>' +
         '</div></div>' +
@@ -540,6 +551,42 @@
             ["monthly", "Monthly (150 scans)"], ["quarterly", "Quarterly (300 scans)"], ["annual", "Annual (1500 scans)"] ] },
           { key: "reason", type: "text", label: "Reason", required: true, placeholder: "Why is the plan changing?" }
         ]
+      };
+      case "custom-allowance": {
+        var ca = c.customAllowance;
+        var current = ca
+          ? (ca.expired ? "Expired " : "Active ") + ca.scans + " scans · " +
+            (ca.expired ? "ended " : "valid until ") + fmtDate(ca.expiresAt)
+          : "No override — this client is on the standard plans.";
+        return {
+          endpoint: "custom-allowance", title: "Custom Allowance", submitLabel: "Apply allowance", brand: true,
+          sub: current,
+          note: { kind: "warn", text: "Overrides the scan allowance for this client only, for the number of days you set. When it lapses they fall back to standard plans automatically." },
+          fields: [
+            { key: "scans", type: "number", label: "Scans allowed", required: true, placeholder: "e.g. 500", min: 1 },
+            { key: "expiresOn", type: "date", label: "Expires on", required: true },
+            { key: "reason", type: "text", label: "Reason", required: true, placeholder: "Why the custom terms?" }
+          ]
+        };
+      }
+      case "extend-allowance": {
+        var ex = c.customAllowance;
+        return {
+          endpoint: "custom-allowance", title: "Change Expiry Date", submitLabel: "Update expiry", brand: true,
+          sub: ex ? ex.scans + " scans · currently expires " + fmtDate(ex.expiresAt) : "",
+          note: { kind: "info", text: "Only moves the end date. The scan allowance and everything already used stay exactly as they are." },
+          payload: { expiryOnly: true },
+          fields: [
+            { key: "expiresOn", type: "date", label: "New expiry date", required: true },
+            { key: "reason", type: "text", label: "Reason", required: true, placeholder: "Why change the date?" }
+          ]
+        };
+      }
+      case "clear-allowance": return {
+        endpoint: "custom-allowance", title: "Remove Custom Allowance", submitLabel: "Remove override", warn: true,
+        note: { kind: "warn", text: "The client reverts to standard plans immediately. Any remaining granted scans are withdrawn." },
+        payload: { clear: true },
+        fields: [{ key: "reason", type: "text", label: "Reason", required: true, placeholder: "Why remove the override?" }]
       };
       case "suspend": return {
         endpoint: "suspend", title: "Suspend Account", submitLabel: "Suspend", warn: true,
@@ -599,6 +646,13 @@
       if (f.type === "textarea") {
         return '<div><label>' + esc(f.label) + '</label><textarea data-field="' + f.key + '" placeholder="' + esc(f.placeholder || "") + '"></textarea></div>';
       }
+      if (f.type === "date") {
+        // Native date picker, floored at tomorrow so a window can't be opened
+        // that has already closed.
+        var tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+        return '<div><label>' + esc(f.label) + '</label><input data-field="' + f.key + '" type="date" min="' + tomorrow + '"' +
+          (f.value ? ' value="' + esc(f.value) + '"' : "") + "></div>";
+      }
       return '<div><label>' + esc(f.label) + '</label><input data-field="' + f.key + '" type="' + (f.type === "number" ? "number" : "text") + '"' +
         (f.min != null ? ' min="' + f.min + '"' : "") + ' placeholder="' + esc(f.placeholder || "") + '"></div>';
     }).join("");
@@ -646,7 +700,10 @@
       var missing = spec.fields.filter(function (f) { return f.required && !values[f.key]; });
       if (missing.length) { errBox.hidden = false; errBox.textContent = "Please fill in: " + missing.map(function (f) { return f.label; }).join(", "); return; }
 
+      // spec.payload carries fixed flags an action always sends (e.g. clear:true),
+      // on top of whatever the operator typed into the fields.
       var payload = {};
+      Object.keys(spec.payload || {}).forEach(function (k) { payload[k] = spec.payload[k]; });
       spec.fields.forEach(function (f) { if (values[f.key] !== "" && values[f.key] != null) payload[f.key] = f.type === "number" ? Number(values[f.key]) : values[f.key]; });
 
       submitBtn.disabled = true; submitBtn.textContent = "Working…";

@@ -2141,6 +2141,34 @@ function collectionForUser(db, user, requestedId) {
   return collection;
 }
 
+// A per-client override set from the admin panel: a scan allowance that is
+// valid only for a fixed window. Stored on the org record (persists via the
+// `data` jsonb column, so no migration). Once it lapses the client falls back
+// to standard plans — the read paths below stop honouring it immediately, and
+// expireCustomAllowances() then reverts the stored entitlement and ledger.
+function customAllowance(organisation) {
+  const allowance = organisation?.customAllowance;
+  return allowance && Number(allowance.scans) > 0 ? allowance : null;
+}
+
+function customAllowanceExpired(organisation) {
+  const allowance = customAllowance(organisation);
+  if (!allowance?.expiresAt) return false;
+  const expiresAt = new Date(allowance.expiresAt).getTime();
+  return Boolean(expiresAt) && expiresAt <= Date.now();
+}
+
+function customAllowanceActive(organisation) {
+  return Boolean(customAllowance(organisation)) && !customAllowanceExpired(organisation);
+}
+
+// Admin-granted access (goodwill credits, comped plan, custom allowance) only
+// counts while it is still in force. A lapsed custom allowance must not keep
+// the pay-to-start gate open.
+function adminAccessActive(organisation) {
+  return Boolean(organisation?.adminGranted) && !customAllowanceExpired(organisation);
+}
+
 function planUsage(organisation, ledgerUsage = null) {
   const plan = String(organisation?.plan || "trial").toLowerCase();
   // PostgreSQL deployments pass a ledger-derived snapshot. The legacy
@@ -2154,11 +2182,15 @@ function planUsage(organisation, ledgerUsage = null) {
   // Pay-to-start: everyone else needs an active paid plan; no free trial.
   // An admin-granted allowance (goodwill credits / comped plan) also unlocks
   // scanning, without being counted as a paid conversion in the funnel.
-  if (!orgIsPaid(organisation) && !organisation.adminGranted) {
-    return { plan, limit: 0, used, remaining: 0, requiresPayment: true };
+  if (!orgIsPaid(organisation) && !adminAccessActive(organisation)) {
+    return { plan, limit: 0, used, remaining: 0, requiresPayment: true, allowanceExpired: customAllowanceExpired(organisation) || undefined };
   }
   const limit = Math.max(0, Number(ledgerUsage?.limit ?? organisation?.scanLimit ?? PLAN_LIMITS[plan] ?? 0));
-  if (oneTimePlanExpired(organisation)) {
+  // An active custom allowance carries its own validity window and supersedes
+  // the purchased plan's expiry. Without this, granting custom terms to a
+  // client whose one-time plan had already lapsed would have no effect — the
+  // old currentPeriodEnd would keep blocking them.
+  if (!customAllowanceActive(organisation) && oneTimePlanExpired(organisation)) {
     return { plan, limit, used, remaining: 0, expired: true };
   }
   const remaining = Math.max(0, Number(ledgerUsage?.remaining ?? (limit - used)));
@@ -2263,14 +2295,19 @@ function oneTimePlanOptions() {
 }
 
 function billingSummary(organisation) {
-  const expired = oneTimePlanExpired(organisation);
+  // A live custom allowance governs what the customer actually has, so the
+  // account screen must report its window — not the superseded plan date it
+  // would otherwise show (which would read "expired" while they can still scan).
+  const allowance = customAllowanceActive(organisation) ? organisation.customAllowance : null;
+  const expired = !allowance && oneTimePlanExpired(organisation);
   const topupAllowed = canPurchaseTopup(organisation);
   return {
     configured: billingConfigured(),
     plan: String(organisation?.plan || "trial"),
     mode: organisation?.billingMode || (organisation?.subscriptionId || organisation?.pendingSubscriptionId ? "subscription" : "trial"),
-    status: expired ? "expired" : (organisation?.subscriptionStatus || (String(organisation?.plan || "trial") === "trial" ? "trial" : "")),
-    currentPeriodEnd: organisation?.currentPeriodEnd || "",
+    status: expired ? "expired" : (allowance ? "active" : (organisation?.subscriptionStatus || (String(organisation?.plan || "trial") === "trial" ? "trial" : ""))),
+    currentPeriodEnd: allowance ? allowance.expiresAt : (organisation?.currentPeriodEnd || ""),
+    customAllowance: allowance ? { scans: Number(allowance.scans), expiresAt: allowance.expiresAt } : null,
     availablePlans: Object.keys(RAZORPAY_PLAN_IDS).filter((plan) => RAZORPAY_PLAN_IDS[plan]),
     oneTimePlans: oneTimePlanOptions(),
     topupScans: TOPUP_SCANS,
@@ -3728,6 +3765,9 @@ function clientSummary(db, org, ledgerUsage = null) {
     billingMode: org.billingMode || "none",
     subscriptionStatus: org.subscriptionStatus || "none",
     usage: { used: scansUsed, limit: scanLimit, remaining },
+    customAllowance: org.customAllowance
+      ? { ...org.customAllowance, active: customAllowanceActive(org), expired: customAllowanceExpired(org) }
+      : null,
     userCount: users.length,
     lastActivityAt: activity.lastActivityAt,
     createdAt: org.createdAt
@@ -3976,10 +4016,44 @@ async function purgeExpiredCardStorage() {
   return changed;
 }
 
+// Reverts per-client custom allowances once their window closes, so the client
+// falls back to standard plans. The read paths already stop honouring a lapsed
+// allowance the moment it expires; this makes the stored entitlement and the
+// usage ledger agree with that, rather than leaving granted scans on the books.
+async function expireCustomAllowances() {
+  const db = readDb();
+  const lapsed = db.organisations.filter((org) => customAllowanceExpired(org));
+  if (!lapsed.length) return false;
+  for (const org of lapsed) {
+    const previous = org.customAllowance;
+    // Back to whatever they are actually entitled to: their paid plan if one is
+    // live, otherwise nothing (pay-to-start takes over again).
+    const standardLimit = orgIsPaid(org)
+      ? Number(PLAN_LIMITS[String(org.plan || "trial").toLowerCase()] || 0) + Number(org.topupScans || 0)
+      : 0;
+    org.customAllowance = null;
+    org.adminGranted = false;
+    org.scanLimit = standardLimit;
+    org.updatedAt = now();
+    if (pgPool) {
+      await setLedgerBalance({
+        clientId: org.id, targetBalance: standardLimit, type: "PLAN_ALLOCATION", quantity: standardLimit,
+        source: "maintenance", reason: "Custom allowance expired",
+        idempotencyKey: `allowance-expiry:${org.id}:${previous?.expiresAt || ""}`,
+        metadata: { expiredAllowance: previous }
+      });
+    }
+    console.log(`[maintenance] custom allowance expired for ${org.id}; reverted to standard (${standardLimit} scans)`);
+  }
+  await saveDb(db);
+  return true;
+}
+
 async function runMaintenance() {
   await purgeExpiredCardStorage();
   await purgePendingDeletionAccounts();
   await expireOneTimeSubscriptionHistory();
+  await expireCustomAllowances();
 }
 
 function scheduleMaintenance() {
@@ -4266,7 +4340,7 @@ async function handleAdminApi(req, res, pathname) {
     if (!org) return error(res, 404, "Client not found.");
     const body = await readJson(req);
     const reason = String(body.reason || "").trim();
-    const needsReason = ["credits", "change-plan", "suspend", "cancel-subscription", "initiate-deletion"].includes(action);
+    const needsReason = ["credits", "change-plan", "custom-allowance", "suspend", "cancel-subscription", "initiate-deletion"].includes(action);
     if (needsReason && !reason) return error(res, 400, "A reason is required for this action.");
 
     if (action === "notes") {
@@ -4338,6 +4412,75 @@ async function handleAdminApi(req, res, pathname) {
       await recordSubscription({ clientId, plan, status: "active", billingMode: "admin", provider: "admin", providerReference: `admin-plan:${clientId}`, source: "admin", eventId: `admin-plan:${Date.now()}`, metadata: { adminId: admin.id } });
       await adminAudit(admin, { clientId, action: "PLAN_CHANGED", previousValue: prev, newValue: { plan, usage: await authoritativePlanUsage(org) }, reason });
       return send(res, 200, { ok: true });
+    }
+
+    // Per-client override of the scan allowance and how long it stays valid.
+    // Most clients keep the standard plans; this is for the handful on
+    // negotiated terms. When the window closes the client falls back to
+    // standard plans (see expireCustomAllowances).
+    if (action === "custom-allowance") {
+      const prev = { allowance: org.customAllowance || null, usage: await authoritativePlanUsage(org) };
+
+      if (body.clear) {
+        if (!org.customAllowance) return error(res, 400, "This client has no custom allowance to remove.");
+        const standardLimit = orgIsPaid(org)
+          ? Number(PLAN_LIMITS[String(org.plan || "trial").toLowerCase()] || 0) + Number(org.topupScans || 0)
+          : 0;
+        org.customAllowance = null;
+        org.adminGranted = false;
+        org.scanLimit = standardLimit;
+        org.updatedAt = now();
+        if (pgPool) await setLedgerBalance({ clientId, targetBalance: standardLimit, type: "PLAN_ALLOCATION", quantity: standardLimit, source: "admin", adminId: admin.id, reason, idempotencyKey: `allowance-clear:${clientId}:${Date.now()}`, metadata: { cleared: prev.allowance } });
+        await saveDb(db);
+        await adminAudit(admin, { clientId, action: "CUSTOM_ALLOWANCE_REMOVED", previousValue: prev, newValue: { usage: await authoritativePlanUsage(org) }, reason });
+        return send(res, 200, { ok: true, usage: await authoritativePlanUsage(org) });
+      }
+
+      const scans = Math.floor(Number(body.scans || 0));
+      const durationDays = Math.floor(Number(body.durationDays || 0));
+      // The window can be given either as a number of days or as an explicit
+      // end date, so an existing allowance can be moved to a specific day
+      // without having to work out the day count.
+      let expiresAt = "";
+      if (body.expiresOn) {
+        const parsed = new Date(`${String(body.expiresOn).slice(0, 10)}T23:59:59.999Z`);
+        if (Number.isNaN(parsed.getTime())) return error(res, 400, "Enter a valid expiry date.");
+        if (parsed.getTime() <= Date.now()) return error(res, 400, "The expiry date must be in the future.");
+        expiresAt = parsed.toISOString();
+      } else {
+        if (!(durationDays > 0)) return error(res, 400, "Enter how many days the allowance stays valid, or pick an expiry date.");
+        if (durationDays > 3650) return error(res, 400, "Duration cannot exceed 3650 days.");
+        expiresAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString();
+      }
+
+      // Moving only the date leaves the balance alone, so extending a window
+      // does not silently hand back scans the client has already used.
+      if (body.expiryOnly) {
+        if (!org.customAllowance) return error(res, 400, "This client has no custom allowance to extend. Set one first.");
+        org.customAllowance = { ...org.customAllowance, expiresAt, durationDays: 0, updatedAt: now(), updatedBy: admin.email || admin.id };
+        org.adminGranted = true;
+        org.updatedAt = now();
+        await saveDb(db);
+        await adminAudit(admin, { clientId, action: "CUSTOM_ALLOWANCE_EXTENDED", previousValue: prev, newValue: { allowance: org.customAllowance }, reason });
+        return send(res, 200, { ok: true, allowance: org.customAllowance, usage: await authoritativePlanUsage(org) });
+      }
+
+      if (!(scans > 0)) return error(res, 400, "Enter a scan allowance greater than zero.");
+      if (scans > 100000) return error(res, 400, "That scan allowance looks too large — check the number.");
+
+      org.customAllowance = {
+        scans, durationDays, expiresAt,
+        grantedAt: now(), grantedBy: admin.email || admin.id, reason: reason || ""
+      };
+      // The allowance replaces the entitlement for its window, and unlocks
+      // scanning under pay-to-start the same way a comped plan does.
+      org.scanLimit = scans;
+      org.adminGranted = true;
+      org.updatedAt = now();
+      if (pgPool) await setLedgerBalance({ clientId, targetBalance: scans, type: "PLAN_ALLOCATION", quantity: scans, source: "admin", adminId: admin.id, reason, idempotencyKey: `allowance:${clientId}:${Date.now()}`, metadata: { customAllowance: org.customAllowance } });
+      await saveDb(db);
+      await adminAudit(admin, { clientId, action: "CUSTOM_ALLOWANCE_SET", previousValue: prev, newValue: { allowance: org.customAllowance, usage: await authoritativePlanUsage(org) }, reason });
+      return send(res, 200, { ok: true, allowance: org.customAllowance, usage: await authoritativePlanUsage(org) });
     }
 
     if (action === "suspend") {
