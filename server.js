@@ -3768,6 +3768,7 @@ function clientSummary(db, org, ledgerUsage = null) {
     customAllowance: org.customAllowance
       ? { ...org.customAllowance, active: customAllowanceActive(org), expired: customAllowanceExpired(org) }
       : null,
+    currentPeriodEnd: org.currentPeriodEnd || null,
     userCount: users.length,
     lastActivityAt: activity.lastActivityAt,
     createdAt: org.createdAt
@@ -4419,7 +4420,7 @@ async function handleAdminApi(req, res, pathname) {
     // negotiated terms. When the window closes the client falls back to
     // standard plans (see expireCustomAllowances).
     if (action === "custom-allowance") {
-      const prev = { allowance: org.customAllowance || null, usage: await authoritativePlanUsage(org) };
+      const prev = { allowance: org.customAllowance || null, currentPeriodEnd: org.currentPeriodEnd || null, usage: await authoritativePlanUsage(org) };
 
       if (body.clear) {
         if (!org.customAllowance) return error(res, 400, "This client has no custom allowance to remove.");
@@ -4455,14 +4456,24 @@ async function handleAdminApi(req, res, pathname) {
 
       // Moving only the date leaves the balance alone, so extending a window
       // does not silently hand back scans the client has already used.
+      // Moving only the date never touches the ledger, so the scan allowance
+      // and everything already used stay exactly as they are — the client just
+      // gets longer to spend what they already have.
       if (body.expiryOnly) {
-        if (!org.customAllowance) return error(res, 400, "This client has no custom allowance to extend. Set one first.");
-        org.customAllowance = { ...org.customAllowance, expiresAt, durationDays: 0, updatedAt: now(), updatedBy: admin.email || admin.id };
-        org.adminGranted = true;
+        if (org.customAllowance) {
+          org.customAllowance = { ...org.customAllowance, expiresAt, durationDays: 0, updatedAt: now(), updatedBy: admin.email || admin.id };
+          org.adminGranted = true;
+        } else if (org.currentPeriodEnd || orgIsPaid(org)) {
+          // Client is on a plan they actually bought: extend that plan's own
+          // window rather than layering an override on top of it.
+          org.currentPeriodEnd = expiresAt;
+        } else {
+          return error(res, 400, "This client has no plan or allowance to extend. Set a custom allowance first.");
+        }
         org.updatedAt = now();
         await saveDb(db);
-        await adminAudit(admin, { clientId, action: "CUSTOM_ALLOWANCE_EXTENDED", previousValue: prev, newValue: { allowance: org.customAllowance }, reason });
-        return send(res, 200, { ok: true, allowance: org.customAllowance, usage: await authoritativePlanUsage(org) });
+        await adminAudit(admin, { clientId, action: "PLAN_EXPIRY_EXTENDED", previousValue: prev, newValue: { expiresAt, allowance: org.customAllowance || null, currentPeriodEnd: org.currentPeriodEnd || null }, reason });
+        return send(res, 200, { ok: true, expiresAt, allowance: org.customAllowance || null, usage: await authoritativePlanUsage(org) });
       }
 
       if (!(scans > 0)) return error(res, 400, "Enter a scan allowance greater than zero.");

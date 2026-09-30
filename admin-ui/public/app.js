@@ -505,7 +505,7 @@
       '<div class="overflow"><button class="btn-sm" data-act="more" aria-haspopup="true">•••</button>' +
         '<div class="overflow-menu" hidden>' +
           (canCancel ? '<button data-act="cancel-subscription">Schedule cancellation</button>' : "") +
-          (c.customAllowance ? '<button data-act="extend-allowance">Change expiry date</button>' : "") +
+          (c.customAllowance || c.currentPeriodEnd ? '<button data-act="extend-allowance">Change expiry date</button>' : "") +
           (c.customAllowance ? '<button data-act="clear-allowance">Remove custom allowance</button>' : "") +
           '<button data-act="disconnect-google">Disconnect Google</button>' +
           '<button data-act="initiate-deletion" class="danger">Initiate Deletion</button>' +
@@ -571,10 +571,14 @@
       }
       case "extend-allowance": {
         var ex = c.customAllowance;
+        var curEnd = ex ? ex.expiresAt : c.currentPeriodEnd;
+        var left = c.usage ? c.usage.remaining : null;
         return {
           endpoint: "custom-allowance", title: "Change Expiry Date", submitLabel: "Update expiry", brand: true,
-          sub: ex ? ex.scans + " scans · currently expires " + fmtDate(ex.expiresAt) : "",
-          note: { kind: "info", text: "Only moves the end date. The scan allowance and everything already used stay exactly as they are." },
+          sub: (ex ? "Custom allowance" : "Purchased " + (c.plan || "") + " plan") +
+               (curEnd ? " · currently expires " + fmtDate(curEnd) : "") +
+               (left != null ? " · " + left + " scans left" : ""),
+          note: { kind: "info", text: "Only moves the end date. The scan allowance and everything already used stay exactly as they are — the client just gets longer to use what they already have." },
           payload: { expiryOnly: true },
           fields: [
             { key: "expiresOn", type: "date", label: "New expiry date", required: true },
