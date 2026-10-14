@@ -7693,11 +7693,26 @@ function exportVoiceNote(contact) {
 
 // Company names come off cards with inconsistent case, spacing and trailing
 // punctuation, so group on a normalised key rather than the raw string.
+// Trailing legal suffixes, which OCR picks up from one card and not the next -
+// "Wipro" and "Wipro Ltd" are the same stand. Only ever stripped from the end,
+// so "Co Operative Bank" keeps its first word.
+const BUSINESS_SUFFIXES = new Set([
+  "ltd", "limited", "pvt", "private", "llp", "llc", "inc", "incorporated",
+  "corp", "corporation", "co", "company", "plc", "gmbh", "ag", "sa", "bv",
+  "srl", "pte", "sdn", "bhd", "oy", "ab", "nv", "spa", "kg", "and", "the"
+]);
+
 function businessKey(companyName) {
-  return String(companyName || "")
+  const words = String(companyName || "")
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
+    .trim()
+    .split(" ")
+    .filter(Boolean);
+  // Never strip away the whole name: a company actually called "Company" has to
+  // keep a key, or every such card would land in the no-company bucket instead.
+  while (words.length > 1 && BUSINESS_SUFFIXES.has(words[words.length - 1])) words.pop();
+  return words.join(" ");
 }
 
 // Which record to keep when a business has several. "Most complete" counts the
