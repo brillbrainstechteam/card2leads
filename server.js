@@ -7835,14 +7835,16 @@ function exportSelection(db, user, url) {
   // get it anywhere except the web app. The web app therefore always sends an
   // explicit true/false, which keeps its tick-box authoritative: unticking it
   // still yields the full list.
-  // An explicit tick-box wins either way; otherwise the client's setting decides,
-  // except for a hand-picked selection of contacts - collapsing rows someone
-  // chose by hand would silently drop records they asked for by name.
+  // Applied last, so it collapses whatever the filters left rather than
+  // deduplicating the whole book and then filtering the survivors.
+  //
+  // The admin switch alone decides this, for every download and every format -
+  // Excel, CSV, VCF, filtered, unfiltered or a hand-picked selection. A client
+  // who asks for one row per company means their spreadsheets, not some of
+  // them, and a per-download opt-out only produced files that disagreed with
+  // each other. Clients without the switch are untouched.
   const organisationForRules = db.organisations.find((o) => o.id === user.organisationId);
-  const asked = params.get("onePerBusiness");
-  const onePerBusiness = asked === "true"
-    || (asked !== "false" && Boolean(organisationForRules?.exportOnePerBusiness) && !selectedIds.size);
-  if (organisationForRules?.exportOnePerBusiness && onePerBusiness) {
+  if (organisationForRules?.exportOnePerBusiness) {
     contacts = keepOneContactPerBusiness(contacts);
     nameParts.push("one per business");
   }

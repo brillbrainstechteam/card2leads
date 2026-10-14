@@ -8474,17 +8474,3 @@ strong {
 
 /* Optional per-client export rule, offered in the download menu only when the
    admin has enabled it for that client. */
-.export-one-per-business {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px 2px;
-  font-size: 12.5px;
-  color: var(--ink);
-  cursor: pointer;
-}
-
-.export-one-per-business input {
-  margin: 0;
-  flex-shrink: 0;
-}
