@@ -223,6 +223,35 @@ async function init() {
   else if (state.user && checkoutTopup) void startTopup();
 }
 
+// A client on the one-per-business rule gets one row per company in every
+// download, and no way to turn that off from here. Say so before the file
+// arrives, so a spreadsheet shorter than their contacts list reads as the rule
+// working rather than as contacts having gone missing - and point at support,
+// since changing it is an admin decision rather than theirs.
+//
+// Delegated from the document and matched on the URL, because exports are
+// linked from the download menu, the selection bar, the dashboard and each
+// exhibition card; hanging this off every one of them would miss the next one
+// somebody adds.
+document.addEventListener("click", (event) => {
+  const link = event.target?.closest?.('a[href*="/api/export."]');
+  if (!link || !state.overview?.organisation?.exportOnePerBusiness) return;
+  event.preventDefault();
+  state.modal = {
+    title: "One contact per business",
+    tone: "info",
+    body: "This download keeps one row per business - the most complete contact for each company. Your Contacts list is not changed. Contact support if you need every contact in the file.",
+    actions: [{
+      label: "OK",
+      className: "primary",
+      // Assigning location runs the download through the same URL the link
+      // carries; the response is an attachment, so the page stays put.
+      onClick: () => { window.location.href = link.href; }
+    }]
+  };
+  render();
+});
+
 window.addEventListener("popstate", () => applyRouteFromLocation());
 window.addEventListener("hashchange", () => applyRouteFromLocation());
 
