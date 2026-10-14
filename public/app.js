@@ -3757,6 +3757,9 @@ function contactsView() {
           ${state.contacts.some((c) => !c.assignedToId) ? `<option value="unassigned">Unassigned (${state.contacts.filter((c) => !c.assignedToId).length})</option>` : ""}
         </select>
         <span class="export-member-hint" id="exportScopeHint"></span>
+        ${state.overview?.organisation?.exportOnePerBusiness ? `
+        <label class="export-one-per-business"><input type="checkbox" id="exportOnePerBusiness" /> <span>One contact per business</span></label>
+        <span class="export-member-hint">Keeps the most complete contact for each company. Your Contacts list is not changed.</span>` : ""}
         <a data-scope-export="xlsx" href="${exportHref("xlsx", activeCollectionId, [], true, downloadFilterActive)}">Excel spreadsheet</a>
         <a data-scope-export="csv" href="${exportHref("csv", activeCollectionId, [], true, downloadFilterActive)}">CSV file</a>
         <a data-scope-export="vcf" href="${exportHref("vcf", activeCollectionId, [], true, downloadFilterActive)}">VCF (phone contacts)</a>
@@ -4169,6 +4172,9 @@ function contactsView() {
       count = state.contacts.filter((c) => c.assignedToId === memberId).length;
       label = state.teamMembers.find((m) => m.id === memberId)?.name || "Team member";
     }
+    // Only offered to clients the admin has enabled it for; the server checks
+    // the same flag, so the parameter alone cannot turn it on.
+    if (onePerBusinessBox?.checked) params.set("onePerBusiness", "true");
     node.querySelectorAll("[data-scope-export]").forEach((link) => {
       link.href = `/api/export.${link.dataset.scopeExport}?${params.toString()}`;
     });
@@ -4176,6 +4182,8 @@ function contactsView() {
     if (hint) hint.textContent = `${count} contact(s) · file name starts with ${label.replace(/\s+/g, "_")}`;
   };
   scopeSelect?.addEventListener("change", applyExportScope);
+  const onePerBusinessBox = node.querySelector("#exportOnePerBusiness");
+  onePerBusinessBox?.addEventListener("change", applyExportScope);
   applyExportScope();
   node.querySelectorAll("[data-table-view]").forEach((btn) => btn.addEventListener("click", () => {
     state.contactsTableView = btn.dataset.tableView;

@@ -507,6 +507,7 @@
           (canCancel ? '<button data-act="cancel-subscription">Schedule cancellation</button>' : "") +
           (c.customAllowance || c.currentPeriodEnd ? '<button data-act="extend-allowance">Change expiry date</button>' : "") +
           (c.customAllowance ? '<button data-act="clear-allowance">Remove custom allowance</button>' : "") +
+          '<button data-act="export-rules">' + (c.exportOnePerBusiness ? "Remove one-per-business export option" : "Offer one-per-business export option") + "</button>" +
           '<button data-act="disconnect-google">Disconnect Google</button>' +
           '<button data-act="initiate-deletion" class="danger">Initiate Deletion</button>' +
         '</div></div>' +
@@ -584,6 +585,19 @@
             { key: "expiresOn", type: "date", label: "New expiry date", required: true },
             { key: "reason", type: "text", label: "Reason", required: true, placeholder: "Why change the date?" }
           ]
+        };
+      }
+      case "export-rules": {
+        var on = !!c.exportOnePerBusiness;
+        return {
+          endpoint: "export-rules", title: on ? "Remove One-Per-Business Option" : "Offer One-Per-Business Option",
+          submitLabel: on ? "Turn off" : "Turn on", brand: !on, warn: on,
+          sub: "This client only — no other client's download menu changes.",
+          note: { kind: on ? "warn" : "info", text: on
+            ? "The option disappears from their download menu and every download includes all contacts again."
+            : "Adds a tick-box to this client's download menu so they can choose one contact per company for a given download — whichever record is most complete. It is off unless they tick it, their Contacts list never changes, and contacts with no company name are always kept." },
+          payload: { onePerBusiness: !on },
+          fields: [{ key: "reason", type: "text", label: "Reason", required: true, placeholder: on ? "Why revert to all contacts?" : "Why does this client need one per business?" }]
         };
       }
       case "clear-allowance": return {

@@ -3792,6 +3792,7 @@ function clientSummary(db, org, ledgerUsage = null) {
       ? { ...org.customAllowance, active: customAllowanceActive(org), expired: customAllowanceExpired(org) }
       : null,
     currentPeriodEnd: org.currentPeriodEnd || null,
+    exportOnePerBusiness: Boolean(org.exportOnePerBusiness),
     userCount: users.length,
     lastActivityAt: activity.lastActivityAt,
     createdAt: org.createdAt
@@ -4364,7 +4365,7 @@ async function handleAdminApi(req, res, pathname) {
     if (!org) return error(res, 404, "Client not found.");
     const body = await readJson(req);
     const reason = String(body.reason || "").trim();
-    const needsReason = ["credits", "change-plan", "custom-allowance", "suspend", "cancel-subscription", "initiate-deletion"].includes(action);
+    const needsReason = ["credits", "change-plan", "custom-allowance", "export-rules", "suspend", "cancel-subscription", "initiate-deletion"].includes(action);
     if (needsReason && !reason) return error(res, 400, "A reason is required for this action.");
 
     if (action === "notes") {
@@ -4442,6 +4443,21 @@ async function handleAdminApi(req, res, pathname) {
     // Most clients keep the standard plans; this is for the handful on
     // negotiated terms. When the window closes the client falls back to
     // standard plans (see expireCustomAllowances).
+    // Per-client export rules. Off for everyone unless switched on here, so a
+    // rule one client asks for never changes what anybody else downloads.
+    if (action === "export-rules") {
+      const onePerBusiness = body.onePerBusiness === true || body.onePerBusiness === "true";
+      const prev = { exportOnePerBusiness: Boolean(org.exportOnePerBusiness) };
+      if (prev.exportOnePerBusiness === onePerBusiness) {
+        return error(res, 400, `One contact per business is already ${onePerBusiness ? "on" : "off"} for this client.`);
+      }
+      org.exportOnePerBusiness = onePerBusiness;
+      org.updatedAt = now();
+      await saveDb(db);
+      await adminAudit(admin, { clientId, action: onePerBusiness ? "EXPORT_RULE_ENABLED" : "EXPORT_RULE_DISABLED", previousValue: prev, newValue: { exportOnePerBusiness: onePerBusiness }, reason });
+      return send(res, 200, { ok: true, exportOnePerBusiness: onePerBusiness });
+    }
+
     if (action === "custom-allowance") {
       const prev = { allowance: org.customAllowance || null, currentPeriodEnd: org.currentPeriodEnd || null, usage: await authoritativePlanUsage(org) };
 
@@ -7671,6 +7687,55 @@ function exportVoiceNote(contact) {
 // Previously each endpoint filtered differently (Excel/CSV honoured only
 // `all`, VCF only `assigneeId`), so a download could silently disagree with
 // what the user had filtered on screen.
+// ---- Optional per-client export rule: one contact per business -------------
+// Off by default. Switched on per client from the admin panel for clients who
+// want a single row per company rather than every person they met there.
+
+// Company names come off cards with inconsistent case, spacing and trailing
+// punctuation, so group on a normalised key rather than the raw string.
+function businessKey(companyName) {
+  return String(companyName || "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+// Which record to keep when a business has several. "Most complete" counts the
+// fields that make a lead usable, with the contactable ones weighted highest -
+// a row with a phone and email beats one that only has an address.
+function contactCompleteness(contact) {
+  const weighted = [
+    [contact.mobileNumber, 3], [contact.emailAddress, 3], [contact.name, 2],
+    [contact.whatsappNumber, 1], [contact.secondaryMobileNumber, 1], [contact.officeNumber, 1],
+    [contact.secondaryEmail, 1], [contact.designation, 1], [contact.website, 1],
+    [contact.address, 1], [contact.city, 1], [contact.state, 1], [contact.postalCode, 1],
+    [contact.country, 1], [contact.notes, 1], [contact.tags, 1]
+  ];
+  return weighted.reduce((score, [value, weight]) => score + (String(value || "").trim() ? weight : 0), 0);
+}
+
+function keepOneContactPerBusiness(contacts) {
+  const bestByBusiness = new Map();
+  const ungrouped = [];
+  for (const contact of contacts) {
+    const key = businessKey(contact.companyName);
+    // No company name means there is no business to group on, so these are all
+    // kept - dropping them would silently lose contacts.
+    if (!key) { ungrouped.push(contact.id); continue; }
+    const current = bestByBusiness.get(key);
+    if (!current) { bestByBusiness.set(key, contact); continue; }
+    const scoreNew = contactCompleteness(contact);
+    const scoreCurrent = contactCompleteness(current);
+    // Tie-break on the earliest scanned so the chosen row is stable between
+    // downloads rather than flipping with whatever order the rows arrive in.
+    const newWins = scoreNew > scoreCurrent
+      || (scoreNew === scoreCurrent && String(contact.createdAt || "") < String(current.createdAt || ""));
+    if (newWins) bestByBusiness.set(key, contact);
+  }
+  const keep = new Set([...ungrouped, ...[...bestByBusiness.values()].map((c) => c.id)]);
+  return contacts.filter((contact) => keep.has(contact.id));
+}
+
 function exportSelection(db, user, url) {
   const params = url.searchParams;
   const collectionId = params.get("collectionId");
@@ -7742,6 +7807,17 @@ function exportSelection(db, user, url) {
     contacts = contacts.filter((c) =>
       [c.name, c.mobileNumber, c.companyName, c.emailAddress, c.city, c.state, c.tags, c.notes, c.assignedToName, c.exhibitionName]
         .some((v) => String(v || "").toLowerCase().includes(search)));
+  }
+
+  // Applied last, so it collapses whatever the filters left rather than
+  // deduplicating the whole book and then filtering the survivors. The client
+  // chooses it per download; the admin switch only decides whether the option
+  // is offered to them at all, so it can never alter anyone else's exports.
+  const organisationForRules = db.organisations.find((o) => o.id === user.organisationId);
+  const wantsOnePerBusiness = params.get("onePerBusiness") === "true";
+  if (organisationForRules?.exportOnePerBusiness && wantsOnePerBusiness) {
+    contacts = keepOneContactPerBusiness(contacts);
+    nameParts.push("one per business");
   }
 
   if (selectedIds.size) nameParts.unshift("Selected");
