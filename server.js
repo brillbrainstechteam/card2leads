@@ -7810,12 +7810,24 @@ function exportSelection(db, user, url) {
   }
 
   // Applied last, so it collapses whatever the filters left rather than
-  // deduplicating the whole book and then filtering the survivors. The client
-  // chooses it per download; the admin switch only decides whether the option
-  // is offered to them at all, so it can never alter anyone else's exports.
+  // deduplicating the whole book and then filtering the survivors. The admin
+  // switch decides whether the rule applies to this client at all, so it can
+  // never alter anyone else's exports.
+  //
+  // The parameter is deliberately tri-state. The mobile app has no tick-box and
+  // sends nothing, so an absent parameter has to mean "use the client's setting"
+  // - reading it as "off" left the one client who asked for this rule unable to
+  // get it anywhere except the web app. The web app therefore always sends an
+  // explicit true/false, which keeps its tick-box authoritative: unticking it
+  // still yields the full list.
+  // An explicit tick-box wins either way; otherwise the client's setting decides,
+  // except for a hand-picked selection of contacts - collapsing rows someone
+  // chose by hand would silently drop records they asked for by name.
   const organisationForRules = db.organisations.find((o) => o.id === user.organisationId);
-  const wantsOnePerBusiness = params.get("onePerBusiness") === "true";
-  if (organisationForRules?.exportOnePerBusiness && wantsOnePerBusiness) {
+  const asked = params.get("onePerBusiness");
+  const onePerBusiness = asked === "true"
+    || (asked !== "false" && Boolean(organisationForRules?.exportOnePerBusiness) && !selectedIds.size);
+  if (organisationForRules?.exportOnePerBusiness && onePerBusiness) {
     contacts = keepOneContactPerBusiness(contacts);
     nameParts.push("one per business");
   }

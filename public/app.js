@@ -3758,8 +3758,8 @@ function contactsView() {
         </select>
         <span class="export-member-hint" id="exportScopeHint"></span>
         ${state.overview?.organisation?.exportOnePerBusiness ? `
-        <label class="export-one-per-business"><input type="checkbox" id="exportOnePerBusiness" /> <span>One contact per business</span></label>
-        <span class="export-member-hint">Keeps the most complete contact for each company. Your Contacts list is not changed.</span>` : ""}
+        <label class="export-one-per-business"><input type="checkbox" id="exportOnePerBusiness" checked /> <span>One contact per business</span></label>
+        <span class="export-member-hint">Keeps the most complete contact for each company. Untick for every contact. Your Contacts list is not changed.</span>` : ""}
         <a data-scope-export="xlsx" href="${exportHref("xlsx", activeCollectionId, [], true, downloadFilterActive)}">Excel spreadsheet</a>
         <a data-scope-export="csv" href="${exportHref("csv", activeCollectionId, [], true, downloadFilterActive)}">CSV file</a>
         <a data-scope-export="vcf" href="${exportHref("vcf", activeCollectionId, [], true, downloadFilterActive)}">VCF (phone contacts)</a>
@@ -4172,9 +4172,12 @@ function contactsView() {
       count = state.contacts.filter((c) => c.assignedToId === memberId).length;
       label = state.teamMembers.find((m) => m.id === memberId)?.name || "Team member";
     }
-    // Only offered to clients the admin has enabled it for; the server checks
-    // the same flag, so the parameter alone cannot turn it on.
-    if (onePerBusinessBox?.checked) params.set("onePerBusiness", "true");
+    // Only shown to clients the admin has enabled it for; the server checks the
+    // same flag, so the parameter alone cannot turn it on for anyone else.
+    // Always sent explicitly: the server treats an absent parameter as "use the
+    // client's setting" so the mobile app, which has no tick-box, still gets the
+    // rule, which means unticking here has to say "false" rather than stay quiet.
+    if (onePerBusinessBox) params.set("onePerBusiness", onePerBusinessBox.checked ? "true" : "false");
     node.querySelectorAll("[data-scope-export]").forEach((link) => {
       link.href = `/api/export.${link.dataset.scopeExport}?${params.toString()}`;
     });
