@@ -236,16 +236,19 @@ async function init() {
 document.addEventListener("click", (event) => {
   const link = event.target?.closest?.('a[href*="/api/export."]');
   const rules = state.overview?.organisation || {};
-  if (!link || (!rules.exportOnePerBusiness && !rules.exportMergeCardPeople)) return;
+  if (!link || !rules.exportOnePerBusiness) return;
   // A VCF is a phone-contacts file with no columns, so the card rule does not
   // apply to it and claiming otherwise would be wrong.
-  const merging = rules.exportMergeCardPeople && !/\/api\/export\.vcf/.test(link.href);
-  const lines = [];
-  if (merging) lines.push("Where one card named several people, they share a row and the others appear in Additional Contact columns.");
-  if (rules.exportOnePerBusiness) lines.push("Only one row per business is kept - the most complete contact for each company.");
+  // A VCF is a phone-contacts file with no columns, so it keeps every contact
+  // rather than collapsing - saying otherwise would describe the wrong file.
+  const spreadsheet = !/\/api\/export\.vcf/.test(link.href);
+  const lines = ["This download keeps one row per business - the most complete contact for each company."];
+  if (spreadsheet && rules.exportKeepExtraContacts) {
+    lines.push("The other contacts at that company are not left out: each one follows in Additional Contact Name and Mobile columns, with the number on its own where there is no name.");
+  }
   event.preventDefault();
   state.modal = {
-    title: rules.exportOnePerBusiness ? "One contact per business" : "One row per card",
+    title: "One contact per business",
     tone: "info",
     body: `${lines.join(" ")} Your Contacts list is not changed. Contact support if you need this changed.`,
     actions: [{
@@ -3795,8 +3798,8 @@ function contactsView() {
         <span class="export-member-hint" id="exportScopeHint"></span>
         ${state.overview?.organisation?.exportOnePerBusiness ? `
         <span class="export-member-hint">One contact per business: every download keeps the most complete contact for each company. Your Contacts list is not changed.</span>` : ""}
-        ${state.overview?.organisation?.exportMergeCardPeople ? `
-        <span class="export-member-hint">One row per card: where a card named several people, they share a row and the others appear in Additional Contact columns. Your Contacts list is not changed.</span>` : ""}
+        ${state.overview?.organisation?.exportOnePerBusiness && state.overview?.organisation?.exportKeepExtraContacts ? `
+        <span class="export-member-hint">The other contacts at each company are not left out - they follow in Additional Contact Name and Mobile columns.</span>` : ""}
         <a data-scope-export="xlsx" href="${exportHref("xlsx", activeCollectionId, [], true, downloadFilterActive)}">Excel spreadsheet</a>
         <a data-scope-export="csv" href="${exportHref("csv", activeCollectionId, [], true, downloadFilterActive)}">CSV file</a>
         <a data-scope-export="vcf" href="${exportHref("vcf", activeCollectionId, [], true, downloadFilterActive)}">VCF (phone contacts)</a>

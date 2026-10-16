@@ -508,7 +508,7 @@
           (c.customAllowance || c.currentPeriodEnd ? '<button data-act="extend-allowance">Change expiry date</button>' : "") +
           (c.customAllowance ? '<button data-act="clear-allowance">Remove custom allowance</button>' : "") +
           '<button data-act="export-rules">' + (c.exportOnePerBusiness ? "Turn off one contact per business" : "Turn on one contact per business") + "</button>" +
-          '<button data-act="card-merge">' + (c.exportMergeCardPeople ? "Turn off one row per card" : "Turn on one row per card") + "</button>" +
+          (c.exportOnePerBusiness ? '<button data-act="keep-extra-contacts">' + (c.exportKeepExtraContacts ? "Drop the other contacts again" : "Keep the other contacts in extra columns") + "</button>" : "") +
           '<button data-act="disconnect-google">Disconnect Google</button>' +
           '<button data-act="initiate-deletion" class="danger">Initiate Deletion</button>' +
         '</div></div>' +
@@ -601,17 +601,17 @@
           fields: [{ key: "reason", type: "text", label: "Reason", required: true, placeholder: on ? "Why revert to all contacts?" : "Why does this client need one per business?" }]
         };
       }
-      case "card-merge": {
-        var merging = !!c.exportMergeCardPeople;
+      case "keep-extra-contacts": {
+        var keeping = !!c.exportKeepExtraContacts;
         return {
-          endpoint: "export-rules", title: merging ? "Turn Off One Row Per Card" : "Turn On One Row Per Card",
-          submitLabel: merging ? "Turn off" : "Turn on", brand: !merging, warn: merging,
+          endpoint: "export-rules", title: keeping ? "Drop The Other Contacts Again" : "Keep The Other Contacts",
+          submitLabel: keeping ? "Turn off" : "Turn on", brand: !keeping, warn: keeping,
           sub: "This client only — no other client's downloads change.",
-          note: { kind: merging ? "warn" : "info", text: merging
-            ? "Everyone named on a card goes back to having their own row, and the Additional Contact columns disappear."
-            : "A card naming several people becomes one row in Excel and CSV. The card holder keeps the usual columns, and the others follow in Additional Contact Name/Mobile columns. Their Contacts list is unchanged — everyone still appears there separately." },
-          payload: { mergeCardPeople: !merging },
-          fields: [{ key: "reason", type: "text", label: "Reason", required: true, placeholder: merging ? "Why go back to a row per person?" : "Why does this client want one row per card?" }]
+          note: { kind: keeping ? "warn" : "info", text: keeping
+            ? "The Additional Contact columns disappear, and everyone except the kept contact is left out of the file again."
+            : "Changes what one-contact-per-business does with the rest: instead of leaving them out, each one follows the kept row in Additional Contact Name and Mobile columns, so their numbers are still there to refer back to. Where a contact has no name, the number travels on its own." },
+          payload: { keepExtraContacts: !keeping },
+          fields: [{ key: "reason", type: "text", label: "Reason", required: true, placeholder: keeping ? "Why leave the other contacts out?" : "Why does this client need the other numbers kept?" }]
         };
       }
       case "clear-allowance": return {

@@ -3793,7 +3793,7 @@ function clientSummary(db, org, ledgerUsage = null) {
       : null,
     currentPeriodEnd: org.currentPeriodEnd || null,
     exportOnePerBusiness: Boolean(org.exportOnePerBusiness),
-    exportMergeCardPeople: Boolean(org.exportMergeCardPeople),
+    exportKeepExtraContacts: Boolean(org.exportKeepExtraContacts),
     userCount: users.length,
     lastActivityAt: activity.lastActivityAt,
     createdAt: org.createdAt
@@ -4452,7 +4452,7 @@ async function handleAdminApi(req, res, pathname) {
     if (action === "export-rules") {
       const RULES = {
         onePerBusiness: { field: "exportOnePerBusiness", label: "One contact per business", on: "EXPORT_RULE_ENABLED", off: "EXPORT_RULE_DISABLED" },
-        mergeCardPeople: { field: "exportMergeCardPeople", label: "One row per card", on: "EXPORT_CARD_MERGE_ENABLED", off: "EXPORT_CARD_MERGE_DISABLED" }
+        keepExtraContacts: { field: "exportKeepExtraContacts", label: "Keep the other contacts in extra columns", on: "EXPORT_EXTRA_CONTACTS_ENABLED", off: "EXPORT_EXTRA_CONTACTS_DISABLED" }
       };
       const key = Object.keys(RULES).find((name) => body[name] !== undefined);
       if (!key) return error(res, 400, "Say which export rule to change.");
@@ -7747,55 +7747,6 @@ function contactCompleteness(contact) {
   return weighted.reduce((score, [value, weight]) => score + (String(value || "").trim() ? weight : 0), 0);
 }
 
-// A card naming several people is saved as one contact each (expandCardPeople),
-// all sharing a sourceCardId. Some clients would rather read that back the way
-// the card looked: one row for the card, with the other people alongside it.
-//
-// The card holder keeps the row, because the extras deliberately carry none of
-// the single-owner fields - no designation, email or LinkedIn - so promoting one
-// of them would export a row with those columns blank. Earliest scanned wins,
-// which is the order expandCardPeople created them in, and a designation or
-// email settles a tie when timestamps match.
-function cardHolderFirst(left, right) {
-  const byTime = String(left.createdAt || "").localeCompare(String(right.createdAt || ""));
-  if (byTime) return byTime;
-  const owns = (contact) => (String(contact.designation || "").trim() || String(contact.emailAddress || "").trim()) ? 0 : 1;
-  return owns(left) - owns(right);
-}
-
-function mergeCardPeople(contacts) {
-  const peopleByCard = new Map();
-  for (const contact of contacts) {
-    if (!contact.sourceCardId) continue;
-    const group = peopleByCard.get(contact.sourceCardId) || [];
-    group.push(contact);
-    peopleByCard.set(contact.sourceCardId, group);
-  }
-
-  const holderOf = new Map();
-  for (const [cardId, group] of peopleByCard) {
-    const ordered = [...group].sort(cardHolderFirst);
-    holderOf.set(cardId, ordered[0].id);
-    // Attached to a copy rather than the stored contact: this runs on the live
-    // in-memory records, and an export must never leave anything behind on them.
-    ordered[0] = { ...ordered[0], extraPeople: ordered.slice(1).map((person) => ({
-      name: String(person.name || "").trim(),
-      mobileNumber: String(person.mobileNumber || "").trim()
-    })) };
-    peopleByCard.set(cardId, ordered);
-  }
-
-  // Rebuilt in the original order so the merged row sits where the card holder
-  // already was, rather than the whole file reordering itself.
-  const merged = [];
-  for (const contact of contacts) {
-    if (!contact.sourceCardId) { merged.push(contact); continue; }
-    if (holderOf.get(contact.sourceCardId) !== contact.id) continue;
-    merged.push(peopleByCard.get(contact.sourceCardId)[0]);
-  }
-  return merged;
-}
-
 // The extra-people columns only exist when some row has extras, so a client with
 // no multi-person cards still gets exactly the spreadsheet they had before.
 function exportColumnsFor(extraPeopleCount) {
@@ -7810,26 +7761,60 @@ function maxExtraPeople(contacts) {
   return contacts.reduce((most, contact) => Math.max(most, (contact.extraPeople || []).length), 0);
 }
 
-function keepOneContactPerBusiness(contacts) {
-  const bestByBusiness = new Map();
-  const ungrouped = [];
+// The row a business keeps: most complete wins, earliest scanned breaks a tie so
+// the same row is chosen on every download.
+function bestOfBusiness(left, right) {
+  const scoreLeft = contactCompleteness(left);
+  const scoreRight = contactCompleteness(right);
+  if (scoreLeft !== scoreRight) return scoreRight - scoreLeft;
+  return String(left.createdAt || "").localeCompare(String(right.createdAt || ""));
+}
+
+// `keepExtras` decides what happens to the other people at a business. Without
+// it they are dropped, which is what the first client asking for this wanted.
+// With it they are carried on the kept row as extraPeople, so the spreadsheet
+// still has their numbers to refer back to later.
+function keepOneContactPerBusiness(contacts, keepExtras = false) {
+  const byBusiness = new Map();
+  const ungrouped = new Set();
   for (const contact of contacts) {
     const key = businessKey(contact.companyName);
     // No company name means there is no business to group on, so these are all
     // kept - dropping them would silently lose contacts.
-    if (!key) { ungrouped.push(contact.id); continue; }
-    const current = bestByBusiness.get(key);
-    if (!current) { bestByBusiness.set(key, contact); continue; }
-    const scoreNew = contactCompleteness(contact);
-    const scoreCurrent = contactCompleteness(current);
-    // Tie-break on the earliest scanned so the chosen row is stable between
-    // downloads rather than flipping with whatever order the rows arrive in.
-    const newWins = scoreNew > scoreCurrent
-      || (scoreNew === scoreCurrent && String(contact.createdAt || "") < String(current.createdAt || ""));
-    if (newWins) bestByBusiness.set(key, contact);
+    if (!key) { ungrouped.add(contact.id); continue; }
+    const group = byBusiness.get(key) || [];
+    group.push(contact);
+    byBusiness.set(key, group);
   }
-  const keep = new Set([...ungrouped, ...[...bestByBusiness.values()].map((c) => c.id)]);
-  return contacts.filter((contact) => keep.has(contact.id));
+
+  const keptById = new Map();
+  for (const group of byBusiness.values()) {
+    const ordered = [...group].sort(bestOfBusiness);
+    const [winner, ...rest] = ordered;
+    // Copied rather than mutated: this runs on the live in-memory records and an
+    // export must never leave anything behind on them.
+    keptById.set(winner.id, keepExtras ? { ...winner, extraPeople: rest.map(extraPerson) } : winner);
+  }
+
+  // Rebuilt in the original order, so the kept row stays where it already was
+  // instead of the whole file reordering itself.
+  const kept = [];
+  for (const contact of contacts) {
+    if (ungrouped.has(contact.id)) { kept.push(contact); continue; }
+    const winner = keptById.get(contact.id);
+    if (winner) kept.push(winner);
+  }
+  return kept;
+}
+
+// A person the client can still ring. The name is often missing on a second
+// number read off a card, and a blank pair would be worse than useless - so the
+// number travels on its own rather than being dropped for want of a name.
+function extraPerson(contact) {
+  return {
+    name: String(contact.name || "").trim(),
+    mobileNumber: String(contact.mobileNumber || contact.whatsappNumber || contact.secondaryMobileNumber || "").trim()
+  };
 }
 
 function exportSelection(db, user, url) {
@@ -7924,18 +7909,16 @@ function exportSelection(db, user, url) {
   // who asks for one row per company means their spreadsheets, not some of
   // them, and a per-download opt-out only produced files that disagreed with
   // each other. Clients without the switch are untouched.
+  // Only the admin switch decides this, for every download and every format.
+  // exportKeepExtraContacts modifies it rather than standing alone: it says what
+  // happens to the other people at a business, so on its own there is nothing
+  // for it to act on.
   const organisationForRules = db.organisations.find((o) => o.id === user.organisationId);
-
-  // Before any collapsing: a card's people become one row while they are all
-  // still present. Collapsing by business first would discard people who were
-  // standing at the same stand, and their numbers would never reach the file.
-  if (organisationForRules?.exportMergeCardPeople) {
-    contacts = mergeCardPeople(contacts);
-    nameParts.push("one row per card");
-  }
-
   if (organisationForRules?.exportOnePerBusiness) {
-    contacts = keepOneContactPerBusiness(contacts);
+    const keepExtras = Boolean(organisationForRules.exportKeepExtraContacts);
+    contacts = keepOneContactPerBusiness(contacts, keepExtras);
+    // The extra columns speak for themselves inside the file; naming them here
+    // only produced "..._with_contacts_contacts_2026-10-16.xlsx".
     nameParts.push("one per business");
   }
 
