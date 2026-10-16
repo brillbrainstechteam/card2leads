@@ -3793,6 +3793,7 @@ function clientSummary(db, org, ledgerUsage = null) {
       : null,
     currentPeriodEnd: org.currentPeriodEnd || null,
     exportOnePerBusiness: Boolean(org.exportOnePerBusiness),
+    exportMergeCardPeople: Boolean(org.exportMergeCardPeople),
     userCount: users.length,
     lastActivityAt: activity.lastActivityAt,
     createdAt: org.createdAt
@@ -4445,17 +4446,27 @@ async function handleAdminApi(req, res, pathname) {
     // standard plans (see expireCustomAllowances).
     // Per-client export rules. Off for everyone unless switched on here, so a
     // rule one client asks for never changes what anybody else downloads.
+    // Both per-client export rules go through here. Which one is named in the
+    // body decides, so the panel can offer them independently and a client can
+    // have either, both or neither.
     if (action === "export-rules") {
-      const onePerBusiness = body.onePerBusiness === true || body.onePerBusiness === "true";
-      const prev = { exportOnePerBusiness: Boolean(org.exportOnePerBusiness) };
-      if (prev.exportOnePerBusiness === onePerBusiness) {
-        return error(res, 400, `One contact per business is already ${onePerBusiness ? "on" : "off"} for this client.`);
+      const RULES = {
+        onePerBusiness: { field: "exportOnePerBusiness", label: "One contact per business", on: "EXPORT_RULE_ENABLED", off: "EXPORT_RULE_DISABLED" },
+        mergeCardPeople: { field: "exportMergeCardPeople", label: "One row per card", on: "EXPORT_CARD_MERGE_ENABLED", off: "EXPORT_CARD_MERGE_DISABLED" }
+      };
+      const key = Object.keys(RULES).find((name) => body[name] !== undefined);
+      if (!key) return error(res, 400, "Say which export rule to change.");
+      const rule = RULES[key];
+      const wanted = body[key] === true || body[key] === "true";
+      const prev = { [rule.field]: Boolean(org[rule.field]) };
+      if (prev[rule.field] === wanted) {
+        return error(res, 400, `${rule.label} is already ${wanted ? "on" : "off"} for this client.`);
       }
-      org.exportOnePerBusiness = onePerBusiness;
+      org[rule.field] = wanted;
       org.updatedAt = now();
       await saveDb(db);
-      await adminAudit(admin, { clientId, action: onePerBusiness ? "EXPORT_RULE_ENABLED" : "EXPORT_RULE_DISABLED", previousValue: prev, newValue: { exportOnePerBusiness: onePerBusiness }, reason });
-      return send(res, 200, { ok: true, exportOnePerBusiness: onePerBusiness });
+      await adminAudit(admin, { clientId, action: wanted ? rule.on : rule.off, previousValue: prev, newValue: { [rule.field]: wanted }, reason });
+      return send(res, 200, { ok: true, [rule.field]: wanted });
     }
 
     if (action === "custom-allowance") {
@@ -6806,8 +6817,8 @@ async function handleApi(req, res, pathname) {
     if (req.method === "GET" && pathname === "/api/export.xlsx") {
       if (!rateLimit(req, res, "export-xlsx", 60, 60 * 60 * 1000)) return;
       const url = new URL(req.url, `http://${req.headers.host}`);
-      const { collection, contacts, baseName, exportAll } = exportSelection(db, user, url);
-      const rows = [EXPORT_COLUMNS, ...contacts.map((c) => exportRow(c, user))];
+      const { collection, contacts, baseName, exportAll, extraPeopleCount } = exportSelection(db, user, url);
+      const rows = [exportColumnsFor(extraPeopleCount), ...contacts.map((c) => exportRow(c, extraPeopleCount))];
       const xlsx = buildXlsx(rows);
       const fileName = `${baseName}.xlsx`;
       audit(db, user, "excel.downloaded", "collection", collection?.id || "", { contacts: contacts.length, all: exportAll });
@@ -6822,8 +6833,8 @@ async function handleApi(req, res, pathname) {
     if (req.method === "GET" && pathname === "/api/export.csv") {
       if (!rateLimit(req, res, "export-csv", 60, 60 * 60 * 1000)) return;
       const url = new URL(req.url, `http://${req.headers.host}`);
-      const { collection, contacts, baseName, exportAll } = exportSelection(db, user, url);
-      const rows = [EXPORT_COLUMNS, ...contacts.map((c) => exportRow(c, user))];
+      const { collection, contacts, baseName, exportAll, extraPeopleCount } = exportSelection(db, user, url);
+      const rows = [exportColumnsFor(extraPeopleCount), ...contacts.map((c) => exportRow(c, extraPeopleCount))];
       const csv = buildCsv(rows);
       const fileName = `${baseName}.csv`;
       audit(db, user, "csv.downloaded", "collection", collection?.id || "", { contacts: contacts.length, all: exportAll });
@@ -7624,10 +7635,10 @@ function mergeContactRecord(db, user, card, existing, cleaned) {
   return { ok: true, contact: existing, merged: true, filledFields: filled };
 }
 
-function exportRow(contact) {
+function exportRow(contact, extraPeopleCount = 0) {
   const phone = phoneCountryInfo(contact.mobileNumber, contact.country);
   const stateCode = String(contact.stateCode || "").trim() || stateCodeFor(contact.state, contact.country, phone.iso, contact.city);
-  return [
+  const row = [
     googleContactDisplayName(contact),
     buildCityFirstDisplayName(contact),
     contact.name,
@@ -7659,7 +7670,14 @@ function exportRow(contact) {
     contact.tags,
     contact.messageSentAt ? "Yes" : "No",
     contact.createdAt
-  ].map(safeSpreadsheetValue);
+  ];
+  // Every row is padded to the same width. A row that simply stopped early
+  // would leave Excel reading the next row's values into these columns.
+  const extras = contact.extraPeople || [];
+  for (let index = 0; index < extraPeopleCount; index += 1) {
+    row.push(extras[index]?.name || "", extras[index]?.mobileNumber || "");
+  }
+  return row.map(safeSpreadsheetValue);
 }
 
 // Remarks normally already includes the voice comment, because applyVoiceFields
@@ -7727,6 +7745,69 @@ function contactCompleteness(contact) {
     [contact.country, 1], [contact.notes, 1], [contact.tags, 1]
   ];
   return weighted.reduce((score, [value, weight]) => score + (String(value || "").trim() ? weight : 0), 0);
+}
+
+// A card naming several people is saved as one contact each (expandCardPeople),
+// all sharing a sourceCardId. Some clients would rather read that back the way
+// the card looked: one row for the card, with the other people alongside it.
+//
+// The card holder keeps the row, because the extras deliberately carry none of
+// the single-owner fields - no designation, email or LinkedIn - so promoting one
+// of them would export a row with those columns blank. Earliest scanned wins,
+// which is the order expandCardPeople created them in, and a designation or
+// email settles a tie when timestamps match.
+function cardHolderFirst(left, right) {
+  const byTime = String(left.createdAt || "").localeCompare(String(right.createdAt || ""));
+  if (byTime) return byTime;
+  const owns = (contact) => (String(contact.designation || "").trim() || String(contact.emailAddress || "").trim()) ? 0 : 1;
+  return owns(left) - owns(right);
+}
+
+function mergeCardPeople(contacts) {
+  const peopleByCard = new Map();
+  for (const contact of contacts) {
+    if (!contact.sourceCardId) continue;
+    const group = peopleByCard.get(contact.sourceCardId) || [];
+    group.push(contact);
+    peopleByCard.set(contact.sourceCardId, group);
+  }
+
+  const holderOf = new Map();
+  for (const [cardId, group] of peopleByCard) {
+    const ordered = [...group].sort(cardHolderFirst);
+    holderOf.set(cardId, ordered[0].id);
+    // Attached to a copy rather than the stored contact: this runs on the live
+    // in-memory records, and an export must never leave anything behind on them.
+    ordered[0] = { ...ordered[0], extraPeople: ordered.slice(1).map((person) => ({
+      name: String(person.name || "").trim(),
+      mobileNumber: String(person.mobileNumber || "").trim()
+    })) };
+    peopleByCard.set(cardId, ordered);
+  }
+
+  // Rebuilt in the original order so the merged row sits where the card holder
+  // already was, rather than the whole file reordering itself.
+  const merged = [];
+  for (const contact of contacts) {
+    if (!contact.sourceCardId) { merged.push(contact); continue; }
+    if (holderOf.get(contact.sourceCardId) !== contact.id) continue;
+    merged.push(peopleByCard.get(contact.sourceCardId)[0]);
+  }
+  return merged;
+}
+
+// The extra-people columns only exist when some row has extras, so a client with
+// no multi-person cards still gets exactly the spreadsheet they had before.
+function exportColumnsFor(extraPeopleCount) {
+  const extras = [];
+  for (let index = 1; index <= extraPeopleCount; index += 1) {
+    extras.push(`Additional Contact ${index} Name`, `Additional Contact ${index} Mobile`);
+  }
+  return [...EXPORT_COLUMNS, ...extras];
+}
+
+function maxExtraPeople(contacts) {
+  return contacts.reduce((most, contact) => Math.max(most, (contact.extraPeople || []).length), 0);
 }
 
 function keepOneContactPerBusiness(contacts) {
@@ -7844,6 +7925,15 @@ function exportSelection(db, user, url) {
   // them, and a per-download opt-out only produced files that disagreed with
   // each other. Clients without the switch are untouched.
   const organisationForRules = db.organisations.find((o) => o.id === user.organisationId);
+
+  // Before any collapsing: a card's people become one row while they are all
+  // still present. Collapsing by business first would discard people who were
+  // standing at the same stand, and their numbers would never reach the file.
+  if (organisationForRules?.exportMergeCardPeople) {
+    contacts = mergeCardPeople(contacts);
+    nameParts.push("one row per card");
+  }
+
   if (organisationForRules?.exportOnePerBusiness) {
     contacts = keepOneContactPerBusiness(contacts);
     nameParts.push("one per business");
@@ -7854,7 +7944,7 @@ function exportSelection(db, user, url) {
 
   const stamp = new Date().toISOString().slice(0, 10);
   const baseName = `${nameParts.map(slug).filter(Boolean).join("_")}_contacts_${stamp}`;
-  return { collection, contacts, baseName, exportAll, assigneeId };
+  return { collection, contacts, baseName, exportAll, assigneeId, extraPeopleCount: maxExtraPeople(contacts) };
 }
 
 function selectedExportIds(url) {

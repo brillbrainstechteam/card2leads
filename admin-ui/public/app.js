@@ -507,7 +507,8 @@
           (canCancel ? '<button data-act="cancel-subscription">Schedule cancellation</button>' : "") +
           (c.customAllowance || c.currentPeriodEnd ? '<button data-act="extend-allowance">Change expiry date</button>' : "") +
           (c.customAllowance ? '<button data-act="clear-allowance">Remove custom allowance</button>' : "") +
-          '<button data-act="export-rules">' + (c.exportOnePerBusiness ? "Remove one-per-business export option" : "Offer one-per-business export option") + "</button>" +
+          '<button data-act="export-rules">' + (c.exportOnePerBusiness ? "Turn off one contact per business" : "Turn on one contact per business") + "</button>" +
+          '<button data-act="card-merge">' + (c.exportMergeCardPeople ? "Turn off one row per card" : "Turn on one row per card") + "</button>" +
           '<button data-act="disconnect-google">Disconnect Google</button>' +
           '<button data-act="initiate-deletion" class="danger">Initiate Deletion</button>' +
         '</div></div>' +
@@ -590,14 +591,27 @@
       case "export-rules": {
         var on = !!c.exportOnePerBusiness;
         return {
-          endpoint: "export-rules", title: on ? "Remove One-Per-Business Option" : "Offer One-Per-Business Option",
+          endpoint: "export-rules", title: on ? "Turn Off One Contact Per Business" : "Turn On One Contact Per Business",
           submitLabel: on ? "Turn off" : "Turn on", brand: !on, warn: on,
-          sub: "This client only — no other client's download menu changes.",
+          sub: "This client only — no other client's downloads change.",
           note: { kind: on ? "warn" : "info", text: on
-            ? "The option disappears from their download menu and every download includes all contacts again."
-            : "Adds a tick-box to this client's download menu so they can choose one contact per company for a given download — whichever record is most complete. It is off unless they tick it, their Contacts list never changes, and contacts with no company name are always kept." },
+            ? "Every download goes back to one row per contact."
+            : "Every download for this client keeps one row per company — whichever contact is most complete, with the earliest scanned breaking a tie. Their Contacts list is unchanged, and contacts with no company name are always kept." },
           payload: { onePerBusiness: !on },
           fields: [{ key: "reason", type: "text", label: "Reason", required: true, placeholder: on ? "Why revert to all contacts?" : "Why does this client need one per business?" }]
+        };
+      }
+      case "card-merge": {
+        var merging = !!c.exportMergeCardPeople;
+        return {
+          endpoint: "export-rules", title: merging ? "Turn Off One Row Per Card" : "Turn On One Row Per Card",
+          submitLabel: merging ? "Turn off" : "Turn on", brand: !merging, warn: merging,
+          sub: "This client only — no other client's downloads change.",
+          note: { kind: merging ? "warn" : "info", text: merging
+            ? "Everyone named on a card goes back to having their own row, and the Additional Contact columns disappear."
+            : "A card naming several people becomes one row in Excel and CSV. The card holder keeps the usual columns, and the others follow in Additional Contact Name/Mobile columns. Their Contacts list is unchanged — everyone still appears there separately." },
+          payload: { mergeCardPeople: !merging },
+          fields: [{ key: "reason", type: "text", label: "Reason", required: true, placeholder: merging ? "Why go back to a row per person?" : "Why does this client want one row per card?" }]
         };
       }
       case "clear-allowance": return {
