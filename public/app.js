@@ -242,13 +242,13 @@ document.addEventListener("click", (event) => {
   // A VCF is a phone-contacts file with no columns, so it keeps every contact
   // rather than collapsing - saying otherwise would describe the wrong file.
   const spreadsheet = !/\/api\/export\.vcf/.test(link.href);
-  const lines = ["This download keeps one row per business - the most complete contact for each company."];
-  if (spreadsheet && rules.exportKeepExtraContacts) {
-    lines.push("The other contacts at that company are not left out: each one follows in Additional Contact Name and Mobile columns, with the number on its own where there is no name.");
+  const lines = ["Everyone met at the same company shares one row - the most complete contact fills the usual columns."];
+  if (spreadsheet) {
+    lines.push("The others follow in Additional Contact Name and Mobile columns, with the number on its own where a contact has no name, so nobody is left out.");
   }
   event.preventDefault();
   state.modal = {
-    title: "One contact per business",
+    title: "One row per business",
     tone: "info",
     body: `${lines.join(" ")} Your Contacts list is not changed. Contact support if you need this changed.`,
     actions: [{
@@ -3797,9 +3797,7 @@ function contactsView() {
         </select>
         <span class="export-member-hint" id="exportScopeHint"></span>
         ${state.overview?.organisation?.exportOnePerBusiness ? `
-        <span class="export-member-hint">One contact per business: every download keeps the most complete contact for each company. Your Contacts list is not changed.</span>` : ""}
-        ${state.overview?.organisation?.exportOnePerBusiness && state.overview?.organisation?.exportKeepExtraContacts ? `
-        <span class="export-member-hint">The other contacts at each company are not left out - they follow in Additional Contact Name and Mobile columns.</span>` : ""}
+        <span class="export-member-hint">Everyone met at the same company shares one row, with the others in Additional Contact columns. Your Contacts list is not changed.</span>` : ""}
         <a data-scope-export="xlsx" href="${exportHref("xlsx", activeCollectionId, [], true, downloadFilterActive)}">Excel spreadsheet</a>
         <a data-scope-export="csv" href="${exportHref("csv", activeCollectionId, [], true, downloadFilterActive)}">CSV file</a>
         <a data-scope-export="vcf" href="${exportHref("vcf", activeCollectionId, [], true, downloadFilterActive)}">VCF (phone contacts)</a>

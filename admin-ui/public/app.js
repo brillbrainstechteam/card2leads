@@ -507,8 +507,7 @@
           (canCancel ? '<button data-act="cancel-subscription">Schedule cancellation</button>' : "") +
           (c.customAllowance || c.currentPeriodEnd ? '<button data-act="extend-allowance">Change expiry date</button>' : "") +
           (c.customAllowance ? '<button data-act="clear-allowance">Remove custom allowance</button>' : "") +
-          '<button data-act="export-rules">' + (c.exportOnePerBusiness ? "Turn off one contact per business" : "Turn on one contact per business") + "</button>" +
-          (c.exportOnePerBusiness ? '<button data-act="keep-extra-contacts">' + (c.exportKeepExtraContacts ? "Drop the other contacts again" : "Keep the other contacts in extra columns") + "</button>" : "") +
+          '<button data-act="export-rules">' + (c.exportOnePerBusiness ? "Give each contact its own row" : "Put a business's contacts in one row") + "</button>" +
           '<button data-act="disconnect-google">Disconnect Google</button>' +
           '<button data-act="initiate-deletion" class="danger">Initiate Deletion</button>' +
         '</div></div>' +
@@ -589,29 +588,16 @@
         };
       }
       case "export-rules": {
-        var on = !!c.exportOnePerBusiness;
+        var sharing = !!c.exportOnePerBusiness;
         return {
-          endpoint: "export-rules", title: on ? "Turn Off One Contact Per Business" : "Turn On One Contact Per Business",
-          submitLabel: on ? "Turn off" : "Turn on", brand: !on, warn: on,
+          endpoint: "export-rules", title: sharing ? "Give Each Contact Its Own Row" : "Put A Business's Contacts In One Row",
+          submitLabel: sharing ? "Switch back" : "Turn on", brand: !sharing, warn: sharing,
           sub: "This client only — no other client's downloads change.",
-          note: { kind: on ? "warn" : "info", text: on
-            ? "Every download goes back to one row per contact."
-            : "Every download for this client keeps one row per company — whichever contact is most complete, with the earliest scanned breaking a tie. Their Contacts list is unchanged, and contacts with no company name are always kept." },
-          payload: { onePerBusiness: !on },
-          fields: [{ key: "reason", type: "text", label: "Reason", required: true, placeholder: on ? "Why revert to all contacts?" : "Why does this client need one per business?" }]
-        };
-      }
-      case "keep-extra-contacts": {
-        var keeping = !!c.exportKeepExtraContacts;
-        return {
-          endpoint: "export-rules", title: keeping ? "Drop The Other Contacts Again" : "Keep The Other Contacts",
-          submitLabel: keeping ? "Turn off" : "Turn on", brand: !keeping, warn: keeping,
-          sub: "This client only — no other client's downloads change.",
-          note: { kind: keeping ? "warn" : "info", text: keeping
-            ? "The Additional Contact columns disappear, and everyone except the kept contact is left out of the file again."
-            : "Changes what one-contact-per-business does with the rest: instead of leaving them out, each one follows the kept row in Additional Contact Name and Mobile columns, so their numbers are still there to refer back to. Where a contact has no name, the number travels on its own." },
-          payload: { keepExtraContacts: !keeping },
-          fields: [{ key: "reason", type: "text", label: "Reason", required: true, placeholder: keeping ? "Why leave the other contacts out?" : "Why does this client need the other numbers kept?" }]
+          note: { kind: "info", text: sharing
+            ? "Back to the default: every contact gets its own row in Excel and CSV, and the Additional Contact columns disappear."
+            : "In Excel and CSV, everyone met at the same company shares one row. The most complete contact fills the usual columns and the others follow in Additional Contact Name and Mobile columns — with the number on its own where a contact has no name. Nobody is left out, and their Contacts list is unchanged." },
+          payload: { onePerBusiness: !sharing },
+          fields: [{ key: "reason", type: "text", label: "Reason", required: true, placeholder: sharing ? "Why go back to a row each?" : "Why does this client want one row per business?" }]
         };
       }
       case "clear-allowance": return {

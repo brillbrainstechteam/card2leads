@@ -3793,7 +3793,6 @@ function clientSummary(db, org, ledgerUsage = null) {
       : null,
     currentPeriodEnd: org.currentPeriodEnd || null,
     exportOnePerBusiness: Boolean(org.exportOnePerBusiness),
-    exportKeepExtraContacts: Boolean(org.exportKeepExtraContacts),
     userCount: users.length,
     lastActivityAt: activity.lastActivityAt,
     createdAt: org.createdAt
@@ -4446,27 +4445,19 @@ async function handleAdminApi(req, res, pathname) {
     // standard plans (see expireCustomAllowances).
     // Per-client export rules. Off for everyone unless switched on here, so a
     // rule one client asks for never changes what anybody else downloads.
-    // Both per-client export rules go through here. Which one is named in the
-    // body decides, so the panel can offer them independently and a client can
-    // have either, both or neither.
     if (action === "export-rules") {
-      const RULES = {
-        onePerBusiness: { field: "exportOnePerBusiness", label: "One contact per business", on: "EXPORT_RULE_ENABLED", off: "EXPORT_RULE_DISABLED" },
-        keepExtraContacts: { field: "exportKeepExtraContacts", label: "Keep the other contacts in extra columns", on: "EXPORT_EXTRA_CONTACTS_ENABLED", off: "EXPORT_EXTRA_CONTACTS_DISABLED" }
-      };
-      const key = Object.keys(RULES).find((name) => body[name] !== undefined);
-      if (!key) return error(res, 400, "Say which export rule to change.");
-      const rule = RULES[key];
-      const wanted = body[key] === true || body[key] === "true";
-      const prev = { [rule.field]: Boolean(org[rule.field]) };
-      if (prev[rule.field] === wanted) {
-        return error(res, 400, `${rule.label} is already ${wanted ? "on" : "off"} for this client.`);
+      const onePerBusiness = body.onePerBusiness === true || body.onePerBusiness === "true";
+      const prev = { exportOnePerBusiness: Boolean(org.exportOnePerBusiness) };
+      if (prev.exportOnePerBusiness === onePerBusiness) {
+        return error(res, 400, onePerBusiness
+          ? "A business's contacts already share a row for this client."
+          : "A business's contacts already take a row each for this client.");
       }
-      org[rule.field] = wanted;
+      org.exportOnePerBusiness = onePerBusiness;
       org.updatedAt = now();
       await saveDb(db);
-      await adminAudit(admin, { clientId, action: wanted ? rule.on : rule.off, previousValue: prev, newValue: { [rule.field]: wanted }, reason });
-      return send(res, 200, { ok: true, [rule.field]: wanted });
+      await adminAudit(admin, { clientId, action: onePerBusiness ? "EXPORT_RULE_ENABLED" : "EXPORT_RULE_DISABLED", previousValue: prev, newValue: { exportOnePerBusiness: onePerBusiness }, reason });
+      return send(res, 200, { ok: true, exportOnePerBusiness: onePerBusiness });
     }
 
     if (action === "custom-allowance") {
@@ -7770,11 +7761,11 @@ function bestOfBusiness(left, right) {
   return String(left.createdAt || "").localeCompare(String(right.createdAt || ""));
 }
 
-// `keepExtras` decides what happens to the other people at a business. Without
-// it they are dropped, which is what the first client asking for this wanted.
-// With it they are carried on the kept row as extraPeople, so the spreadsheet
-// still has their numbers to refer back to later.
-function keepOneContactPerBusiness(contacts, keepExtras = false) {
+// The other people at a business are never discarded - they are carried on the
+// kept row as extraPeople, so the spreadsheet still has their numbers to refer
+// back to later. Losing them was only ever a side effect of collapsing rows,
+// never something a client asked for.
+function keepOneContactPerBusiness(contacts) {
   const byBusiness = new Map();
   const ungrouped = new Set();
   for (const contact of contacts) {
@@ -7793,7 +7784,7 @@ function keepOneContactPerBusiness(contacts, keepExtras = false) {
     const [winner, ...rest] = ordered;
     // Copied rather than mutated: this runs on the live in-memory records and an
     // export must never leave anything behind on them.
-    keptById.set(winner.id, keepExtras ? { ...winner, extraPeople: rest.map(extraPerson) } : winner);
+    keptById.set(winner.id, { ...winner, extraPeople: rest.map(extraPerson) });
   }
 
   // Rebuilt in the original order, so the kept row stays where it already was
@@ -7909,17 +7900,13 @@ function exportSelection(db, user, url) {
   // who asks for one row per company means their spreadsheets, not some of
   // them, and a per-download opt-out only produced files that disagreed with
   // each other. Clients without the switch are untouched.
-  // Only the admin switch decides this, for every download and every format.
-  // exportKeepExtraContacts modifies it rather than standing alone: it says what
-  // happens to the other people at a business, so on its own there is nothing
-  // for it to act on.
+  // One per-client setting, and it only changes the shape of the file: a
+  // business's contacts share a row instead of taking one each. Off by default,
+  // and nobody loses a contact either way.
   const organisationForRules = db.organisations.find((o) => o.id === user.organisationId);
   if (organisationForRules?.exportOnePerBusiness) {
-    const keepExtras = Boolean(organisationForRules.exportKeepExtraContacts);
-    contacts = keepOneContactPerBusiness(contacts, keepExtras);
-    // The extra columns speak for themselves inside the file; naming them here
-    // only produced "..._with_contacts_contacts_2026-10-16.xlsx".
-    nameParts.push("one per business");
+    contacts = keepOneContactPerBusiness(contacts);
+    nameParts.push("one row per business");
   }
 
   if (selectedIds.size) nameParts.unshift("Selected");
