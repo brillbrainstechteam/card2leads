@@ -212,3 +212,19 @@ tbody tr:hover { background: var(--surface-2); }
   .sidebar .spacer, .sidebar .who { display: none; }
   .two-col { grid-template-columns: 1fr; }
 }
+
+/* A setting has to show its state, not just offer a verb. The pill says what is
+   on now and the help text underneath says what that means, so the panel can be
+   read without anyone having to remember what the last admin chose. */
+.setting-row { display: flex; align-items: flex-start; gap: 16px; }
+.setting-text { flex: 1; min-width: 0; }
+.setting-name { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-weight: 600; font-size: 14px; }
+.setting-state { font-size: 11px; font-weight: 700; letter-spacing: .4px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.setting-state.on { background: var(--ok-soft); color: var(--ok); }
+.setting-state.off { background: var(--brand-soft); color: var(--text-soft); }
+.setting-help { margin-top: 6px; font-size: 12.5px; line-height: 1.5; color: var(--text-soft); }
+.setting-toggle { flex-shrink: 0; width: 46px; height: 26px; padding: 0; border: 1px solid var(--border); border-radius: 999px; background: #e3e8f0; cursor: pointer; position: relative; transition: background .15s ease, border-color .15s ease; }
+.setting-toggle .knob { position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(16, 32, 64, .3); transition: transform .15s ease; }
+.setting-toggle.is-on { background: var(--ok); border-color: var(--ok); }
+.setting-toggle.is-on .knob { transform: translateX(20px); }
+.setting-toggle:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }

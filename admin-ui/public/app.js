@@ -464,6 +464,20 @@
 
       '<div class="dcard"><h3>Journey & Activity</h3><div class="body">' + timeline + "</div></div>" +
 
+      '<div class="dcard"><h3>Export Settings</h3><div class="body">' +
+      '<div class="setting-row">' +
+        '<div class="setting-text">' +
+          '<div class="setting-name">Contacts from the same business' +
+            '<span class="setting-state ' + (c.exportOnePerBusiness ? "on" : "off") + '">' + (c.exportOnePerBusiness ? "ONE ROW" : "A ROW EACH") + "</span>" +
+          "</div>" +
+          '<div class="setting-help">' + (c.exportOnePerBusiness
+            ? "Everyone met at the same company shares one row in Excel and CSV. The most complete contact fills the usual columns; the others follow in Additional Contact Name and Mobile columns, with the number alone where a contact has no name."
+            : "The default. Every contact gets its own row, exactly as it has always worked. Nothing is grouped.") + "</div>" +
+        "</div>" +
+        '<button class="setting-toggle' + (c.exportOnePerBusiness ? " is-on" : "") + '" data-act="export-rules" role="switch" aria-checked="' + (c.exportOnePerBusiness ? "true" : "false") + '" aria-label="Contacts from the same business share one row"><span class="knob"></span></button>' +
+      "</div>" +
+      "</div></div>" +
+
       '<div class="dcard"><h3>Payments</h3><div class="body">' + payments + "</div></div>" +
 
       '<div class="dcard"><h3>Subscription history</h3><div class="body">' + subscriptions + "</div></div>" +
@@ -507,7 +521,6 @@
           (canCancel ? '<button data-act="cancel-subscription">Schedule cancellation</button>' : "") +
           (c.customAllowance || c.currentPeriodEnd ? '<button data-act="extend-allowance">Change expiry date</button>' : "") +
           (c.customAllowance ? '<button data-act="clear-allowance">Remove custom allowance</button>' : "") +
-          '<button data-act="export-rules">' + (c.exportOnePerBusiness ? "Give each contact its own row" : "Put a business's contacts in one row") + "</button>" +
           '<button data-act="disconnect-google">Disconnect Google</button>' +
           '<button data-act="initiate-deletion" class="danger">Initiate Deletion</button>' +
         '</div></div>' +
@@ -590,12 +603,15 @@
       case "export-rules": {
         var sharing = !!c.exportOnePerBusiness;
         return {
-          endpoint: "export-rules", title: sharing ? "Give Each Contact Its Own Row" : "Put A Business's Contacts In One Row",
-          submitLabel: sharing ? "Switch back" : "Turn on", brand: !sharing, warn: sharing,
+          // Named for the switch, not for the outcome, so the dialog confirms
+          // the same thing the toggle appears to be doing.
+          endpoint: "export-rules",
+          title: sharing ? "Turn Off: One Row Per Business" : "Turn On: One Row Per Business",
+          submitLabel: sharing ? "Turn off" : "Turn on", brand: !sharing, warn: sharing,
           sub: "This client only — no other client's downloads change.",
           note: { kind: "info", text: sharing
-            ? "Back to the default: every contact gets its own row in Excel and CSV, and the Additional Contact columns disappear."
-            : "In Excel and CSV, everyone met at the same company shares one row. The most complete contact fills the usual columns and the others follow in Additional Contact Name and Mobile columns — with the number on its own where a contact has no name. Nobody is left out, and their Contacts list is unchanged." },
+            ? "OFF — back to the default: in Excel and CSV every contact gets its own row again, and the Additional Contact columns disappear. Nothing is lost either way."
+            : "ON — in Excel and CSV, everyone met at the same company shares one row. The most complete contact fills the usual columns and the others follow in Additional Contact Name and Mobile columns, with the number alone where a contact has no name. Nobody is left out, and their Contacts list is unchanged." },
           payload: { onePerBusiness: !sharing },
           fields: [{ key: "reason", type: "text", label: "Reason", required: true, placeholder: sharing ? "Why go back to a row each?" : "Why does this client want one row per business?" }]
         };
