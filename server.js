@@ -184,7 +184,7 @@ const googleWebOAuthStates = new Map();
 
 const EXPORT_COLUMNS = [
   "Saved Contact Name",
-  "Saved Contact Name (City First)",
+  "Saved Contact Name (Company First)",
   "Name",
   "Name (Original Script)",
   "Mobile Number",
@@ -461,17 +461,20 @@ function buildContactDisplayName(contact, format = savedNameFormatFor(contact.or
 // Parts that are missing are left out rather than filled with a placeholder, so
 // a card without a city simply starts at the company. Joined with the
 // workspace's own separator so both name columns read the same way.
-function buildCityFirstDisplayName(contact, format = savedNameFormatFor(contact.organisationId)) {
+// The configurable saved name without its state code and exhibition: company,
+// person, city. Company leads so sorting a spreadsheet on this column brings a
+// company's rows together, which is what the column is for.
+function buildCompanyFirstDisplayName(contact, format = savedNameFormatFor(contact.organisationId)) {
   const person = String(contact.name || "").trim();
   const company = String(contact.companyName || "").trim();
   const { separator } = normalizeSavedNameFormat(format);
   const stripDots = separator.startsWith(".");
   return [
-    String(contact.city || "").trim(),
     // A one-man firm often prints the person's name as the company; repeating
-    // it here would just read "Surat.Asha Rao.Asha Rao".
+    // it here would just read "Asha Rao.Asha Rao.Surat".
     company.toLowerCase() === person.toLowerCase() ? "" : company,
-    person
+    person,
+    String(contact.city || "").trim()
   ]
     .map((part) => part.trim())
     .map((part) => (stripDots ? part.replace(/\.+$/, "").trim() : part))
@@ -7631,7 +7634,7 @@ function exportRow(contact, extraPeopleCount = 0) {
   const stateCode = String(contact.stateCode || "").trim() || stateCodeFor(contact.state, contact.country, phone.iso, contact.city);
   const row = [
     googleContactDisplayName(contact),
-    buildCityFirstDisplayName(contact),
+    buildCompanyFirstDisplayName(contact),
     contact.name,
     contact.nameNative,
     contact.mobileNumber,
