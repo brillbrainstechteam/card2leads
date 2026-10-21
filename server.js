@@ -7665,11 +7665,16 @@ function exportRow(contact, extraPeopleCount = 0) {
     contact.messageSentAt ? "Yes" : "No",
     contact.createdAt
   ];
-  // Every row is padded to the same width. A row that simply stopped early
-  // would leave Excel reading the next row's values into these columns.
-  const extras = contact.extraPeople || [];
-  for (let index = 0; index < extraPeopleCount; index += 1) {
-    row.push(extras[index]?.name || "", extras[index]?.mobileNumber || "");
+  // Spliced in at the same place as the headers. Every row is padded to the same
+  // width; a row that simply stopped early would leave Excel reading the next
+  // row's values into these columns.
+  if (extraPeopleCount) {
+    const extras = contact.extraPeople || [];
+    const cells = [];
+    for (let index = 0; index < extraPeopleCount; index += 1) {
+      cells.push(extras[index]?.name || "", extras[index]?.mobileNumber || "");
+    }
+    row.splice(EXTRA_PEOPLE_AT, 0, ...cells);
   }
   return row.map(safeSpreadsheetValue);
 }
@@ -7741,14 +7746,30 @@ function contactCompleteness(contact) {
   return weighted.reduce((score, [value, weight]) => score + (String(value || "").trim() ? weight : 0), 0);
 }
 
+// Where the extra people are read, rather than filed at the far right of a
+// 31-column sheet: straight after the main contact's name and numbers, and
+// before the company block, so a row reads as the people first and then the
+// business. Anchored to the Company Name column so inserting or moving a column
+// above it cannot silently shift the extras into the wrong place.
+const EXTRA_PEOPLE_AT = EXPORT_COLUMNS.indexOf("Company Name");
+
+function extraPeopleHeaders(extraPeopleCount) {
+  const headers = [];
+  for (let index = 1; index <= extraPeopleCount; index += 1) {
+    headers.push(`Additional Contact ${index} Name`, `Additional Contact ${index} Mobile`);
+  }
+  return headers;
+}
+
 // The extra-people columns only exist when some row has extras, so a client with
 // no multi-person cards still gets exactly the spreadsheet they had before.
 function exportColumnsFor(extraPeopleCount) {
-  const extras = [];
-  for (let index = 1; index <= extraPeopleCount; index += 1) {
-    extras.push(`Additional Contact ${index} Name`, `Additional Contact ${index} Mobile`);
-  }
-  return [...EXPORT_COLUMNS, ...extras];
+  if (!extraPeopleCount) return [...EXPORT_COLUMNS];
+  return [
+    ...EXPORT_COLUMNS.slice(0, EXTRA_PEOPLE_AT),
+    ...extraPeopleHeaders(extraPeopleCount),
+    ...EXPORT_COLUMNS.slice(EXTRA_PEOPLE_AT)
+  ];
 }
 
 function maxExtraPeople(contacts) {
