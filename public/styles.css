@@ -8474,3 +8474,81 @@ strong {
 
 /* Optional per-client export rule, offered in the download menu only when the
    admin has enabled it for that client. */
+
+/* A negotiated plan an admin prepared for this workspace, shown above the
+   standard plans so it reads as the offer made to them rather than an upsell. */
+.custom-quote-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin: 14px 0 6px;
+  padding: 16px 18px;
+  border: 1px solid var(--purple, #6d4aec);
+  border-radius: 14px;
+  background: var(--purple-softer, #f6f3ff);
+}
+
+.custom-quote-copy {
+  min-width: 0;
+  flex: 1 1 240px;
+}
+
+.custom-quote-copy .eyebrow {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--purple-strong, #5b37d8);
+}
+
+.custom-quote-copy h4 {
+  margin: 4px 0 4px;
+  font-size: 20px;
+}
+
+.custom-quote-copy p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.custom-quote-buy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.custom-quote-buy strong {
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.custom-quote-buy span {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.custom-quote-buy button {
+  margin-top: 8px;
+  min-height: 42px;
+  padding: 0 18px;
+}
+
+@media (max-width: 640px) {
+  .custom-quote-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .custom-quote-buy {
+    align-items: stretch;
+  }
+  .custom-quote-buy button {
+    width: 100%;
+  }
+}

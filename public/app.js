@@ -4954,6 +4954,44 @@ async function startOneTimePlan(plan) {
   }
 }
 
+// Pays the custom plan an admin quoted for this workspace. The amount is never
+// sent from here — the server reads it back from the stored quote.
+async function startCustomPlan() {
+  try {
+    const [Razorpay, order] = await Promise.all([
+      loadRazorpay(),
+      api("/api/billing/custom", { method: "POST" })
+    ]);
+    const rzp = new Razorpay({
+      key: order.keyId,
+      order_id: order.orderId,
+      amount: order.amount,
+      currency: order.currency,
+      name: "Card2Leads",
+      description: `${Number(order.scans).toLocaleString("en-IN")} scans · valid ${order.validityDays} days`,
+      prefill: { name: state.user?.name || "", email: state.user?.email || "" },
+      theme: { color: "#223558" },
+      handler: async (response) => {
+        try {
+          await api("/api/billing/custom/verify", { method: "POST", body: response });
+          await refreshAll();
+          state.message = { text: `Custom plan activated · ${Number(order.scans).toLocaleString("en-IN")} scans.`, bad: false };
+          render();
+        } catch (err) {
+          state.message = { text: err.message, bad: true };
+          render();
+        }
+      },
+      modal: { ondismiss: () => { state.message = { text: "Payment cancelled.", bad: false }; render(); } }
+    });
+    rzp.on("payment.failed", () => { state.message = { text: "Payment failed. Please try again.", bad: true }; render(); });
+    rzp.open();
+  } catch (err) {
+    state.message = { text: err.message, bad: true };
+    render();
+  }
+}
+
 function requestTopupPurchase() {
   const billing = state.overview?.billing || {};
   if (!billing.configured) {
@@ -5276,9 +5314,22 @@ function accountBillingView() {
         <div class="usage-meter"><span style="width:${usagePercent}%"></span></div>
         <p class="muted">${planStatusText}</p>
         ${billing.configured ? `
+          ${billing.customQuote ? `
+          <div class="custom-quote-card">
+            <div class="custom-quote-copy">
+              <span class="eyebrow">Prepared for your workspace</span>
+              <h4>${Number(billing.customQuote.scans).toLocaleString("en-IN")} scans</h4>
+              <p>Valid for ${Number(billing.customQuote.validityDays)} days from the day you pay.${billing.customQuote.note ? ` ${escapeHtml(billing.customQuote.note)}` : ""}</p>
+            </div>
+            <div class="custom-quote-buy">
+              <strong>&#8377;${Number(billing.customQuote.amount).toLocaleString("en-IN")}</strong>
+              <span>one-time</span>
+              <button type="button" id="payCustomQuote">Pay &#8377;${Number(billing.customQuote.amount).toLocaleString("en-IN")}</button>
+            </div>
+          </div>` : ""}
           <div class="billing-choice-group" data-account-billing-panel="one-time">
             <div>
-              <h4>Choose a plan</h4>
+              <h4>${billing.customQuote ? "Or choose a standard plan" : "Choose a plan"}</h4>
               <p class="muted">Pay once and use the scans during the plan's validity period. No auto-renewal.</p>
             </div>
             <div class="plan-choices billing-plan-grid">${oneTimeButtons}</div>
@@ -5351,6 +5402,7 @@ function accountBillingView() {
   initAccountBillingTabs(node);
   node.querySelectorAll("[data-one-time-plan]").forEach((btn) => btn.addEventListener("click", () => startOneTimePlan(btn.dataset.oneTimePlan)));
   node.querySelectorAll("[data-pay-once]").forEach((btn) => btn.addEventListener("click", () => startOneTimePlan(btn.dataset.payOnce)));
+  node.querySelector("#payCustomQuote")?.addEventListener("click", () => startCustomPlan());
   node.querySelector("#buyTopup")?.addEventListener("click", requestTopupPurchase);
   node.querySelectorAll(".disconnectGoogleAccount").forEach((btn) => btn.addEventListener("click", () => {
     state.modal = {

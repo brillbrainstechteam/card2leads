@@ -512,6 +512,7 @@
       '<button class="btn-sm btn-brand" data-act="credits">Adjust Credits</button>' +
       '<button class="btn-sm" data-act="change-plan">Change Plan</button>' +
       '<button class="btn-sm" data-act="custom-allowance">Custom Allowance</button>' +
+      '<button class="btn-sm" data-act="custom-quote">Custom Plan Quote</button>' +
       (locked
         ? '<button class="btn-sm" data-act="reactivate">Reactivate</button>'
         : '<button class="btn-sm btn-warn" data-act="suspend">Suspend</button>') +
@@ -566,6 +567,24 @@
           { key: "reason", type: "text", label: "Reason", required: true, placeholder: "Why is the plan changing?" }
         ]
       };
+      case "custom-quote": {
+        var q = c.customQuote;
+        var qCur = q
+          ? "Awaiting payment: " + q.scans + " scans for Rs " + q.amount + " · " + q.validityDays + " days"
+          : "No quote pending. The client sees this on their Account screen and pays by card/UPI.";
+        return {
+          endpoint: "custom-quote", title: "Custom Plan Quote", submitLabel: "Send quote", brand: true,
+          sub: qCur,
+          note: { kind: "info", text: "Unlike Custom Allowance, this is NOT free — the client pays the price you set here through Razorpay, and the scans are granted only once payment clears." },
+          fields: [
+            { key: "scans", type: "number", label: "Scans", required: true, placeholder: "e.g. 10000", min: 1 },
+            { key: "amount", type: "number", label: "Price (Rs)", required: true, placeholder: "e.g. 18000", min: 1 },
+            { key: "validityDays", type: "number", label: "Valid for (days)", required: true, placeholder: "e.g. 365", min: 1 },
+            { key: "note", type: "text", label: "Note to client (optional)", placeholder: "e.g. Agreed rate for IIJS 2026" },
+            { key: "reason", type: "text", label: "Reason", required: true, placeholder: "Why these terms?" }
+          ]
+        };
+      }
       case "custom-allowance": {
         var ca = c.customAllowance;
         var current = ca

@@ -2334,6 +2334,17 @@ function billingSummary(organisation) {
     status: expired ? "expired" : (allowance ? "active" : (organisation?.subscriptionStatus || (String(organisation?.plan || "trial") === "trial" ? "trial" : ""))),
     currentPeriodEnd: allowance ? allowance.expiresAt : (organisation?.currentPeriodEnd || ""),
     customAllowance: allowance ? { scans: Number(allowance.scans), expiresAt: allowance.expiresAt } : null,
+    // An admin-set quote waiting to be paid. Price is reported in rupees for
+    // display; the charge itself always uses the stored paise figure.
+    customQuote: organisation?.customQuote
+      ? {
+          id: organisation.customQuote.id,
+          scans: Number(organisation.customQuote.scans),
+          amount: Number(organisation.customQuote.pricePaise) / 100,
+          validityDays: Number(organisation.customQuote.validityDays),
+          note: String(organisation.customQuote.note || "")
+        }
+      : null,
     availablePlans: Object.keys(RAZORPAY_PLAN_IDS).filter((plan) => RAZORPAY_PLAN_IDS[plan]),
     oneTimePlans: oneTimePlanOptions(),
     topupScans: TOPUP_SCANS,
@@ -2451,6 +2462,51 @@ function grantOneTimePlan(organisation, plan, { orderId, paymentId } = {}) {
   }
   organisation.updatedAt = now();
   return true;
+}
+
+// A custom plan the client paid for, against a quote an admin set for them.
+// The allowance and its window ride on customAllowance so planUsage() treats it
+// exactly like an admin-set one, but adminGranted stays false: this was bought,
+// so it must count as a paid conversion rather than a comped account. Unused
+// top-up credits are carried over the same way grantOneTimePlan does.
+function grantCustomPlan(organisation, quote, { orderId, paymentId } = {}) {
+  if (!organisation || !quote) return false;
+  const scans = Math.floor(Number(quote.scans || 0));
+  if (!(scans > 0)) return false;
+  organisation.grantedCustomOrders = Array.isArray(organisation.grantedCustomOrders) ? organisation.grantedCustomOrders : [];
+  if (orderId && organisation.grantedCustomOrders.includes(orderId)) return false;
+  const days = Math.max(1, Math.floor(Number(quote.validityDays) || 365));
+  const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+  const unusedTopups = remainingTopupScans(organisation);
+  organisation.plan = "custom";
+  organisation.billingMode = "one_time";
+  organisation.subscriptionPlan = "";
+  organisation.subscriptionStatus = "paid_once";
+  organisation.topupScans = unusedTopups;
+  organisation.scansUsed = 0;
+  organisation.scanLimit = scans + unusedTopups;
+  organisation.currentPeriodEnd = expiresAt;
+  organisation.customAllowance = {
+    scans, durationDays: days, expiresAt,
+    grantedAt: now(), grantedBy: "payment",
+    reason: String(quote.note || "Custom plan purchase"),
+    paid: true, orderId: orderId || "", quoteId: quote.id || "",
+    pricePaise: Number(quote.pricePaise || 0)
+  };
+  organisation.adminGranted = false;
+  organisation.lastOneTimePaymentId = paymentId || organisation.lastOneTimePaymentId || "";
+  // The quote is consumed, so it cannot be paid twice.
+  organisation.customQuote = null;
+  if (orderId) {
+    organisation.grantedCustomOrders.push(orderId);
+    organisation.pendingCustomOrders = (organisation.pendingCustomOrders || []).filter((order) => order.orderId !== orderId);
+  }
+  organisation.updatedAt = now();
+  return true;
+}
+
+function pendingCustomOrder(organisation, orderId) {
+  return (organisation?.pendingCustomOrders || []).find((order) => order.orderId === orderId) || null;
 }
 
 function grantTopupEntitlement(organisation, scans = TOPUP_SCANS) {
@@ -3794,6 +3850,8 @@ function clientSummary(db, org, ledgerUsage = null) {
     customAllowance: org.customAllowance
       ? { ...org.customAllowance, active: customAllowanceActive(org), expired: customAllowanceExpired(org) }
       : null,
+    // A quote the client has been sent but not yet paid.
+    customQuote: org.customQuote ? { ...org.customQuote, amount: Number(org.customQuote.pricePaise || 0) / 100 } : null,
     currentPeriodEnd: org.currentPeriodEnd || null,
     exportOnePerBusiness: Boolean(org.exportOnePerBusiness),
     userCount: users.length,
@@ -4538,6 +4596,52 @@ async function handleAdminApi(req, res, pathname) {
       return send(res, 200, { ok: true, allowance: org.customAllowance, usage: await authoritativePlanUsage(org) });
     }
 
+    // A negotiated plan the client pays for, as opposed to custom-allowance
+    // above which comps it. The admin fixes scans, price and validity here; the
+    // client sees it on their Account screen and pays through Razorpay. The
+    // price is only ever read back from this stored quote, never from the
+    // client's request, so the amount charged cannot be tampered with.
+    if (action === "custom-quote") {
+      const prev = { quote: org.customQuote || null };
+
+      if (body.clear) {
+        if (!org.customQuote) return error(res, 400, "This client has no pending quote to withdraw.");
+        org.customQuote = null;
+        org.updatedAt = now();
+        await saveDb(db);
+        await adminAudit(admin, { clientId, action: "CUSTOM_QUOTE_WITHDRAWN", previousValue: prev, newValue: { quote: null }, reason });
+        return send(res, 200, { ok: true, quote: null });
+      }
+
+      const scans = Math.floor(Number(body.scans || 0));
+      const amountRupees = Number(body.amount || 0);
+      const validityDays = Math.floor(Number(body.validityDays || 0));
+      if (!(scans > 0)) return error(res, 400, "Enter a scan allowance greater than zero.");
+      if (scans > 100000) return error(res, 400, "That scan allowance looks too large — check the number.");
+      if (!(amountRupees > 0)) return error(res, 400, "Enter the price the client will pay.");
+      if (amountRupees < 1) return error(res, 400, "The price must be at least ₹1.");
+      if (amountRupees > 1000000) return error(res, 400, "That price looks too large — check the number.");
+      if (!Number.isFinite(amountRupees)) return error(res, 400, "Enter a valid price.");
+      if (!(validityDays > 0)) return error(res, 400, "Enter how many days the plan stays valid.");
+      if (validityDays > 3650) return error(res, 400, "Validity cannot exceed 3650 days.");
+
+      org.customQuote = {
+        id: id("quo"),
+        scans,
+        // Stored in paise, because that is what Razorpay charges in and
+        // rounding rupees at charge time is how off-by-a-paisa bugs start.
+        pricePaise: Math.round(amountRupees * 100),
+        validityDays,
+        note: String(body.note || "").trim().slice(0, 200),
+        createdAt: now(),
+        createdBy: admin.email || admin.id
+      };
+      org.updatedAt = now();
+      await saveDb(db);
+      await adminAudit(admin, { clientId, action: "CUSTOM_QUOTE_SET", previousValue: prev, newValue: { quote: org.customQuote }, reason });
+      return send(res, 200, { ok: true, quote: org.customQuote });
+    }
+
     if (action === "suspend") {
       const prev = org.status || "active";
       org.status = "suspended"; org.updatedAt = now();
@@ -4865,8 +4969,21 @@ async function handleApi(req, res, pathname) {
         const orderId = paymentEntity?.order_id || orderEntity?.id || "";
         const organisation = db.organisations.find((o) => o.id === notes.organisationId)
           || db.organisations.find((o) => pendingOneTimeOrder(o, orderId))
-          || db.organisations.find((o) => pendingTopupOrder(o, orderId));
-        if (organisation && notes.type === "topup" && orderId) {
+          || db.organisations.find((o) => pendingTopupOrder(o, orderId))
+          || db.organisations.find((o) => pendingCustomOrder(o, orderId));
+        if (organisation && (notes.type === "custom_plan" || pendingCustomOrder(organisation, orderId)) && orderId) {
+          const pendingOrder = pendingCustomOrder(organisation, orderId);
+          // Fall back to the notes when the pending record is gone (an older
+          // order, or a restart between create and payment).
+          const quote = pendingOrder?.quote || { scans: Number(notes.scans) || 0, validityDays: Number(notes.validityDays) || 365, id: notes.quoteId || "" };
+          if (grantCustomPlan(organisation, quote, { orderId, paymentId: paymentEntity?.id || "" })) {
+            audit(db, { organisationId: organisation.id }, "billing.custom_charged", "organisation", organisation.id, { orderId, scans: quote.scans });
+            await recordPayment({ clientId: organisation.id, amountPaise: Number(paymentEntity?.amount) || Number(pendingOrder?.amount) || 0, plan: "custom", status: "paid", providerPaymentId: paymentEntity?.id || "", providerOrderId: orderId });
+            await setLedgerBalance({ clientId: organisation.id, type: "PLAN_ALLOCATION", quantity: organisation.scanLimit, targetBalance: organisation.scanLimit, source: "plan", referenceId: orderId, idempotencyKey: `allocation:${orderId}`, metadata: { plan: "custom", mode: "custom", scans: quote.scans } });
+            await recordSubscription({ clientId: organisation.id, plan: "custom", status: "active", billingMode: "one_time", providerReference: orderId, startDate: now(), currentPeriodEnd: organisation.currentPeriodEnd, source: "webhook", eventId: eventId || `order:${orderId}`, metadata: { paymentId: paymentEntity?.id || "" } });
+            await recordProductEvent({ name: "plan_activated", clientId: organisation.id, source: "webhook", idempotencyKey: `plan:${orderId}`, metadata: { plan: "custom", mode: "custom" } });
+          }
+        } else if (organisation && notes.type === "topup" && orderId) {
           organisation.grantedTopupOrders = Array.isArray(organisation.grantedTopupOrders) ? organisation.grantedTopupOrders : [];
           if (!organisation.grantedTopupOrders.includes(orderId)) {
             const scans = Number(notes.scans) || TOPUP_SCANS;
@@ -5591,6 +5708,84 @@ async function handleApi(req, res, pathname) {
       audit(db, user, "billing.topup_verified", "organisation", organisation.id, { orderId, paymentId });
       await recordPayment({ clientId: organisation.id, userId: user.id, amountPaise: TOPUP_AMOUNT_PAISE, plan: "topup", status: "paid", providerPaymentId: paymentId, providerOrderId: orderId });
       await recordUsageLedger({ clientId: organisation.id, userId: user.id, type: "TOPUP_PURCHASE", quantity: topupScans, balanceEffect: topupScans, source: "topup", referenceId: orderId, idempotencyKey: `topup:${orderId}`, metadata: { scans: topupScans } });
+      await saveDb(db);
+      return send(res, 200, { ok: true, usage: await authoritativePlanUsage(organisation), billing: billingSummary(organisation) });
+    }
+
+    // Custom plan checkout. The amount comes from the quote stored on the
+    // organisation — never from the request — so a client cannot name their own
+    // price for a negotiated allowance.
+    if (req.method === "POST" && pathname === "/api/billing/custom") {
+      if (!billingConfigured()) return error(res, 400, "Online payments are not set up yet. Please try again later.");
+      const organisation = db.organisations.find((o) => o.id === user.organisationId);
+      if (!organisation) return error(res, 404, "Workspace not found.");
+      const quote = organisation.customQuote;
+      if (!quote || !(Number(quote.scans) > 0) || !(Number(quote.pricePaise) > 0)) {
+        return error(res, 400, "There is no custom plan waiting for this workspace.");
+      }
+      const order = await razorpayApi("/orders", {
+        method: "POST",
+        body: {
+          amount: Number(quote.pricePaise),
+          currency: "INR",
+          receipt: `custom_${organisation.id}_${Date.now()}`,
+          notes: {
+            organisationId: organisation.id,
+            type: "custom_plan",
+            quoteId: String(quote.id || ""),
+            scans: String(quote.scans),
+            validityDays: String(quote.validityDays)
+          }
+        }
+      });
+      organisation.pendingCustomOrders = Array.isArray(organisation.pendingCustomOrders) ? organisation.pendingCustomOrders : [];
+      organisation.pendingCustomOrders = organisation.pendingCustomOrders
+        .filter((item) => new Date(item.createdAt || 0).getTime() > Date.now() - 24 * 60 * 60 * 1000)
+        .slice(-20);
+      // The quote is snapshotted onto the order, so editing or withdrawing it
+      // mid-checkout cannot change what an already-created order grants.
+      organisation.pendingCustomOrders.push({
+        orderId: order.id,
+        amount: order.amount,
+        quote: { ...quote },
+        createdAt: now()
+      });
+      organisation.updatedAt = now();
+      audit(db, user, "billing.custom_order_created", "organisation", organisation.id, { orderId: order.id, scans: quote.scans, amount: order.amount });
+      await saveDb(db);
+      await recordProductEvent({ name: "checkout_started", clientId: organisation.id, userId: user.id, source: "billing", metadata: { mode: "custom", scans: quote.scans } });
+      return send(res, 200, {
+        orderId: order.id,
+        amount: order.amount,
+        currency: order.currency,
+        keyId: RAZORPAY_KEY_ID,
+        scans: Number(quote.scans),
+        validityDays: Number(quote.validityDays)
+      });
+    }
+
+    if (req.method === "POST" && pathname === "/api/billing/custom/verify") {
+      const body = await readJson(req);
+      const orderId = String(body.razorpay_order_id || "");
+      const paymentId = String(body.razorpay_payment_id || "");
+      const signature = String(body.razorpay_signature || "");
+      if (!orderId || !paymentId || !signature) return error(res, 400, "Missing payment details.");
+      if (!razorpaySignatureValid(`${orderId}|${paymentId}`, signature)) return error(res, 400, "Payment could not be verified.");
+      const organisation = db.organisations.find((o) => o.id === user.organisationId);
+      if (!organisation) return error(res, 404, "Workspace not found.");
+      organisation.grantedCustomOrders = Array.isArray(organisation.grantedCustomOrders) ? organisation.grantedCustomOrders : [];
+      if (organisation.grantedCustomOrders.includes(orderId)) {
+        return send(res, 200, { ok: true, duplicate: true, usage: await authoritativePlanUsage(organisation), billing: billingSummary(organisation) });
+      }
+      const pendingOrder = pendingCustomOrder(organisation, orderId);
+      if (!pendingOrder) return error(res, 400, "This payment order was not found for your workspace.");
+      if (grantCustomPlan(organisation, pendingOrder.quote, { orderId, paymentId })) {
+        audit(db, user, "billing.custom_verified", "organisation", organisation.id, { orderId, paymentId, scans: pendingOrder.quote?.scans });
+        await recordPayment({ clientId: organisation.id, userId: user.id, amountPaise: Number(pendingOrder.amount) || 0, plan: "custom", status: "paid", providerPaymentId: paymentId, providerOrderId: orderId });
+        await setLedgerBalance({ clientId: organisation.id, userId: user.id, type: "PLAN_ALLOCATION", quantity: organisation.scanLimit, targetBalance: organisation.scanLimit, source: "plan", referenceId: orderId, idempotencyKey: `allocation:${orderId}`, metadata: { plan: "custom", mode: "custom", scans: pendingOrder.quote?.scans } });
+        await recordSubscription({ clientId: organisation.id, plan: "custom", status: "active", billingMode: "one_time", providerReference: orderId, startDate: now(), currentPeriodEnd: organisation.currentPeriodEnd, source: "verify", eventId: `verified:${paymentId}`, metadata: { paymentId, scans: pendingOrder.quote?.scans } });
+        await recordProductEvent({ name: "plan_activated", clientId: organisation.id, userId: user.id, source: "verify", idempotencyKey: `plan:${orderId}`, metadata: { plan: "custom", mode: "custom", platform: clientPlatform(req) } });
+      }
       await saveDb(db);
       return send(res, 200, { ok: true, usage: await authoritativePlanUsage(organisation), billing: billingSummary(organisation) });
     }
@@ -8783,6 +8978,7 @@ module.exports = {
   foldLedgerRows,
   googleContactDisplayName,
   googleScopes,
+  grantCustomPlan,
   grantOneTimePlan,
   grantTopupEntitlement,
   normalizeExtraction,
