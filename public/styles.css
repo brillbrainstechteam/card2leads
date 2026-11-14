@@ -8552,3 +8552,86 @@ strong {
     width: 100%;
   }
 }
+
+/* Dropdown fields that also accept a typed value under "Other". */
+.choice-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.choice-field select,
+.choice-field .choice-other {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+}
+
+.choice-field .choice-other.hidden {
+  display: none;
+}
+
+/* 1-5 star rating. The value lives in a hidden input so the surrounding form
+   collection is unchanged. */
+.star-rating {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 42px;
+}
+
+.star-rating .star {
+  min-height: 0;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--line);
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: none;
+  transition: color 0.12s, transform 0.12s;
+}
+
+.star-rating .star:hover {
+  background: transparent;
+  transform: scale(1.12);
+}
+
+.star-rating .star.on {
+  color: #f0b429;
+}
+
+.star-rating .star-clear {
+  min-height: 0;
+  margin-left: 8px;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.star-rating .star-clear:hover {
+  background: var(--surface-muted, #f4f6fa);
+  color: var(--ink);
+}
+
+.star-rating .star-clear.hidden {
+  display: none;
+}
+
+.rating-chip {
+  color: #f0b429;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}

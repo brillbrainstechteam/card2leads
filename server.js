@@ -207,6 +207,11 @@ const EXPORT_COLUMNS = [
   "Postal Code",
   "Country",
   "Card Language",
+  "Salutation",
+  "Industry",
+  "Business Type",
+  "Customer Status",
+  "Customer Rating",
   "Exhibition Name",
   "Exhibition Date",
   "Remarks",
@@ -259,8 +264,36 @@ const OPTIONAL_FIELDS = [
   "phoneCountryCode",
   "phoneCountry",
   "whatsappNumber",
-  "contactDisplayName"
+  "contactDisplayName",
+  // Qualification fields. Each holds a plain string: either one of the offered
+  // choices below or whatever the user typed under "Other", so there is one
+  // value to store, export and search rather than a code plus an override.
+  "salutation",
+  "industry",
+  "businessType",
+  "customerStatus",
+  "customerRating"
 ];
+
+// Served to the clients in /api/overview so the web app and the Expo app offer
+// the same choices without a release to keep them in step. "Other" is not
+// listed: the UI offers it and stores the typed text in the same field.
+const CONTACT_CHOICES = Object.freeze({
+  salutation: ["Mr.", "Mrs.", "Miss"],
+  industry: ["Jewellery Industry", "Other Industry"],
+  businessType: ["Retailer", "Wholesaler", "Manufacturer"],
+  customerStatus: ["Existing Customer", "New Customer"]
+});
+
+const MAX_CUSTOMER_RATING = 5;
+
+// Ratings are 1-5 stars; anything else (including a blank) clears the rating
+// rather than storing a number nobody chose.
+function normalizeCustomerRating(value) {
+  const rating = Math.round(Number(value));
+  if (!Number.isFinite(rating) || rating < 1) return "";
+  return String(Math.min(MAX_CUSTOMER_RATING, rating));
+}
 
 // Two-letter codes for Indian states/UTs. Used for the "State Code" part of the
 // saved-contact display name; non-Indian addresses fall back to the ISO country
@@ -498,6 +531,7 @@ function whatsappDigits(rawNumber, fallbackCountry = "") {
 }
 
 function applyDerivedContactFields(contact) {
+  contact.customerRating = normalizeCustomerRating(contact.customerRating);
   const info = phoneCountryInfo(contact.mobileNumber, contact.country);
   contact.phoneCountryCode = info.code;
   contact.phoneCountry = info.name;
@@ -3066,7 +3100,13 @@ function extractionSystemPrompt() {
     "Set cardScript to the script name (for example 'Devanagari', 'Gujarati', 'Telugu', 'Arabic', 'Latin').",
     "Write phone numbers, emails and websites using Western digits and Latin letters even when the card prints them in another numeral system.",
     "Keep the country dial code in mobileNumber when the card shows one (for example '+971 555805118'). Do not add a dial code that is not printed on the card.",
-    "If the card shows a WhatsApp number or a WhatsApp icon next to a number, put that number in whatsappNumber. Leave it blank if no number is specifically marked as WhatsApp."
+    "If the card shows a WhatsApp number or a WhatsApp icon next to a number, put that number in whatsappNumber. Leave it blank if no number is specifically marked as WhatsApp.",
+    // Pre-filled only where the card actually says so. A wrong guess here is
+    // worse than a blank, because the user may not think to check a field that
+    // already looks answered.
+    "Set salutation to 'Mr.', 'Mrs.' or 'Miss' only when the card prints that title before the name. Leave it blank otherwise — never guess a title from the name alone.",
+    "Set industry to 'Jewellery Industry' when the card clearly belongs to the jewellery, gems, gold, silver, diamond or ornaments trade. Use 'Other Industry' when the trade is clearly something else. Leave it blank when the card does not make the trade clear.",
+    "Set businessType to 'Retailer', 'Wholesaler' or 'Manufacturer' only when the card states it in those words or an obvious equivalent (for example 'Mfg.' or 'Manufacturers' means Manufacturer, 'Showroom' means Retailer). Leave it blank when the card does not say."
   ].join(" ");
 }
 
@@ -3099,6 +3139,9 @@ function extractionUserPrompt() {
   "country": "",
   "cardLanguage": "",
   "cardScript": "",
+  "salutation": "",
+  "industry": "",
+  "businessType": "",
   "notes": "",
   "tags": "",
   "rawVisibleText": "",
@@ -3188,6 +3231,11 @@ function normalizeExtraction(raw, collection) {
     cardLanguage: cleanText(raw.cardLanguage),
     cardScript: cleanText(raw.cardScript),
     whatsappNumber: cleanText(raw.whatsappNumber),
+    // Only kept when the model returned one of the offered choices, so a
+    // hallucinated value never lands in a dropdown field.
+    salutation: CONTACT_CHOICES.salutation.includes(cleanText(raw.salutation)) ? cleanText(raw.salutation) : "",
+    industry: CONTACT_CHOICES.industry.includes(cleanText(raw.industry)) ? cleanText(raw.industry) : "",
+    businessType: CONTACT_CHOICES.businessType.includes(cleanText(raw.businessType)) ? cleanText(raw.businessType) : "",
     exhibitionName: collection.exhibitionName || "",
     exhibitionDate: collection.exhibitionDate || "",
     interest: cleanText(raw.interest),
@@ -5890,6 +5938,10 @@ async function handleApi(req, res, pathname) {
         collections,
         organisation,
         needsOnboarding: organisationNeedsOnboarding(db, user),
+        // The dropdown choices, so the web app and the Expo app stay in step
+        // without shipping a release to change a list.
+        contactChoices: CONTACT_CHOICES,
+        maxCustomerRating: MAX_CUSTOMER_RATING,
         usage: await authoritativePlanUsage(organisation),
         stats: {
           contacts: contacts.length,
@@ -7852,6 +7904,11 @@ function exportRow(contact, extraPeopleCount = 0) {
     contact.postalCode,
     contact.country,
     contact.cardLanguage,
+    contact.salutation,
+    contact.industry,
+    contact.businessType,
+    contact.customerStatus,
+    contact.customerRating,
     contact.exhibitionName,
     contact.exhibitionDate,
     exportRemarks(contact),

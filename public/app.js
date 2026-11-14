@@ -113,9 +113,39 @@ const fieldLabels = {
   country: "Country",
   exhibitionName: "Exhibition Name",
   exhibitionDate: "Exhibition Date",
+  salutation: "Salutation",
+  industry: "Industry / Profession",
+  businessType: "Business Type",
+  customerStatus: "Customer Status",
+  customerRating: "Customer Rating",
   notes: "Remarks",
   tags: "Tags"
 };
+
+// Fields rendered as a dropdown. The offered choices come from the server so
+// the web app and the Expo app agree without a release; the fallbacks here only
+// matter before the first /api/overview response has landed.
+const CHOICE_FIELD_FALLBACKS = {
+  salutation: ["Mr.", "Mrs.", "Miss"],
+  industry: ["Jewellery Industry", "Other Industry"],
+  businessType: ["Retailer", "Wholesaler", "Manufacturer"],
+  customerStatus: ["Existing Customer", "New Customer"]
+};
+
+function choicesFor(field) {
+  const served = state.overview?.contactChoices?.[field];
+  const base = Array.isArray(served) && served.length ? served : (CHOICE_FIELD_FALLBACKS[field] || []);
+  // Anything a user already typed under "Other" is offered back, so a custom
+  // value only has to be typed once and stays consistent across contacts.
+  const used = state.contacts
+    .map((contact) => String(contact?.[field] || "").trim())
+    .filter(Boolean);
+  return [...new Set([...base, ...used])];
+}
+
+function maxCustomerRating() {
+  return Number(state.overview?.maxCustomerRating) || 5;
+}
 
 const contactFields = Object.keys(fieldLabels);
 
@@ -3160,9 +3190,34 @@ function inputField(field, value, multiline = false, confidence = undefined) {
     website: 'type="text" inputmode="url" autocomplete="off" autocapitalize="none" spellcheck="false"',
     exhibitionDate: 'type="date"'
   };
-  const input = multiline
-    ? `<textarea name="${field}" rows="3">${escapeHtml(value)}</textarea>`
-    : `<input name="${field}" value="${escapeAttr(value)}" ${mobileInputAttributes[field] || ""} ${required ? "required" : ""} />`;
+  let input;
+  if (field === "customerRating") {
+    const max = maxCustomerRating();
+    const current = Number(value) || 0;
+    // A hidden input carries the value so the surrounding FormData collection
+    // keeps working unchanged; the stars are just a control for it.
+    input = `<span class="star-rating" data-star-field="${field}">
+        <input type="hidden" name="${field}" value="${escapeAttr(current ? String(current) : "")}" />
+        ${Array.from({ length: max }, (_, i) => i + 1).map((n) => `<button type="button" class="star ${current >= n ? "on" : ""}" data-star="${n}" aria-label="${n} star${n === 1 ? "" : "s"}" aria-pressed="${current >= n}">&#9733;</button>`).join("")}
+        <button type="button" class="star-clear ${current ? "" : "hidden"}" data-star="0" aria-label="Clear rating">Clear</button>
+      </span>`;
+  } else if (CHOICE_FIELD_FALLBACKS[field]) {
+    const options = choicesFor(field);
+    const current = String(value || "");
+    const isOther = Boolean(current) && !options.includes(current);
+    input = `<span class="choice-field" data-choice-field="${field}">
+        <select data-choice-select>
+          <option value="">Not set</option>
+          ${options.map((option) => `<option value="${escapeAttr(option)}"${option === current ? " selected" : ""}>${escapeHtml(option)}</option>`).join("")}
+          <option value="__other"${isOther ? " selected" : ""}>Other…</option>
+        </select>
+        <input name="${field}" class="choice-other ${isOther ? "" : "hidden"}" value="${escapeAttr(current)}" placeholder="Type your own" />
+      </span>`;
+  } else if (multiline) {
+    input = `<textarea name="${field}" rows="3">${escapeHtml(value)}</textarea>`;
+  } else {
+    input = `<input name="${field}" value="${escapeAttr(value)}" ${mobileInputAttributes[field] || ""} ${required ? "required" : ""} />`;
+  }
   return `
     <label class="${span} ${needsCheck ? "critical-field-warning" : ""}">
       <span class="field-label-row">
@@ -3173,6 +3228,46 @@ function inputField(field, value, multiline = false, confidence = undefined) {
     </label>
   `;
 }
+
+// Delegated once at module level so these controls work inside any form —
+// the review card, the edit-contact modal — without re-wiring on every render.
+// The <select> deliberately has no name: the adjacent named input is what the
+// form submits, so a preset and an "Other" value are stored the same way.
+document.addEventListener("change", (event) => {
+  const select = event.target.closest?.("[data-choice-select]");
+  if (!select) return;
+  const wrap = select.closest(".choice-field");
+  const other = wrap?.querySelector(".choice-other");
+  if (!other) return;
+  if (select.value === "__other") {
+    const presets = [...select.options].map((option) => option.value);
+    if (presets.includes(other.value)) other.value = "";
+    other.classList.remove("hidden");
+    other.focus();
+  } else {
+    other.classList.add("hidden");
+    other.value = select.value;
+  }
+});
+
+document.addEventListener("click", (event) => {
+  const star = event.target.closest?.("[data-star]");
+  if (!star) return;
+  const wrap = star.closest(".star-rating");
+  const hidden = wrap?.querySelector('input[type="hidden"]');
+  if (!hidden) return;
+  const picked = Number(star.dataset.star) || 0;
+  // Clicking the star already selected clears it, so a rating can be undone
+  // without hunting for the Clear button.
+  const next = picked && Number(hidden.value) === picked ? 0 : picked;
+  hidden.value = next ? String(next) : "";
+  wrap.querySelectorAll(".star").forEach((button) => {
+    const on = next >= Number(button.dataset.star);
+    button.classList.toggle("on", on);
+    button.setAttribute("aria-pressed", String(on));
+  });
+  wrap.querySelector(".star-clear")?.classList.toggle("hidden", !next);
+});
 
 async function reprocessCard(cardId) {
   state.processingCards.add(cardId);
@@ -4009,6 +4104,11 @@ function contactsView() {
               <th>State code</th>
               <th>Country</th>
               <th>Card language</th>
+              <th>Salutation</th>
+              <th>Industry</th>
+              <th>Business type</th>
+              <th>Customer status</th>
+              <th>Rating</th>
               <th>Tags</th>
               <th>Remarks</th>` : ""}
               <th class="col-place">City / State</th>
@@ -4089,6 +4189,11 @@ function contactsView() {
       ${cell(contact.stateCode)}
       ${cell(contact.country)}
       ${cell(contact.cardLanguage)}
+      ${cell(contact.salutation)}
+      ${cell(contact.industry)}
+      ${cell(contact.businessType)}
+      ${cell(contact.customerStatus)}
+      <td class="cell-text" title="${escapeAttr(contact.customerRating ? `${contact.customerRating} of 5` : "")}">${contact.customerRating ? `<span class="rating-chip">${"★".repeat(Number(contact.customerRating))}</span>` : ""}</td>
       ${cell(contact.tags)}
       ${cell(contact.notes)}` : ""}
       <td class="col-place">${place
