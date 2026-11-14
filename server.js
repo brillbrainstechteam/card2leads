@@ -279,10 +279,18 @@ const OPTIONAL_FIELDS = [
 // the same choices without a release to keep them in step. "Other" is not
 // listed: the UI offers it and stores the typed text in the same field.
 const CONTACT_CHOICES = Object.freeze({
-  salutation: ["Mr.", "Mrs.", "Miss"],
-  industry: ["Jewellery Industry", "Other Industry"],
-  businessType: ["Retailer", "Wholesaler", "Manufacturer"],
-  customerStatus: ["Existing Customer", "New Customer"]
+  salutation: ["Mr.", "Ms.", "Mrs.", "Miss"],
+  industry: [
+    "Jewellery Manufacturer",
+    "Jewellery Retailer",
+    "Jewellery Wholesaler",
+    "Karigar",
+    "Jewellery Tools & Machinery",
+    "Gems & Stones",
+    "Other Industry"
+  ],
+  businessType: ["Retailer", "Wholesaler", "Manufacturer", "Distributor", "Trader", "Service Provider"],
+  customerStatus: ["Existing Customer", "New Customer", "Prospect"]
 });
 
 const MAX_CUSTOMER_RATING = 5;
@@ -3104,9 +3112,15 @@ function extractionSystemPrompt() {
     // Pre-filled only where the card actually says so. A wrong guess here is
     // worse than a blank, because the user may not think to check a field that
     // already looks answered.
-    "Set salutation to 'Mr.', 'Mrs.' or 'Miss' only when the card prints that title before the name. Leave it blank otherwise — never guess a title from the name alone.",
-    "Set industry to 'Jewellery Industry' when the card clearly belongs to the jewellery, gems, gold, silver, diamond or ornaments trade. Use 'Other Industry' when the trade is clearly something else. Leave it blank when the card does not make the trade clear.",
-    "Set businessType to 'Retailer', 'Wholesaler' or 'Manufacturer' only when the card states it in those words or an obvious equivalent (for example 'Mfg.' or 'Manufacturers' means Manufacturer, 'Showroom' means Retailer). Leave it blank when the card does not say."
+    "Set salutation as follows. If the card prints a title before the name, use exactly that title ('Mr.', 'Ms.', 'Mrs.' or 'Miss'). If the card prints no title and the name is unambiguously a man's name, use 'Mr.'. If the card prints no title and the name is unambiguously a woman's name, use 'Ms.' — never 'Mrs.' or 'Miss', because the card does not say whether she is married. If the name could belong to either a man or a woman, or you are not confident, leave salutation blank rather than guessing.",
+    "Set industry to exactly one of: 'Jewellery Manufacturer', 'Jewellery Retailer', 'Jewellery Wholesaler', 'Karigar', 'Jewellery Tools & Machinery', 'Gems & Stones', 'Other Industry'. Choose the one the card supports — for example a showroom is a Jewellery Retailer, 'Mfg.' or 'Manufacturers' is a Jewellery Manufacturer, and a card selling tools or machinery to jewellers is 'Jewellery Tools & Machinery'. Leave it blank when the card does not make the trade clear.",
+    "Set businessType to 'Retailer', 'Wholesaler' or 'Manufacturer' only when the card states it in those words or an obvious equivalent (for example 'Mfg.' or 'Manufacturers' means Manufacturer, 'Showroom' means Retailer). Leave it blank when the card does not say.",
+    // notes is deliberately absent from the JSON shape. Remarks is the user's
+    // own field (and where a voice note lands); when the model was asked for it
+    // without being told what it was for, it filled it with leftover card text
+    // in whatever language the card used.
+    "Never write remarks, comments or commentary of your own. There is no notes field to fill.",
+    "Set tags only to short keywords the card itself prints, such as a speciality or product line. Leave it blank when the card prints no such keywords — do not invent tags or copy whole lines of the card into it."
   ].join(" ");
 }
 
@@ -3142,7 +3156,6 @@ function extractionUserPrompt() {
   "salutation": "",
   "industry": "",
   "businessType": "",
-  "notes": "",
   "tags": "",
   "rawVisibleText": "",
   "confidence": 0,
@@ -3245,7 +3258,8 @@ function normalizeExtraction(raw, collection) {
     voiceTranscript: cleanText(raw.voiceTranscript),
     voiceLanguage: cleanText(raw.voiceLanguage),
     voiceNoteCreatedAt: cleanText(raw.voiceNoteCreatedAt),
-    notes: cleanText(raw.notes),
+    // Always blank: Remarks is user/voice only (see the prompt rule above).
+    notes: "",
     tags: cleanText(raw.tags),
     rawVisibleText: cleanText(raw.rawVisibleText),
     confidence: 0,

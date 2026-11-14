@@ -91,6 +91,9 @@ function navigateToView(view, options = {}) {
 }
 
 const fieldLabels = {
+  // Salutation leads, because it reads as a prefix to the name both in the
+  // form and in the messages that go out.
+  salutation: "Salutation",
   name: "Name",
   nameNative: "Name (Original Script)",
   mobileNumber: "Mobile Number",
@@ -113,7 +116,6 @@ const fieldLabels = {
   country: "Country",
   exhibitionName: "Exhibition Name",
   exhibitionDate: "Exhibition Date",
-  salutation: "Salutation",
   industry: "Industry / Profession",
   businessType: "Business Type",
   customerStatus: "Customer Status",
@@ -126,7 +128,7 @@ const fieldLabels = {
 // the web app and the Expo app agree without a release; the fallbacks here only
 // matter before the first /api/overview response has landed.
 const CHOICE_FIELD_FALLBACKS = {
-  salutation: ["Mr.", "Mrs.", "Miss"],
+  salutation: ["Mr.", "Ms.", "Mrs.", "Miss"],
   industry: ["Jewellery Industry", "Other Industry"],
   businessType: ["Retailer", "Wholesaler", "Manufacturer"],
   customerStatus: ["Existing Customer", "New Customer"]
@@ -1338,10 +1340,17 @@ async function saveWhatsappSettings({ templates, catalogueUrl, defaultTemplateId
 // {name} {firstName} {company} {city} {exhibition} are replaced per contact so
 // one template produces a personalised message for everybody in the selection.
 function fillWhatsappTemplate(template, contact, catalogueUrl) {
-  const firstName = String(contact.name || "").trim().split(/\s+/)[0] || "there";
+  const bareName = String(contact.name || "").trim();
+  const firstName = bareName.split(/\s+/)[0] || "there";
+  const salutation = String(contact.salutation || "").trim();
+  // {name} and {firstName} carry the salutation so saved templates start
+  // addressing people as "Mr. Kamlesh Shah" without anyone editing them. A
+  // contact with no salutation reads exactly as it did before.
+  const withTitle = (value) => (salutation && value ? `${salutation} ${value}` : value);
   const text = String(template || "")
-    .replace(/\{name\}/gi, String(contact.name || "there").trim())
-    .replace(/\{firstname\}/gi, firstName)
+    .replace(/\{salutation\}/gi, salutation)
+    .replace(/\{name\}/gi, withTitle(bareName) || "there")
+    .replace(/\{firstname\}/gi, withTitle(firstName === "there" ? "" : firstName) || "there")
     .replace(/\{company\}/gi, String(contact.companyName || "").trim())
     .replace(/\{city\}/gi, String(contact.city || "").trim())
     .replace(/\{exhibition\}/gi, String(contact.exhibitionName || "the exhibition").trim());
