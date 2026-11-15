@@ -34,6 +34,26 @@ const REVIEW_KEEPS_SAVED_CARDS = String(process.env.REVIEW_KEEPS_SAVED_CARDS || 
 const VOICE_STT_PROVIDER = String(process.env.VOICE_STT_PROVIDER || "auto").toLowerCase();
 const GOOGLE_STT_MODEL = process.env.GOOGLE_STT_MODEL || "latest_short";
 const GOOGLE_STT_LANGUAGE_CODE = process.env.GOOGLE_STT_LANGUAGE_CODE || "hi-IN";
+// Whisper-family models auto-detect when given no language, and short, accented
+// Hindi/Hinglish audio is routinely misdetected as Chinese — which is how
+// Chinese text ended up in voice notes. Google STT was always pinned to a
+// language; the OpenAI fallback was not. Default to the same language Google is
+// configured for, so both providers agree.
+const VOICE_STT_LANGUAGE = String(process.env.VOICE_STT_LANGUAGE || GOOGLE_STT_LANGUAGE_CODE.split("-")[0] || "hi").toLowerCase();
+// Biases decoding towards the words these notes actually contain.
+const VOICE_STT_PROMPT = process.env.VOICE_STT_PROMPT
+  || "Sales follow-up note from a jewellery exhibition, spoken in Hindi, English or Hinglish. Mentions interest, budget, quantity and follow-up dates.";
+
+// A transcript full of CJK characters when we asked for Hindi or English is a
+// misdetection, not speech. Saving it would put gibberish in a customer record,
+// so it is rejected and the user is asked to record again.
+function transcriptLooksMisdetected(transcript, expectedLanguage) {
+  const text = String(transcript || "");
+  if (!text.trim()) return false;
+  if (/^(zh|ja|ko)/.test(String(expectedLanguage || ""))) return false;
+  const cjk = (text.match(/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/g) || []).length;
+  return cjk / text.replace(/\s/g, "").length > 0.2;
+}
 const GOOGLE_STT_ALTERNATIVE_LANGUAGE_CODES = process.env.GOOGLE_STT_ALTERNATIVE_LANGUAGE_CODES || "en-IN,en-US";
 // Uploading a card no longer runs AI extraction inline (see the background
 // queue processor below), so this cap is just a sane ceiling on one upload
@@ -3605,6 +3625,10 @@ async function transcribeWithOpenAI(buffer, mimeType) {
   const form = new FormData();
   form.append("model", process.env.OPENAI_TRANSCRIBE_MODEL || "gpt-4o-mini-transcribe");
   form.append("file", new Blob([buffer], { type: mimeType }), `voice-note.${audioExtension(mimeType)}`);
+  // Without these the model free-detects and lands on Chinese for accented
+  // Hindi (see VOICE_STT_LANGUAGE).
+  form.append("language", VOICE_STT_LANGUAGE);
+  form.append("prompt", VOICE_STT_PROMPT);
   const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
@@ -3612,9 +3636,13 @@ async function transcribeWithOpenAI(buffer, mimeType) {
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error?.message || "OpenAI transcription failed.");
+  const transcript = cleanText(data.text || "");
+  if (transcriptLooksMisdetected(transcript, VOICE_STT_LANGUAGE)) {
+    throw new Error("The recording could not be understood. Please record it again, a little closer to the microphone.");
+  }
   return {
-    transcript: cleanText(data.text || ""),
-    language: data.language || "",
+    transcript,
+    language: data.language || VOICE_STT_LANGUAGE,
     provider: "openai_transcribe",
     confidence: 0
   };
