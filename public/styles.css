@@ -8655,3 +8655,74 @@ strong {
 .form-grid > label {
   align-content: start;
 }
+
+/* Card image editor (crop / rotate before upload) */
+.card-editor {
+  display: grid;
+  gap: 12px;
+}
+
+.card-editor-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 220px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #11131b;
+}
+
+.card-editor-stage canvas {
+  max-width: 100%;
+  border-radius: 6px;
+  touch-action: none;
+  cursor: default;
+}
+
+.card-editor-loading {
+  position: absolute;
+  color: #fff;
+  font-size: 13px;
+}
+
+.card-editor-loading.hidden {
+  display: none;
+}
+
+.card-editor-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.card-editor-hint {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The editor reports into itself: a toast would re-render the dialog and
+   discard the rotation and crop in progress. */
+.card-editor-status {
+  margin: 0;
+  min-height: 18px;
+  font-size: 13px;
+  color: var(--danger, #c0392b);
+}
+
+.card-editor-status:empty {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .card-editor-tools .compact-action {
+    flex: 1 1 calc(50% - 8px);
+  }
+  .card-editor-hint {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+}

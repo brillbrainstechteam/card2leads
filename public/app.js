@@ -2233,13 +2233,23 @@ function uploadView() {
         <strong>${escapeHtml(file.name)}</strong>
         <div class="muted file-status">waiting to upload - ${formatBytes(file.size + (file.backSideFile?.size || 0))}</div>
         <div class="file-side-actions">
+          <button class="link-button" type="button" data-edit-card="${index}">${file.wasEdited ? "Adjust again" : "Crop / rotate"}</button>
           <button class="link-button" type="button" data-add-back="${index}">${file.backSideFile ? "Replace back" : "Add back side"}</button>
+          ${file.backSideFile ? `<button class="link-button" type="button" data-edit-back="${index}">Crop back</button>` : ""}
           ${file.backSideFile ? `<button class="link-button danger-link" type="button" data-remove-back="${index}">Remove back</button>` : ""}
         </div>
       </div>
       <button class="secondary slim" data-remove-file="${index}">Remove card</button>
     </div>
   `).join("");
+  list.querySelectorAll("[data-edit-card]").forEach((btn) => btn.addEventListener("click", () => {
+    syncUploadDraft(node);
+    openCardEditor(Number(btn.dataset.editCard), "front");
+  }));
+  list.querySelectorAll("[data-edit-back]").forEach((btn) => btn.addEventListener("click", () => {
+    syncUploadDraft(node);
+    openCardEditor(Number(btn.dataset.editBack), "back");
+  }));
   list.querySelectorAll("[data-add-back]").forEach((btn) => btn.addEventListener("click", () => {
     syncUploadDraft(node);
     state.backSideTargetIndex = Number(btn.dataset.addBack);
@@ -2669,6 +2679,295 @@ function syncUploadDraft(node) {
   if (collectionName) state.draftCollectionName = collectionName.value;
   if (exhibitionName) state.draftExhibitionName = exhibitionName.value;
   if (exhibitionDate) state.draftExhibitionDate = exhibitionDate.value;
+}
+
+// ---- Card image editor: rotate, straighten and crop before upload ----
+// Cards are photographed at an angle on a table, so the two things that
+// actually matter are turning the card the right way up and cutting away the
+// table around it. Both are done here, before the image is compressed and
+// uploaded, so the stored card is the tidy one the client later reviews.
+const CARD_EDITOR_OUTPUT_QUALITY = 0.9;
+let cardEditorSession = null;
+
+function setCardEditorStatus(text) {
+  const status = document.getElementById("cardEditorStatus");
+  if (status) status.textContent = text || "";
+}
+
+function openCardEditor(index, side = "front") {
+  const entry = state.selectedFiles[index];
+  if (!entry) return;
+  const sourceFile = side === "back" ? entry.backSideFile : entry;
+  if (!sourceFile) return;
+
+  state.modal = {
+    title: side === "back" ? "Adjust back of card" : "Adjust card",
+    body: "Turn the card the right way up, then drag the corners to cut away everything that is not the card.",
+    className: "wide-dialog card-editor-dialog",
+    contentHtml: `
+      <div class="card-editor">
+        <div class="card-editor-stage">
+          <canvas id="cardEditorCanvas"></canvas>
+          <div class="card-editor-loading" id="cardEditorLoading">Loading image…</div>
+        </div>
+        <div class="card-editor-tools">
+          <button type="button" class="secondary compact-action" data-editor-rotate="-90">Rotate left</button>
+          <button type="button" class="secondary compact-action" data-editor-rotate="90">Rotate right</button>
+          <button type="button" class="secondary compact-action" data-editor-fit="card">Fit to card</button>
+          <button type="button" class="secondary compact-action" data-editor-reset>Reset</button>
+          <span class="card-editor-hint" id="cardEditorHint"></span>
+        </div>
+        <p class="card-editor-status" id="cardEditorStatus" role="status" aria-live="polite"></p>
+      </div>`,
+    cancelText: "Cancel",
+    confirmText: "Apply",
+    confirmClass: "",
+    keepOpenOnConfirm: true,
+    onClose: () => { cardEditorSession = null; },
+    onConfirm: async () => {
+      if (!cardEditorSession) {
+        setCardEditorStatus("The photo is still opening. Try again in a moment.");
+        return;
+      }
+      await cardEditorSession.apply();
+    },
+    onRender: (node) => setupCardEditor(node, index, side, sourceFile)
+  };
+  render();
+}
+
+function setupCardEditor(node, index, side, sourceFile) {
+  const canvas = node.querySelector("#cardEditorCanvas");
+  const loading = node.querySelector("#cardEditorLoading");
+  const hint = node.querySelector("#cardEditorHint");
+  const ctx = canvas.getContext("2d");
+  const objectUrl = URL.createObjectURL(sourceFile);
+  const image = new Image();
+
+  // Rotation is kept as a quarter-turn count rather than baked into the image,
+  // so repeated turns never re-encode and never lose quality.
+  let quarterTurns = 0;
+  let crop = null;          // in displayed-canvas coordinates
+  let drag = null;
+  const HANDLE = 14;
+
+  const rotatedSize = () => {
+    const swapped = quarterTurns % 2 !== 0;
+    return {
+      width: swapped ? image.naturalHeight : image.naturalWidth,
+      height: swapped ? image.naturalWidth : image.naturalHeight
+    };
+  };
+
+  const fitCanvas = () => {
+    const stage = canvas.parentElement.getBoundingClientRect();
+    const { width, height } = rotatedSize();
+    const maxWidth = Math.max(240, stage.width - 2);
+    const maxHeight = Math.max(200, Math.min(420, window.innerHeight * 0.42));
+    const scale = Math.min(maxWidth / width, maxHeight / height, 1);
+    canvas.width = Math.round(width * scale);
+    canvas.height = Math.round(height * scale);
+  };
+
+  const resetCrop = () => {
+    // Start a little inside the frame: the card almost never fills the photo,
+    // so an inset box is closer to the answer than the whole image.
+    const inset = 0.06;
+    crop = {
+      x: Math.round(canvas.width * inset),
+      y: Math.round(canvas.height * inset),
+      w: Math.round(canvas.width * (1 - inset * 2)),
+      h: Math.round(canvas.height * (1 - inset * 2))
+    };
+  };
+
+  const drawRotated = (target, targetCtx, width, height) => {
+    targetCtx.save();
+    targetCtx.clearRect(0, 0, width, height);
+    targetCtx.translate(width / 2, height / 2);
+    targetCtx.rotate((quarterTurns * Math.PI) / 2);
+    const swapped = quarterTurns % 2 !== 0;
+    const drawW = swapped ? height : width;
+    const drawH = swapped ? width : height;
+    targetCtx.drawImage(image, -drawW / 2, -drawH / 2, drawW, drawH);
+    targetCtx.restore();
+  };
+
+  const paint = () => {
+    drawRotated(canvas, ctx, canvas.width, canvas.height);
+    if (!crop) return;
+    // Dim everything outside the crop so the card stands out.
+    ctx.save();
+    ctx.fillStyle = "rgba(16, 18, 27, 0.55)";
+    ctx.beginPath();
+    ctx.rect(0, 0, canvas.width, canvas.height);
+    ctx.rect(crop.x, crop.y, crop.w, crop.h);
+    ctx.fill("evenodd");
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(crop.x + 1, crop.y + 1, crop.w - 2, crop.h - 2);
+    ctx.fillStyle = "#ffffff";
+    corners().forEach(([cx, cy]) => ctx.fillRect(cx - HANDLE / 2, cy - HANDLE / 2, HANDLE, HANDLE));
+    ctx.restore();
+    const { width } = rotatedSize();
+    const outW = Math.round((crop.w / canvas.width) * width);
+    const outH = Math.round((crop.h / canvas.height) * rotatedSize().height);
+    hint.textContent = `${outW} × ${outH} px`;
+  };
+
+  const corners = () => [
+    [crop.x, crop.y],
+    [crop.x + crop.w, crop.y],
+    [crop.x, crop.y + crop.h],
+    [crop.x + crop.w, crop.y + crop.h]
+  ];
+
+  const pointAt = (event) => {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * canvas.width,
+      y: ((event.clientY - rect.top) / rect.height) * canvas.height
+    };
+  };
+
+  const hitHandle = (point) => {
+    const names = ["nw", "ne", "sw", "se"];
+    const found = corners().findIndex(([cx, cy]) => Math.abs(point.x - cx) <= HANDLE && Math.abs(point.y - cy) <= HANDLE);
+    return found >= 0 ? names[found] : null;
+  };
+
+  const clampCrop = () => {
+    const MIN = 40;
+    crop.w = Math.max(MIN, crop.w);
+    crop.h = Math.max(MIN, crop.h);
+    crop.x = Math.min(Math.max(0, crop.x), canvas.width - crop.w);
+    crop.y = Math.min(Math.max(0, crop.y), canvas.height - crop.h);
+    crop.w = Math.min(crop.w, canvas.width - crop.x);
+    crop.h = Math.min(crop.h, canvas.height - crop.y);
+  };
+
+  canvas.addEventListener("pointerdown", (event) => {
+    if (!crop) return;
+    const point = pointAt(event);
+    const handle = hitHandle(point);
+    const inside = point.x >= crop.x && point.x <= crop.x + crop.w && point.y >= crop.y && point.y <= crop.y + crop.h;
+    if (!handle && !inside) return;
+    drag = { handle, start: point, origin: { ...crop } };
+    // Some pointer sources reject capture; the drag still works without it.
+    try { canvas.setPointerCapture(event.pointerId); } catch { /* ignore */ }
+    event.preventDefault();
+  });
+
+  canvas.addEventListener("pointermove", (event) => {
+    if (!crop) return;
+    const point = pointAt(event);
+    if (!drag) {
+      canvas.style.cursor = hitHandle(point) ? "nwse-resize"
+        : (point.x >= crop.x && point.x <= crop.x + crop.w && point.y >= crop.y && point.y <= crop.y + crop.h) ? "move" : "default";
+      return;
+    }
+    const dx = point.x - drag.start.x;
+    const dy = point.y - drag.start.y;
+    const origin = drag.origin;
+    if (!drag.handle) {
+      crop.x = origin.x + dx;
+      crop.y = origin.y + dy;
+    } else {
+      if (drag.handle.includes("n")) { crop.y = origin.y + dy; crop.h = origin.h - dy; }
+      if (drag.handle.includes("s")) { crop.h = origin.h + dy; }
+      if (drag.handle.includes("w")) { crop.x = origin.x + dx; crop.w = origin.w - dx; }
+      if (drag.handle.includes("e")) { crop.w = origin.w + dx; }
+    }
+    clampCrop();
+    paint();
+  });
+
+  const endDrag = () => { drag = null; };
+  canvas.addEventListener("pointerup", endDrag);
+  canvas.addEventListener("pointercancel", endDrag);
+
+  node.querySelectorAll("[data-editor-rotate]").forEach((button) => button.addEventListener("click", () => {
+    quarterTurns = (quarterTurns + Number(button.dataset.editorRotate) / 90 + 4) % 4;
+    fitCanvas();
+    resetCrop();
+    paint();
+  }));
+  node.querySelector("[data-editor-reset]").addEventListener("click", () => {
+    quarterTurns = 0;
+    fitCanvas();
+    resetCrop();
+    paint();
+  });
+  node.querySelector("[data-editor-fit]").addEventListener("click", () => {
+    // A business card is close to 85x55mm. Snapping the box to that ratio,
+    // centred, is a faster starting point than dragging all four corners.
+    const ratio = 85 / 55;
+    let w = canvas.width * 0.9;
+    let h = w / ratio;
+    if (h > canvas.height * 0.9) { h = canvas.height * 0.9; w = h * ratio; }
+    crop = { x: (canvas.width - w) / 2, y: (canvas.height - h) / 2, w, h };
+    clampCrop();
+    paint();
+  });
+
+  image.onload = () => {
+    URL.revokeObjectURL(objectUrl);
+    loading.classList.add("hidden");
+    fitCanvas();
+    resetCrop();
+    paint();
+  };
+  image.onerror = () => { loading.textContent = "That image could not be opened."; };
+  image.src = objectUrl;
+
+  cardEditorSession = { apply: async () => {
+    if (!image.naturalWidth || !crop) {
+      setCardEditorStatus("The photo is still opening. Try again in a moment.");
+      return;
+    }
+    const { width, height } = rotatedSize();
+    // Map the on-screen crop back onto the full-resolution image, so cropping
+    // never costs resolution beyond what was actually cut away.
+    const scaleX = width / canvas.width;
+    const scaleY = height / canvas.height;
+    const sx = Math.round(crop.x * scaleX);
+    const sy = Math.round(crop.y * scaleY);
+    const sw = Math.max(1, Math.round(crop.w * scaleX));
+    const sh = Math.max(1, Math.round(crop.h * scaleY));
+
+    const full = document.createElement("canvas");
+    full.width = width;
+    full.height = height;
+    drawRotated(full, full.getContext("2d"), width, height);
+
+    const out = document.createElement("canvas");
+    out.width = sw;
+    out.height = sh;
+    out.getContext("2d").drawImage(full, sx, sy, sw, sh, 0, 0, sw, sh);
+
+    const blob = await new Promise((resolve) => out.toBlob(resolve, "image/jpeg", CARD_EDITOR_OUTPUT_QUALITY));
+    if (!blob) { setCardEditorStatus("That image could not be adjusted."); return; }
+    const edited = new File([blob], sourceFile.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg", lastModified: Date.now() });
+    edited.wasEdited = true;
+
+    const entry = state.selectedFiles[index];
+    if (!entry) return;
+    if (side === "back") {
+      if (entry.backPreviewUrl) URL.revokeObjectURL(entry.backPreviewUrl);
+      entry.backSideFile = edited;
+      entry.backPreviewUrl = URL.createObjectURL(edited);
+    } else {
+      // The entry *is* the File, so it has to be swapped in place while
+      // carrying over the back side and any draft fields already attached.
+      edited.previewUrl = URL.createObjectURL(edited);
+      if (entry.previewUrl) URL.revokeObjectURL(entry.previewUrl);
+      if (entry.backSideFile) edited.backSideFile = entry.backSideFile;
+      if (entry.backPreviewUrl) edited.backPreviewUrl = entry.backPreviewUrl;
+      state.selectedFiles[index] = edited;
+    }
+    closeModal(false);
+    setMessage("Card adjusted.");
+  } };
 }
 
 function addSelectedFiles(fileList) {
