@@ -5046,8 +5046,88 @@ async function syncGoogleContacts(_button, selectedIds, _collectionId, context) 
   }
 }
 
+// ---- The original card photo on a saved contact ----
+// The client's reason for wanting these is checking: with the photo beside the
+// fields, they can see at a glance whether anything on the card was missed.
+function cardPhotoStrip(contact) {
+  const images = contact.cardImages || {};
+  if (!images.front && !images.back && !images.purgedAt) return "";
+  if (!images.front && !images.back) {
+    return `
+      <section class="card-photos card-photos-gone">
+        <h4>Original card</h4>
+        <p>The photo was deleted on ${escapeHtml(displayDate(images.purgedAt))} under your card retention setting. The details below are kept.</p>
+      </section>`;
+  }
+  const shot = (url, label) => url
+    ? `<figure><button type="button" class="card-photo-open" data-card-photo="${escapeAttr(url)}" title="Open ${escapeHtml(label.toLowerCase())} at full size"><img src="${escapeAttr(url)}" alt="${escapeHtml(label)} of ${escapeHtml(contact.name || "the card")}" loading="lazy" /></button><figcaption>${escapeHtml(label)}</figcaption></figure>`
+    : "";
+  return `
+    <section class="card-photos">
+      <h4>Original card</h4>
+      <div class="card-photo-row">
+        ${shot(images.front, "Front")}
+        ${shot(images.back, "Back")}
+      </div>
+      <div class="card-photo-actions">
+        <button type="button" class="link-button" data-card-photo-share>Share the photo</button>
+        <span class="card-photo-note">Open a photo to see it full size.</span>
+      </div>
+    </section>`;
+}
+
+async function shareCardPhotos(contact) {
+  const images = contact.cardImages || {};
+  const wanted = [[images.front, "front"], [images.back, "back"]].filter(([url]) => url);
+  if (!wanted.length) return;
+  const base = String(contact.name || "business-card").replace(/[^\w]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "business-card";
+  const files = [];
+  for (const [url, side] of wanted) {
+    const res = await fetch(url, { credentials: "same-origin" });
+    if (!res.ok) continue;
+    const blob = await res.blob();
+    const ext = (blob.type.split("/")[1] || "jpg").replace("jpeg", "jpg");
+    files.push(new File([blob], `${base}-${side}.${ext}`, { type: blob.type || "image/jpeg" }));
+  }
+  if (!files.length) {
+    setMessage("That card photo could not be opened.", true);
+    return;
+  }
+  // On a phone this hands the photo straight to WhatsApp. A desktop browser
+  // has no share sheet, so there it saves the file instead.
+  if (navigator.share && navigator.canShare?.({ files })) {
+    try {
+      await navigator.share({ files, title: contact.name || "Business card" });
+      return;
+    } catch (err) {
+      if (err?.name === "AbortError") return;
+    }
+  }
+  for (const file of files) {
+    const url = URL.createObjectURL(file);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = file.name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+  setMessage(files.length > 1 ? "Both sides saved to your downloads." : "Card photo saved to your downloads.");
+}
+
+function wireCardPhotos(node, contact) {
+  node.querySelectorAll("[data-card-photo]").forEach((btn) => btn.addEventListener("click", () => {
+    window.open(btn.dataset.cardPhoto, "_blank", "noopener");
+  }));
+  node.querySelector("[data-card-photo-share]")?.addEventListener("click", () => {
+    shareCardPhotos(contact).catch((err) => setMessage(err.message || "That card photo could not be shared.", true));
+  });
+}
+
 function showEditContactModal(contact) {
   const formHtml = `
+    ${cardPhotoStrip(contact)}
     <form id="editContactForm" class="grid edit-contact-form">
       <div class="form-grid">
         ${contactFields.map((field) => inputField(field, contact[field] || "", field === "notes" || field === "address")).join("")}
@@ -5065,6 +5145,7 @@ function showEditContactModal(contact) {
     keepOpenOnConfirm: true,
     onRender: (node) => {
       const form = node.querySelector("#editContactForm");
+      wireCardPhotos(node, contact);
       form.querySelector("input, textarea, select")?.focus();
       form.addEventListener("submit", async (event) => {
         event.preventDefault();

@@ -2589,6 +2589,25 @@ function retentionDays(policy) {
   return match ? Number(match[1]) : 90;
 }
 
+// The card photo a contact came from, front and back, as the browser needs it:
+// a URL only while the file is still on disk, plus the date it went, so the
+// screen can say "kept until" rather than show a broken image.
+function withCardImages(db, contact) {
+  const card = contact.sourceCardId
+    ? db.cards.find((c) => c.id === contact.sourceCardId && c.organisationId === contact.organisationId)
+    : null;
+  const purged = Boolean(card?.storagePurgedAt);
+  return {
+    ...contact,
+    cardImages: {
+      front: card && !purged && card.storagePath ? `/api/cards/${card.id}/image` : "",
+      back: card && !purged && card.backStoragePath ? `/api/cards/${card.id}/back-image` : "",
+      purgedAt: card?.storagePurgedAt || "",
+      capturedAt: card?.createdAt || contact.createdAt || ""
+    }
+  };
+}
+
 function applyCardImageRetention(db) {
   let changed = false;
   const orgs = new Map(db.organisations.map((org) => [org.id, org]));
@@ -6887,7 +6906,7 @@ async function handleApi(req, res, pathname) {
         contacts = contacts.filter((c) => [c.name, c.mobileNumber, c.companyName, c.emailAddress, c.city, c.tags, c.notes, c.assignedToName, c.exhibitionName].some((v) => String(v || "").toLowerCase().includes(query)));
       }
       contacts.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      return send(res, 200, { contacts });
+      return send(res, 200, { contacts: contacts.map((contact) => withCardImages(db, contact)) });
     }
 
     if (req.method === "GET" && pathname === "/api/team") {
