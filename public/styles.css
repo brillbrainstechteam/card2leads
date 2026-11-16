@@ -8558,6 +8558,10 @@ strong {
   display: grid;
   gap: 6px;
   min-width: 0;
+  /* The grid stretches to the tallest field in the row. Without this its rows
+     spread into that extra height, so expanding "Other" on one dropdown pushed
+     the other two selects down out of line. */
+  align-content: start;
 }
 
 .choice-field select,
@@ -8640,4 +8644,14 @@ strong {
   margin-right: 5px;
   color: var(--ink);
   font-weight: 700;
+}
+
+/* Each field is a grid label inside .form-grid, and the grid stretches every
+   label in a row to the tallest one. With the default align-content the extra
+   height was absorbed between the caption and the control, so expanding
+   "Other" on one dropdown pushed its neighbours' controls down out of line.
+   Packing the rows at the top keeps every control on the same baseline and
+   leaves the slack at the bottom. */
+.form-grid > label {
+  align-content: start;
 }
