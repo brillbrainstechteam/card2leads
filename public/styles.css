@@ -8635,3 +8635,9 @@ strong {
   letter-spacing: 1px;
   white-space: nowrap;
 }
+
+.rating-chip b {
+  margin-right: 5px;
+  color: var(--ink);
+  font-weight: 700;
+}

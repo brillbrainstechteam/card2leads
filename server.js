@@ -3859,6 +3859,26 @@ async function requireAdmin(req, res) {
   return admin;
 }
 
+// The extraction used to be handed a "notes" field with no explanation of what
+// it was for, and filled it with invented commentary — often in Korean or
+// Chinese. The prompt no longer asks for notes, but contacts saved before that
+// still carry the text, so it has to be cleared out.
+//
+// Deliberately conservative, because Remarks also holds things the user typed
+// and the text of a voice note. Only remarks that are mostly CJK script AND do
+// not appear in the contact's own voice transcript are treated as junk: a
+// genuine Korean or Chinese note dictated by the user is kept.
+function remarksLookLikeModelJunk(contact) {
+  const notes = String(contact?.notes || "").trim();
+  if (!notes) return false;
+  const transcript = String(contact?.voiceTranscript || "").trim();
+  if (transcript && notes.includes(transcript)) return false;
+  const letters = notes.replace(/\s/g, "");
+  if (!letters.length) return false;
+  const cjk = (notes.match(/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/g) || []).length;
+  return cjk / letters.length > 0.3;
+}
+
 async function adminAudit(admin, { clientId = null, action, previousValue = null, newValue = null, reason = null, metadata = {} }) {
   await pgPool.query(
     `insert into admin_audit_logs (id, admin_id, admin_email, client_id, action, previous_value, new_value, reason, metadata, created_at)
@@ -4928,6 +4948,36 @@ async function handleAdminApi(req, res, pathname) {
   }
 
   // ---- ADM-08 Settings: plans + admin users ----
+  // One-off cleanup for the invented Remarks text (see remarksLookLikeModelJunk).
+  // Defaults to a dry run: it reports what it would clear and changes nothing
+  // unless apply is explicitly true, because this edits customer records.
+  if (req.method === "POST" && pathname === "/api/admin/maintenance/clean-remarks") {
+    const body = await readJson(req).catch(() => ({}));
+    const apply = body.apply === true;
+    const affected = db.contacts.filter((contact) => !contact.deletedAt && remarksLookLikeModelJunk(contact));
+    const samples = affected.slice(0, 10).map((contact) => ({
+      id: contact.id,
+      clientId: contact.organisationId,
+      name: contact.name,
+      remarks: String(contact.notes || "").slice(0, 120)
+    }));
+    if (apply) {
+      for (const contact of affected) {
+        contact.notes = "";
+        contact.updatedAt = now();
+      }
+      await adminAudit(admin, { action: "REMARKS_JUNK_CLEARED", newValue: { cleared: affected.length }, reason: body.reason || "Model-generated remarks cleanup" });
+      await saveDb(db);
+    }
+    return send(res, 200, {
+      dryRun: !apply,
+      matched: affected.length,
+      cleared: apply ? affected.length : 0,
+      totalContacts: db.contacts.filter((contact) => !contact.deletedAt).length,
+      samples
+    });
+  }
+
   if (req.method === "GET" && pathname === "/api/admin/settings") {
     const plans = ["monthly", "quarterly", "annual"].map((p) => ({
       name: p, scans: PLAN_LIMITS[p], pricePaise: PLAN_PRICES_PAISE[p], months: PLAN_DURATIONS_MONTHS[p], status: "active"

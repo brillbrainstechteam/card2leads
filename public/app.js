@@ -6,7 +6,7 @@ const state = {
   cards: [],
   contacts: [],
   teamMembers: [],
-  contactFilters: { exhibition: "", assignee: "", city: "", state: "", messaged: "" },
+  contactFilters: { exhibition: "", assignee: "", city: "", state: "", messaged: "", industry: "", businessType: "", customerStatus: "", salutation: "", rating: "" },
   contactSearchQuery: "",
   // "compact" shows the everyday columns; "extended" adds every extracted field.
   contactsTableView: localStorage.getItem("card2leads.contactsTableView") === "extended" ? "extended" : "compact",
@@ -3837,7 +3837,7 @@ function blobToDataUrl(blob) {
 }
 
 function contactsView() {
-  const filters = state.contactFilters || { exhibition: "", assignee: "", city: "", state: "", messaged: "" };
+  const filters = state.contactFilters || { exhibition: "", assignee: "", city: "", state: "", messaged: "", industry: "", businessType: "", customerStatus: "", salutation: "", rating: "" };
   const visibleContacts = state.contacts.filter((contact) => {
     if (filters.exhibition && (contact.exhibitionName || "") !== filters.exhibition) return false;
     if (filters.assignee === "__unassigned" && contact.assignedToId) return false;
@@ -3846,12 +3846,19 @@ function contactsView() {
     if (filters.state && (contact.state || "") !== filters.state) return false;
     if (filters.messaged === "sent" && !contact.messageSentAt) return false;
     if (filters.messaged === "not-sent" && contact.messageSentAt) return false;
+    if (filters.industry && (contact.industry || "") !== filters.industry) return false;
+    if (filters.businessType && (contact.businessType || "") !== filters.businessType) return false;
+    if (filters.customerStatus && (contact.customerStatus || "") !== filters.customerStatus) return false;
+    if (filters.salutation && (contact.salutation || "") !== filters.salutation) return false;
+    // "__none" finds the contacts still waiting to be rated.
+    if (filters.rating === "__none" && contact.customerRating) return false;
+    if (filters.rating && filters.rating !== "__none" && String(contact.customerRating || "") !== filters.rating) return false;
     return true;
   });
   const exhibitionNames = [...new Set(state.contacts.map((contact) => contact.exhibitionName).filter(Boolean))].sort();
   const cityNames = [...new Set(state.contacts.map((contact) => contact.city).filter(Boolean))].sort();
   const stateNames = [...new Set(state.contacts.map((contact) => contact.state).filter(Boolean))].sort();
-  const filtersActive = Boolean(filters.exhibition || filters.assignee || filters.city || filters.state || filters.messaged);
+  const filtersActive = Boolean(filters.exhibition || filters.assignee || filters.city || filters.state || filters.messaged || filters.industry || filters.businessType || filters.customerStatus || filters.salutation || filters.rating);
   const selectedIds = visibleContacts.filter((contact) => state.selectedContactIds.has(contact.id)).map((contact) => contact.id);
   const allVisibleSelected = visibleContacts.length > 0 && selectedIds.length === visibleContacts.length;
   const activeCollectionId = state.overview.activeCollection?.id || state.overview.collections?.find((collection) => collection.status !== "deleted")?.id || "";
@@ -4080,6 +4087,32 @@ function contactsView() {
               <option value="not-sent"${filters.messaged === "not-sent" ? " selected" : ""}>Not sent</option>
             </select>
           </label>
+          ${[
+            ["industry", "Industry"],
+            ["businessType", "Business type"],
+            ["customerStatus", "Customer status"],
+            ["salutation", "Salutation"]
+          ].map(([field, label]) => {
+            const used = [...new Set(state.contacts.map((contact) => String(contact[field] || "").trim()).filter(Boolean))];
+            const options = [...new Set([...choicesFor(field), ...used])].sort();
+            if (!options.length) return "";
+            return `
+          <label class="filter-field">
+            <span>${escapeHtml(label)}</span>
+            <select data-contact-filter="${field}">
+              <option value="">All</option>
+              ${options.map((option) => `<option value="${escapeAttr(option)}"${filters[field] === option ? " selected" : ""}>${escapeHtml(option)}</option>`).join("")}
+            </select>
+          </label>`;
+          }).join("")}
+          <label class="filter-field">
+            <span>Rating</span>
+            <select data-contact-filter="rating">
+              <option value="">All ratings</option>
+              ${[5, 4, 3, 2, 1].map((n) => `<option value="${n}"${filters.rating === String(n) ? " selected" : ""}>${n} star${n === 1 ? "" : "s"}</option>`).join("")}
+              <option value="__none"${filters.rating === "__none" ? " selected" : ""}>Not rated</option>
+            </select>
+          </label>
           ${filtersActive ? `<button type="button" class="link-button" id="clearContactFilters">Clear filters</button>` : ""}
         </div>
         <div class="contacts-selectbar">
@@ -4202,7 +4235,7 @@ function contactsView() {
       ${cell(contact.industry)}
       ${cell(contact.businessType)}
       ${cell(contact.customerStatus)}
-      <td class="cell-text" title="${escapeAttr(contact.customerRating ? `${contact.customerRating} of 5` : "")}">${contact.customerRating ? `<span class="rating-chip">${"★".repeat(Number(contact.customerRating))}</span>` : ""}</td>
+      <td class="cell-text" title="${escapeAttr(contact.customerRating ? `${contact.customerRating} of 5` : "")}">${contact.customerRating ? `<span class="rating-chip"><b>${escapeHtml(String(contact.customerRating))}</b>${"★".repeat(Number(contact.customerRating))}</span>` : ""}</td>
       ${cell(contact.tags)}
       ${cell(contact.notes)}` : ""}
       <td class="col-place">${place
@@ -4254,6 +4287,10 @@ function contactsView() {
     else visibleContacts.forEach((contact) => state.selectedContactIds.delete(contact.id));
     render();
   });
+  node.querySelectorAll("[data-contact-filter]").forEach((select) => select.addEventListener("change", (event) => {
+    state.contactFilters = { ...state.contactFilters, [select.dataset.contactFilter]: event.target.value };
+    render();
+  }));
   node.querySelector("#filterExhibition")?.addEventListener("change", (event) => {
     state.contactFilters = { ...state.contactFilters, exhibition: event.target.value };
     render();
@@ -4275,7 +4312,7 @@ function contactsView() {
     render();
   });
   node.querySelector("#clearContactFilters")?.addEventListener("click", () => {
-    state.contactFilters = { exhibition: "", assignee: "", city: "", state: "", messaged: "" };
+    state.contactFilters = { exhibition: "", assignee: "", city: "", state: "", messaged: "", industry: "", businessType: "", customerStatus: "", salutation: "", rating: "" };
     render();
   });
   tbody && tbody.querySelectorAll("[data-select-contact]").forEach((checkbox) => checkbox.addEventListener("change", () => {
