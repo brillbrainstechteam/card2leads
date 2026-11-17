@@ -7276,6 +7276,48 @@ async function handleApi(req, res, pathname) {
       return send(res, 200, { updated });
     }
 
+    // Classifying a stand's worth of cards one contact at a time is the slowest
+    // part of a show, so the same qualification fields can be set across a
+    // selection. Only the fields actually sent are touched - an omitted one is
+    // left as it is rather than being cleared, or a caller updating ratings
+    // would silently wipe everybody's industry.
+    if (req.method === "POST" && pathname === "/api/contacts/bulk-classify") {
+      const body = await readJson(req);
+      const ids = new Set(Array.isArray(body.ids) ? body.ids.map(String) : []);
+      if (!ids.size) return error(res, 400, "Select at least one contact.");
+
+      const changes = {};
+      for (const field of ["industry", "customerStatus", "businessSpecialisation"]) {
+        if (body[field] !== undefined) changes[field] = cleanText(body[field]);
+      }
+      if (body.businessType !== undefined) changes.businessType = toChoiceList(body.businessType);
+      if (body.customerRating !== undefined) changes.customerRating = normalizeCustomerRating(body.customerRating);
+      if (body.collectionId !== undefined) {
+        const collection = db.collections.find((item) =>
+          item.id === String(body.collectionId) && item.organisationId === user.organisationId && item.status !== "deleted");
+        if (!collection) return error(res, 400, "That event no longer exists.");
+        changes.collectionId = collection.id;
+        // The exhibition name travels with the contact, so moving it between
+        // events has to carry the new event's label or exports and filters
+        // would still show the old one.
+        changes.exhibitionName = collection.exhibitionName || collection.name || "";
+        changes.exhibitionDate = collection.exhibitionDate || "";
+      }
+      if (!Object.keys(changes).length) return error(res, 400, "Nothing to change.");
+
+      let updated = 0;
+      for (const contact of db.contacts) {
+        if (contact.organisationId !== user.organisationId || contact.deletedAt || !ids.has(contact.id)) continue;
+        Object.assign(contact, changes);
+        contact.updatedBy = user.id;
+        contact.updatedAt = now();
+        updated += 1;
+      }
+      audit(db, user, "contacts.bulk_classified", "contact", "", { count: updated, fields: Object.keys(changes) });
+      await saveDb(db);
+      return send(res, 200, { updated, fields: Object.keys(changes) });
+    }
+
     if (req.method === "POST" && pathname === "/api/contacts/bulk-delete") {
       const body = await readJson(req);
       const ids = new Set(Array.isArray(body.ids) ? body.ids.map(String) : []);

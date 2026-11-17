@@ -8825,3 +8825,15 @@ strong {
 .choice-settings-help { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
 .choice-settings-status { margin: 0; font-size: 12.5px; color: var(--muted); min-height: 18px; }
 .choice-settings-status.bad { color: #c0392b; }
+
+/* The support button carries WhatsApp's own mark so it is recognised as the
+   fast route rather than read as another ordinary link. */
+.support-whatsapp { display: inline-flex; align-items: center; gap: 8px; }
+.support-whatsapp-icon { width: 17px; height: 17px; flex-shrink: 0; background-color: #25D366; -webkit-mask: var(--whatsapp-mark) center / contain no-repeat; mask: var(--whatsapp-mark) center / contain no-repeat; }
+:root { --whatsapp-mark: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12.04 2a9.9 9.9 0 0 0-8.5 14.95L2 22l5.2-1.5A9.9 9.9 0 1 0 12.04 2zm0 1.8a8.1 8.1 0 1 1-4.1 15.08l-.3-.17-3.08.89.9-3-.2-.31A8.1 8.1 0 0 1 12.04 3.8zm4.6 10.28c-.25-.12-1.47-.72-1.7-.8-.22-.09-.39-.13-.55.12s-.63.8-.77.96-.28.19-.53.06a6.6 6.6 0 0 1-1.95-1.2 7.3 7.3 0 0 1-1.35-1.68c-.14-.25 0-.38.11-.5l.37-.44c.12-.14.16-.24.25-.4s.04-.31-.02-.43-.55-1.34-.76-1.83c-.2-.47-.4-.41-.55-.42h-.47a.9.9 0 0 0-.65.3 2.73 2.73 0 0 0-.85 2.03 4.74 4.74 0 0 0 1 2.5 10.86 10.86 0 0 0 4.15 3.67c.58.25 1.03.4 1.38.51a3.3 3.3 0 0 0 1.52.1 2.49 2.49 0 0 0 1.63-1.16 2.02 2.02 0 0 0 .14-1.15c-.06-.1-.22-.16-.47-.28z'/></svg>"); }
+
+/* Bulk classify: every control defaults to leaving the field alone, so the
+   layout reads as a list of optional changes rather than a form to fill in. */
+.bulk-classify { display: grid; gap: 14px; }
+.bulk-classify select[multiple] { min-height: 132px; padding: 6px; }
+.bulk-classify small { display: block; margin-top: 4px; font-size: 11.5px; line-height: 1.45; }

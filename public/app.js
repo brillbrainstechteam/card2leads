@@ -1394,6 +1394,79 @@ const CHOICE_SETTING_LABELS = {
   salutation: "Salutation"
 };
 
+// Setting the same qualification across a stand's worth of cards. Every field
+// starts on "Leave unchanged" rather than blank, so opening this to set a
+// rating cannot quietly clear everybody's industry on the way out - only the
+// fields actually touched are sent.
+function showBulkClassifyModal(ids) {
+  const count = ids.length;
+  const choices = state.overview?.contactChoices || {};
+  const list = (field) => choicesFor(field);
+  const select = (field, label) => `
+    <label class="wa-field">
+      <span>${escapeHtml(label)}</span>
+      <select id="bulk-${field}">
+        <option value="__keep" selected>Leave unchanged</option>
+        <option value="">Clear it</option>
+        ${list(field).map((option) => `<option value="${escapeAttr(option)}">${escapeHtml(option)}</option>`).join("")}
+      </select>
+    </label>`;
+  state.modal = {
+    title: `Classify ${count} contact${count === 1 ? "" : "s"}`,
+    body: "Only the fields you change are applied. Anything left on “Leave unchanged” is not touched.",
+    className: "wide-dialog",
+    confirmText: "Apply",
+    confirmClass: "primary",
+    contentHtml: `
+      <div class="bulk-classify">
+        ${select("industry", "Industry")}
+        ${select("customerStatus", "Customer Status")}
+        <label class="wa-field">
+          <span>Business Type</span>
+          <select id="bulk-businessType" multiple size="6">
+            ${list("businessType").map((option) => `<option value="${escapeAttr(option)}">${escapeHtml(option)}</option>`).join("")}
+          </select>
+          <small class="muted">Nothing selected leaves it unchanged. Ctrl or Cmd to pick several; this replaces what each contact has.</small>
+        </label>
+        <label class="wa-field">
+          <span>Customer Rating</span>
+          <select id="bulk-customerRating">
+            <option value="__keep" selected>Leave unchanged</option>
+            <option value="0">Clear it</option>
+            ${[1, 2, 3, 4, 5].map((n) => `<option value="${n}">${"★".repeat(n)}</option>`).join("")}
+          </select>
+        </label>
+        <p class="choice-settings-status" id="bulkClassifyStatus"></p>
+      </div>`,
+    onConfirm: () => {
+      const status = document.querySelector("#bulkClassifyStatus");
+      const payload = { ids };
+      for (const field of ["industry", "customerStatus"]) {
+        const value = document.querySelector(`#bulk-${field}`)?.value;
+        if (value !== "__keep") payload[field] = value;
+      }
+      const types = [...(document.querySelector("#bulk-businessType")?.selectedOptions || [])].map((option) => option.value);
+      if (types.length) payload.businessType = types;
+      const rating = document.querySelector("#bulk-customerRating")?.value;
+      if (rating !== "__keep") payload.customerRating = Number(rating);
+      if (Object.keys(payload).length === 1) {
+        if (status) { status.textContent = "Change at least one field."; status.classList.add("bad"); }
+        return;
+      }
+      if (status) { status.textContent = "Applying…"; status.classList.remove("bad"); }
+      api("/api/contacts/bulk-classify", { method: "POST", body: payload })
+        .then((result) => {
+          closeModal(false);
+          state.message = { text: `${result.updated} contact(s) updated.`, bad: false };
+          return refreshAll();
+        })
+        .then(() => render())
+        .catch((err) => { if (status) { status.textContent = err.message; status.classList.add("bad"); } });
+    }
+  };
+  render();
+}
+
 function showContactChoicesModal() {
   const current = state.overview?.contactChoices || {};
   const fields = Object.keys(CHOICE_SETTING_LABELS);
@@ -1428,7 +1501,7 @@ function showContactChoicesModal() {
           // immediately, rather than on the next refresh.
           if (state.overview) state.overview.contactChoices = result.contactChoices;
           closeModal(false);
-          setMessage("Dropdown options saved for the workspace.");
+          state.message = { text: "Dropdown options saved for the workspace.", bad: false };
           render();
         })
         .catch((err) => { if (status) { status.textContent = err.message; status.classList.add("bad"); } });
@@ -1467,7 +1540,7 @@ function showWhatsappSettingsModal() {
         <label class="wa-field">
           <span>Message</span>
           <textarea id="waTemplate" rows="9" placeholder="Hi {name}, ..."></textarea>
-          <small class="wa-tokens">Tags: <button type="button" class="wa-token" data-token="{name}">{name}</button><button type="button" class="wa-token" data-token="{firstName}">{firstName}</button><button type="button" class="wa-token" data-token="{company}">{company}</button><button type="button" class="wa-token" data-token="{city}">{city}</button><button type="button" class="wa-token" data-token="{exhibition}">{exhibition}</button></small>
+          <small class="wa-tokens">Tags: <button type="button" class="wa-token" data-token="{salutation}">{salutation}</button><button type="button" class="wa-token" data-token="{name}">{name}</button><button type="button" class="wa-token" data-token="{firstName}">{firstName}</button><button type="button" class="wa-token" data-token="{company}">{company}</button><button type="button" class="wa-token" data-token="{city}">{city}</button><button type="button" class="wa-token" data-token="{exhibition}">{exhibition}</button></small>
         </label>
         <label class="wa-field">
           <span>Catalogue link</span>
@@ -1622,7 +1695,7 @@ function showWhatsappCampaignModal(targets, skipped) {
         <label class="wa-field">
           <span>Message</span>
           <textarea id="waTemplate" rows="9" placeholder="Hi {name}, ...">${escapeHtml(lastBody)}</textarea>
-          <small class="wa-tokens">Tags: <button type="button" class="wa-token" data-token="{name}">{name}</button><button type="button" class="wa-token" data-token="{firstName}">{firstName}</button><button type="button" class="wa-token" data-token="{company}">{company}</button><button type="button" class="wa-token" data-token="{city}">{city}</button><button type="button" class="wa-token" data-token="{exhibition}">{exhibition}</button></small>
+          <small class="wa-tokens">Tags: <button type="button" class="wa-token" data-token="{salutation}">{salutation}</button><button type="button" class="wa-token" data-token="{name}">{name}</button><button type="button" class="wa-token" data-token="{firstName}">{firstName}</button><button type="button" class="wa-token" data-token="{company}">{company}</button><button type="button" class="wa-token" data-token="{city}">{city}</button><button type="button" class="wa-token" data-token="{exhibition}">{exhibition}</button></small>
         </label>
         <label class="wa-field">
           <span>Catalogue link (optional)</span>
@@ -4553,6 +4626,7 @@ function contactsView() {
             <button class="secondary compact-action" id="bulkWhatsappContacts">WhatsApp</button>
             <button class="secondary compact-action" id="bulkVoiceContacts"><span class="button-mic-icon" aria-hidden="true"></span>Voice note</button>
             ${activeCollectionId ? `<a href="${exportHref("xlsx", activeCollectionId, selectedIds)}"><button type="button" class="secondary compact-action">Excel</button></a><a href="${exportHref("csv", activeCollectionId, selectedIds)}"><button type="button" class="secondary compact-action">CSV</button></a><a href="${exportHref("vcf", activeCollectionId, selectedIds)}"><button type="button" class="secondary compact-action">VCF</button></a>` : ""}
+            <button class="secondary compact-action" id="bulkClassifyContacts">Classify</button>
             <button class="danger compact-action" id="bulkDeleteContacts">Delete</button>
           </div>
           <div class="view-toggle" role="group" aria-label="Table columns">
@@ -4948,6 +5022,11 @@ function contactsView() {
   node.querySelector("#contactsEmptyClearSearch")?.addEventListener("click", () => {
     clearTimeout(contactSearchDebounce);
     runContactSearch("");
+  });
+  node.querySelector("#bulkClassifyContacts")?.addEventListener("click", () => {
+    // Derived here rather than captured at render, matching bulk delete below,
+    // so the modal acts on what is selected when it opens.
+    showBulkClassifyModal(state.contacts.filter((contact) => state.selectedContactIds.has(contact.id)).map((contact) => contact.id));
   });
   node.querySelector("#bulkDeleteContacts")?.addEventListener("click", () => {
     const ids = state.contacts.filter((contact) => state.selectedContactIds.has(contact.id)).map((contact) => contact.id);
@@ -5748,6 +5827,9 @@ function supportBlockHtml() {
         <div class="account-block">
           <h3>Help &amp; support</h3>
           <p class="muted">Email <a href="mailto:${email}">${email}</a> or call <a href="tel:9093400666">9093400666</a> / <a href="tel:9093400777">9093400777</a>.</p>
+          <div class="actions">
+            <a class="button-link" href="https://wa.me/919093400666?text=${encodeURIComponent("Hi Card2Leads support, ")}" target="_blank" rel="noopener noreferrer"><button type="button" class="secondary support-whatsapp"><span class="support-whatsapp-icon" aria-hidden="true"></span>WhatsApp support</button></a>
+          </div>
           <div class="support-form">
             <label>Email or phone to reach you<input id="supportContact" type="text" placeholder="you@example.com or 98XXXXXXXX" value="${escapeAttr(state.user?.email || "")}" /></label>
             <label>Your query<textarea id="supportMessage" rows="4" placeholder="Tell us what you need help with…"></textarea></label>
