@@ -1381,6 +1381,62 @@ function whatsappLink(number, message) {
 // Standalone editor reachable from Account, so the messages can be set up
 // before any contact exists — the campaign dialog is only reachable once you
 // have selected contacts.
+// The dropdown lists this workspace offers. Edited as plain lines of text
+// rather than a row of inputs with add/remove buttons: reordering is a drag of
+// the cursor, a typo is a normal edit, and pasting a list someone sent over
+// WhatsApp works without any of it being a feature.
+const LINE_BREAK = String.fromCharCode(10);
+
+const CHOICE_SETTING_LABELS = {
+  industry: "Industry",
+  businessType: "Business Type",
+  customerStatus: "Customer Status",
+  salutation: "Salutation"
+};
+
+function showContactChoicesModal() {
+  const current = state.overview?.contactChoices || {};
+  const fields = Object.keys(CHOICE_SETTING_LABELS);
+  state.modal = {
+    title: "Dropdown options",
+    body: "The choices your team picks from when classifying a contact. Saved for the whole workspace, on every device.",
+    className: "wide-dialog",
+    confirmText: "Save",
+    confirmClass: "primary",
+    contentHtml: `
+      <div class="choice-settings">
+        ${fields.map((field) => `
+          <label class="wa-field">
+            <span>${escapeHtml(CHOICE_SETTING_LABELS[field])}</span>
+            <textarea id="choices-${field}" rows="${field === "businessType" ? 6 : 4}" spellcheck="false">${escapeHtml((current[field] || []).join(LINE_BREAK))}</textarea>
+          </label>`).join("")}
+        <p class="choice-settings-help">One option per line. Leave a list empty to go back to the standard options. Removing an option stops it being offered — contacts already classified with it keep what they have.</p>
+        <p class="choice-settings-status" id="choicesStatus"></p>
+      </div>`,
+    onConfirm: () => {
+      const status = document.querySelector("#choicesStatus");
+      const payload = {};
+      for (const field of fields) {
+        const box = document.querySelector(`#choices-${field}`);
+        if (!box) continue;
+        payload[field] = box.value.split(LINE_BREAK).map((line) => line.trim()).filter(Boolean);
+      }
+      if (status) { status.textContent = "Saving…"; status.classList.remove("bad"); }
+      api("/api/settings/contact-choices", { method: "PUT", body: payload })
+        .then((result) => {
+          // Kept on the loaded overview so every dropdown picks the new list up
+          // immediately, rather than on the next refresh.
+          if (state.overview) state.overview.contactChoices = result.contactChoices;
+          closeModal(false);
+          setMessage("Dropdown options saved for the workspace.");
+          render();
+        })
+        .catch((err) => { if (status) { status.textContent = err.message; status.classList.add("bad"); } });
+    }
+  };
+  render();
+}
+
 function showWhatsappSettingsModal() {
   let library = whatsappTemplateLibrary();
   const sample = { name: "there", companyName: "Their Company", city: "Amravati", exhibitionName: "IIJS 2026" };
@@ -5804,6 +5860,19 @@ function accountView() {
           </div>
         </div>
         <div class="account-block">
+          <h3>Dropdown options</h3>
+          <p class="muted">${(() => {
+            const choices = state.overview?.contactChoices || {};
+            const counts = ["industry", "businessType", "customerStatus", "salutation"]
+              .map((field) => (choices[field] || []).length)
+              .reduce((total, n) => total + n, 0);
+            return `${counts} option${counts === 1 ? "" : "s"} across Industry, Business Type, Customer Status and Salutation`;
+          })()}</p>
+          <div class="actions">
+            <button class="secondary editContactChoices" type="button">Edit dropdown options</button>
+          </div>
+        </div>
+        <div class="account-block">
           <h3>Privacy documents</h3>
           
           <div class="actions">
@@ -5837,6 +5906,7 @@ function accountView() {
     render();
   }));
   node.querySelectorAll(".editWhatsappSettings").forEach((btn) => btn.addEventListener("click", showWhatsappSettingsModal));
+  node.querySelectorAll(".editContactChoices").forEach((btn) => btn.addEventListener("click", showContactChoicesModal));
   wireSupportForm(node);
   node.querySelector("#deleteAccount").addEventListener("click", () => {
     state.modal = {
@@ -6025,6 +6095,7 @@ function accountBillingView() {
     render();
   }));
   node.querySelectorAll(".editWhatsappSettings").forEach((btn) => btn.addEventListener("click", showWhatsappSettingsModal));
+  node.querySelectorAll(".editContactChoices").forEach((btn) => btn.addEventListener("click", showContactChoicesModal));
   wireSupportForm(node);
   node.querySelector("#deleteAccount").addEventListener("click", () => {
     state.modal = {
