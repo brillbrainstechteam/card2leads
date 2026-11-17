@@ -235,6 +235,8 @@ const EXPORT_COLUMNS = [
   "Customer Rating",
   "Exhibition Name",
   "Exhibition Date",
+  "Event Type",
+  "Lead Source",
   "Remarks",
   "Voice Note",
   "Tags",
@@ -296,7 +298,13 @@ const OPTIONAL_FIELDS = [
   "businessType",
   "businessSpecialisation",
   "customerStatus",
-  "customerRating"
+  "customerRating",
+  // The event this contact was collected at (its kind - Exhibition, Office
+  // Visit, ...) and where the lead came from. Both are denormalised from the
+  // collection at save so filters and exports work per contact; existing
+  // contacts simply have them blank.
+  "eventType",
+  "leadSource"
 ];
 
 // The starting choices every workspace gets. A workspace can add to or replace
@@ -319,7 +327,14 @@ const CONTACT_CHOICE_DEFAULTS = Object.freeze({
     "Karigar",
     "Factory"
   ],
-  customerStatus: ["Existing Customer", "New Customer"]
+  customerStatus: ["Existing Customer", "New Customer"],
+  // An event is no longer only an exhibition. These are the kinds of event /
+  // lead source a card can be collected under; a workspace can add its own
+  // (e.g. a named roadshow) from Settings, and "Other" is typed in like the
+  // rest. Event Type is picked when an event is created; Lead Source is set per
+  // contact. They share one option list on purpose.
+  eventType: ["Exhibition", "Marketing", "Field Marketing", "Office Visit", "Customer Visit", "Magazine", "Advertisement"],
+  leadSource: ["Exhibition", "Marketing", "Field Marketing", "Office Visit", "Customer Visit", "Magazine", "Advertisement"]
 });
 
 const CONTACT_CHOICE_FIELDS = Object.keys(CONTACT_CHOICE_DEFAULTS);
@@ -3399,6 +3414,8 @@ function normalizeExtraction(raw, collection) {
     businessType: toChoiceList(raw.businessType).filter((value) => choices.businessType.includes(value)),
     exhibitionName: collection.exhibitionName || "",
     exhibitionDate: collection.exhibitionDate || "",
+    eventType: collection.eventType || "",
+    leadSource: collection.leadSource || collection.eventType || "",
     interest: cleanText(raw.interest),
     specialRequirement: cleanText(raw.specialRequirement),
     budget: cleanText(raw.budget),
@@ -6310,6 +6327,8 @@ async function handleApi(req, res, pathname) {
           if (c.organisationId === user.organisationId) c.status = c.id === duplicate.id ? "active" : "archived";
         });
         if (!duplicate.exhibitionDate && body.exhibitionDate) duplicate.exhibitionDate = String(body.exhibitionDate);
+        if (!duplicate.eventType && body.eventType) duplicate.eventType = String(body.eventType).trim();
+        if (!duplicate.eventEndDate && body.eventEndDate) duplicate.eventEndDate = String(body.eventEndDate).trim();
         duplicate.updatedAt = now();
         await saveDb(db);
         return send(res, 200, {
@@ -6327,6 +6346,11 @@ async function handleApi(req, res, pathname) {
         name,
         exhibitionName,
         exhibitionDate: String(body.exhibitionDate || ""),
+        // The kind of event this is (Exhibition, Office Visit, a custom one, ...)
+        // and an optional end date. An event with no type behaves exactly as
+        // before, so older clients that only send a name keep working.
+        eventType: String(body.eventType || "").trim(),
+        eventEndDate: String(body.eventEndDate || "").trim(),
         destinationType,
         destinationName: String(body.destinationName || (destinationType === "google" ? `${name} Contacts` : `${name} Excel/CSV`)).trim(),
         savedContactCount: 0,
@@ -6347,6 +6371,7 @@ async function handleApi(req, res, pathname) {
       const body = await readJson(req);
       const previousName = String(collection.exhibitionName || collection.name || "");
       const previousDate = String(collection.exhibitionDate || "");
+      const previousEventType = String(collection.eventType || "");
 
       // The app edits an exhibition as one name, so name and exhibitionName
       // move together, exactly as they are set together on create.
@@ -6366,6 +6391,12 @@ async function handleApi(req, res, pathname) {
         if (nextDate && !/^\d{4}-\d{2}-\d{2}$/.test(nextDate)) return error(res, 400, "Enter the date as YYYY-MM-DD, or leave it blank.");
         collection.exhibitionDate = nextDate;
       }
+      if (body.eventType != null) collection.eventType = String(body.eventType).trim();
+      if (body.eventEndDate != null) {
+        const nextEnd = String(body.eventEndDate).trim();
+        if (nextEnd && !/^\d{4}-\d{2}-\d{2}$/.test(nextEnd)) return error(res, 400, "Enter the end date as YYYY-MM-DD, or leave it blank.");
+        collection.eventEndDate = nextEnd;
+      }
       ["destinationType", "destinationName"].forEach((field) => {
         if (body[field] != null) collection[field] = String(body[field]);
       });
@@ -6377,12 +6408,14 @@ async function handleApi(req, res, pathname) {
       // cards now, rather than leaving the old name in every saved contact's
       // label until the next restart happens to fix it.
       let updatedContacts = 0;
-      if (collection.exhibitionName !== previousName || collection.exhibitionDate !== previousDate) {
+      const eventTypeChanged = String(collection.eventType || "") !== previousEventType;
+      if (collection.exhibitionName !== previousName || collection.exhibitionDate !== previousDate || eventTypeChanged) {
         for (const contact of db.contacts) {
           if (contact.collectionId !== collection.id || contact.organisationId !== user.organisationId || contact.deletedAt) continue;
-          if (contact.exhibitionName === collection.exhibitionName && String(contact.exhibitionDate || "") === collection.exhibitionDate) continue;
+          if (contact.exhibitionName === collection.exhibitionName && String(contact.exhibitionDate || "") === collection.exhibitionDate && String(contact.eventType || "") === String(collection.eventType || "")) continue;
           contact.exhibitionName = collection.exhibitionName;
           contact.exhibitionDate = collection.exhibitionDate;
+          if (eventTypeChanged) contact.eventType = collection.eventType || "";
           contact.contactDisplayName = buildContactDisplayName(contact) || contact.contactDisplayName;
           contact.updatedAt = now();
           if (contact.googleSheetsSyncStatus === "synced") contact.googleSheetsSyncStatus = "pending";
@@ -7287,7 +7320,7 @@ async function handleApi(req, res, pathname) {
       if (!ids.size) return error(res, 400, "Select at least one contact.");
 
       const changes = {};
-      for (const field of ["industry", "customerStatus", "businessSpecialisation"]) {
+      for (const field of ["industry", "customerStatus", "businessSpecialisation", "leadSource", "eventType"]) {
         if (body[field] !== undefined) changes[field] = cleanText(body[field]);
       }
       if (body.businessType !== undefined) changes.businessType = toChoiceList(body.businessType);
@@ -7302,6 +7335,9 @@ async function handleApi(req, res, pathname) {
         // would still show the old one.
         changes.exhibitionName = collection.exhibitionName || collection.name || "";
         changes.exhibitionDate = collection.exhibitionDate || "";
+        // Moving a contact to another event carries that event's kind too, so
+        // the Event Type filter and the export stay truthful after a move.
+        changes.eventType = collection.eventType || "";
       }
       if (!Object.keys(changes).length) return error(res, 400, "Nothing to change.");
 
@@ -8125,7 +8161,12 @@ function saveContactRecord(db, user, card, fields, options = {}) {
     normalizedMobileNumber,
     ...cleaned,
     exhibitionName: collection.exhibitionName || cleaned.exhibitionName || "",
-    exhibitionDate: collection.exhibitionDate || cleaned.exhibitionDate || ""
+    exhibitionDate: collection.exhibitionDate || cleaned.exhibitionDate || "",
+    // The event's kind travels onto the contact like its name does. Lead source
+    // prefers an explicit value from the review screen, then the event's own
+    // kind, so a card saved under an "Office Visit" event reads as that source.
+    eventType: collection.eventType || cleaned.eventType || "",
+    leadSource: cleaned.leadSource || collection.leadSource || collection.eventType || ""
   };
   // The exhibition is only known here, so the saved-contact name has to be
   // rebuilt now; deriving it earlier left the exhibition out of the name.
@@ -8213,6 +8254,8 @@ function exportRow(contact, extraPeopleCount = 0) {
     contact.customerRating,
     contact.exhibitionName,
     contact.exhibitionDate,
+    contact.eventType,
+    contact.leadSource,
     exportRemarks(contact),
     exportVoiceNote(contact),
     contact.tags,
@@ -8718,6 +8761,8 @@ function contactToGooglePerson(contact) {
     userDefined: [
       { key: "Exhibition", value: String(contact.exhibitionName || "") },
       { key: "Exhibition Date", value: String(contact.exhibitionDate || "") },
+      { key: "Event Type", value: String(contact.eventType || "") },
+      { key: "Lead Source", value: String(contact.leadSource || "") },
       { key: "Card2Leads Label", value: exhibitionLabel },
       { key: "Card2Leads Contact ID", value: String(contact.id || "") },
       { key: "Contact Name", value: String(contact.name || "") },

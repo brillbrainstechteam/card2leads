@@ -6,7 +6,7 @@ const state = {
   cards: [],
   contacts: [],
   teamMembers: [],
-  contactFilters: { exhibition: "", assignee: "", city: "", state: "", messaged: "", industry: "", businessType: "", customerStatus: "", salutation: "", rating: "" },
+  contactFilters: { exhibition: "", assignee: "", city: "", state: "", messaged: "", industry: "", businessType: "", customerStatus: "", salutation: "", eventType: "", leadSource: "", rating: "" },
   contactSearchQuery: "",
   // "compact" shows the everyday columns; "extended" adds every extracted field.
   contactsTableView: localStorage.getItem("card2leads.contactsTableView") === "extended" ? "extended" : "compact",
@@ -116,6 +116,8 @@ const fieldLabels = {
   country: "Country",
   exhibitionName: "Exhibition Name",
   exhibitionDate: "Exhibition Date",
+  eventType: "Event Type",
+  leadSource: "Lead Source",
   industry: "Industry",
   businessType: "Business Type",
   businessSpecialisation: "Business Specialisation",
@@ -139,7 +141,9 @@ const CHOICE_FIELD_FALLBACKS = {
     "Karigar",
     "Factory"
   ],
-  customerStatus: ["Existing Customer", "New Customer"]
+  customerStatus: ["Existing Customer", "New Customer"],
+  eventType: ["Exhibition", "Marketing", "Field Marketing", "Office Visit", "Customer Visit", "Magazine", "Advertisement"],
+  leadSource: ["Exhibition", "Marketing", "Field Marketing", "Office Visit", "Customer Visit", "Magazine", "Advertisement"]
 };
 
 // A jeweller is routinely two or three of these at once, so businessType holds
@@ -1419,6 +1423,15 @@ function showBulkClassifyModal(ids) {
     confirmClass: "primary",
     contentHtml: `
       <div class="bulk-classify">
+        <label class="wa-field">
+          <span>Event</span>
+          <select id="bulk-collectionId">
+            <option value="__keep" selected>Leave unchanged</option>
+            ${(state.overview?.collections || []).filter((collection) => collection.status !== "deleted").map((collection) => `<option value="${escapeAttr(collection.id)}">${escapeHtml(collection.exhibitionName || collection.name)}</option>`).join("")}
+          </select>
+          <small class="muted">Moves the selected contacts into another event; its type travels with them.</small>
+        </label>
+        ${select("leadSource", "Lead Source")}
         ${select("industry", "Industry")}
         ${select("customerStatus", "Customer Status")}
         <label class="wa-field">
@@ -1441,10 +1454,12 @@ function showBulkClassifyModal(ids) {
     onConfirm: () => {
       const status = document.querySelector("#bulkClassifyStatus");
       const payload = { ids };
-      for (const field of ["industry", "customerStatus"]) {
+      for (const field of ["industry", "customerStatus", "leadSource"]) {
         const value = document.querySelector(`#bulk-${field}`)?.value;
         if (value !== "__keep") payload[field] = value;
       }
+      const collectionId = document.querySelector("#bulk-collectionId")?.value;
+      if (collectionId && collectionId !== "__keep") payload.collectionId = collectionId;
       const types = [...(document.querySelector("#bulk-businessType")?.selectedOptions || [])].map((option) => option.value);
       if (types.length) payload.businessType = types;
       const rating = document.querySelector("#bulk-customerRating")?.value;
@@ -2168,6 +2183,11 @@ function uploadView() {
   const draftExhibitionName = state.draftExhibitionName || (needsFirstSheet ? (c.exhibitionName || state.organisation?.defaultExhibitionName || "") : "");
   const draftExhibitionDate = state.draftExhibitionDate || (needsFirstSheet ? (c.exhibitionDate || "") : "");
   const draftCollectionName = state.draftCollectionName || (needsFirstSheet ? (draftExhibitionName || "Exhibition Leads") : "");
+  // An event is no longer only an exhibition: its kind (Exhibition, Office
+  // Visit, a custom one, ...) and an optional end date. The datalist offers the
+  // predefined kinds while still accepting anything typed.
+  const draftEventType = state.draftEventType || "";
+  const draftEventEndDate = state.draftEventEndDate || "";
   const node = el(`
     <section class="panel upload-panel">
       ${!createNewSelected ? `<div class="destination-selector">
@@ -2187,9 +2207,13 @@ function uploadView() {
           ${needsFirstSheet ? "" : `<button type="button" class="secondary slim" id="cancelNewExhibition">Use current exhibition</button>`}
         </div>
         <div class="grid three new-exhibition-fields">
-          <label>Exhibition or event <input id="exhibitionName" value="${escapeAttr(draftExhibitionName)}" placeholder="GJEPC 2026" /></label>
+          <label>Event name <input id="exhibitionName" value="${escapeAttr(draftExhibitionName)}" placeholder="GJEPC 2026" /></label>
+          <label>Event type <input id="eventType" list="eventTypeOptions" value="${escapeAttr(draftEventType)}" placeholder="Exhibition" />
+            <datalist id="eventTypeOptions">${choicesFor("eventType").map((option) => `<option value="${escapeAttr(option)}"></option>`).join("")}</datalist>
+          </label>
           <label>Contact list name <input id="collectionName" value="${escapeAttr(draftCollectionName)}" placeholder="GJEPC 2026 Leads" /></label>
-          <label>Event date <span class="optional-label">Optional</span><input id="exhibitionDate" type="date" value="${escapeAttr(draftExhibitionDate)}" /></label>
+          <label>Start date <span class="optional-label">Optional</span><input id="exhibitionDate" type="date" value="${escapeAttr(draftExhibitionDate)}" /></label>
+          <label>End date <span class="optional-label">Optional</span><input id="eventEndDate" type="date" value="${escapeAttr(draftEventEndDate)}" /></label>
         </div>
         <div class="new-exhibition-actions">
           <button type="button" id="createExhibitionBtn">Create &amp; continue</button>
@@ -2345,6 +2369,8 @@ function uploadView() {
           name: collectionName,
           exhibitionName,
           exhibitionDate: node.querySelector("#exhibitionDate")?.value || "",
+          eventType: (node.querySelector("#eventType")?.value || "").trim(),
+          eventEndDate: node.querySelector("#eventEndDate")?.value || "",
           destinationType: "excel",
           destinationName: `${collectionName} contacts`
         }
@@ -2355,6 +2381,8 @@ function uploadView() {
       state.draftCollectionName = "";
       state.draftExhibitionName = "";
       state.draftExhibitionDate = "";
+      state.draftEventType = "";
+      state.draftEventEndDate = "";
       state.message = {
         text: `${exhibitionName} created. New cards will be saved to this exhibition.`,
         bad: false
@@ -2821,9 +2849,13 @@ function syncUploadDraft(node) {
   const collectionName = node.querySelector("#collectionName");
   const exhibitionName = node.querySelector("#exhibitionName");
   const exhibitionDate = node.querySelector("#exhibitionDate");
+  const eventType = node.querySelector("#eventType");
+  const eventEndDate = node.querySelector("#eventEndDate");
   if (collectionName) state.draftCollectionName = collectionName.value;
   if (exhibitionName) state.draftExhibitionName = exhibitionName.value;
   if (exhibitionDate) state.draftExhibitionDate = exhibitionDate.value;
+  if (eventType) state.draftEventType = eventType.value;
+  if (eventEndDate) state.draftEventEndDate = eventEndDate.value;
 }
 
 // ---- Card image editor: rotate, straighten and crop before upload ----
@@ -4341,7 +4373,7 @@ function blobToDataUrl(blob) {
 }
 
 function contactsView() {
-  const filters = state.contactFilters || { exhibition: "", assignee: "", city: "", state: "", messaged: "", industry: "", businessType: "", customerStatus: "", salutation: "", rating: "" };
+  const filters = state.contactFilters || { exhibition: "", assignee: "", city: "", state: "", messaged: "", industry: "", businessType: "", customerStatus: "", salutation: "", eventType: "", leadSource: "", rating: "" };
   const visibleContacts = state.contacts.filter((contact) => {
     if (filters.exhibition && (contact.exhibitionName || "") !== filters.exhibition) return false;
     if (filters.assignee === "__unassigned" && contact.assignedToId) return false;
@@ -4354,6 +4386,8 @@ function contactsView() {
     if (filters.businessType && !choiceList(contact.businessType).includes(filters.businessType)) return false;
     if (filters.customerStatus && (contact.customerStatus || "") !== filters.customerStatus) return false;
     if (filters.salutation && (contact.salutation || "") !== filters.salutation) return false;
+    if (filters.eventType && (contact.eventType || "") !== filters.eventType) return false;
+    if (filters.leadSource && (contact.leadSource || "") !== filters.leadSource) return false;
     // "__none" finds the contacts still waiting to be rated.
     if (filters.rating === "__none" && contact.customerRating) return false;
     if (filters.rating && filters.rating !== "__none" && String(contact.customerRating || "") !== filters.rating) return false;
@@ -4362,7 +4396,7 @@ function contactsView() {
   const exhibitionNames = [...new Set(state.contacts.map((contact) => contact.exhibitionName).filter(Boolean))].sort();
   const cityNames = [...new Set(state.contacts.map((contact) => contact.city).filter(Boolean))].sort();
   const stateNames = [...new Set(state.contacts.map((contact) => contact.state).filter(Boolean))].sort();
-  const filtersActive = Boolean(filters.exhibition || filters.assignee || filters.city || filters.state || filters.messaged || filters.industry || filters.businessType || filters.customerStatus || filters.salutation || filters.rating);
+  const filtersActive = Boolean(filters.exhibition || filters.assignee || filters.city || filters.state || filters.messaged || filters.industry || filters.businessType || filters.customerStatus || filters.salutation || filters.eventType || filters.leadSource || filters.rating);
   const selectedIds = visibleContacts.filter((contact) => state.selectedContactIds.has(contact.id)).map((contact) => contact.id);
   const allVisibleSelected = visibleContacts.length > 0 && selectedIds.length === visibleContacts.length;
   const activeCollectionId = state.overview.activeCollection?.id || state.overview.collections?.find((collection) => collection.status !== "deleted")?.id || "";
@@ -4595,7 +4629,9 @@ function contactsView() {
             ["industry", "Industry"],
             ["businessType", "Business type"],
             ["customerStatus", "Customer status"],
-            ["salutation", "Salutation"]
+            ["salutation", "Salutation"],
+            ["eventType", "Event type"],
+            ["leadSource", "Lead source"]
           ].map(([field, label]) => {
             const used = [...new Set(state.contacts.map((contact) => String(contact[field] || "").trim()).filter(Boolean))];
             const options = [...new Set([...choicesFor(field), ...used])].sort();
@@ -4817,7 +4853,7 @@ function contactsView() {
     render();
   });
   node.querySelector("#clearContactFilters")?.addEventListener("click", () => {
-    state.contactFilters = { exhibition: "", assignee: "", city: "", state: "", messaged: "", industry: "", businessType: "", customerStatus: "", salutation: "", rating: "" };
+    state.contactFilters = { exhibition: "", assignee: "", city: "", state: "", messaged: "", industry: "", businessType: "", customerStatus: "", salutation: "", eventType: "", leadSource: "", rating: "" };
     render();
   });
   tbody && tbody.querySelectorAll("[data-select-contact]").forEach((checkbox) => checkbox.addEventListener("change", () => {
