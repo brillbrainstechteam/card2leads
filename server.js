@@ -230,6 +230,7 @@ const EXPORT_COLUMNS = [
   "Salutation",
   "Industry",
   "Business Type",
+  "Business Specialisation",
   "Customer Status",
   "Customer Rating",
   "Exhibition Name",
@@ -285,33 +286,69 @@ const OPTIONAL_FIELDS = [
   "phoneCountry",
   "whatsappNumber",
   "contactDisplayName",
-  // Qualification fields. Each holds a plain string: either one of the offered
-  // choices below or whatever the user typed under "Other", so there is one
-  // value to store, export and search rather than a code plus an override.
+  // Qualification fields. Each holds either one of the offered choices below or
+  // whatever the user typed under "Other", so there is one value to store,
+  // export and search rather than a code plus an override. businessType is the
+  // exception: a jeweller is often two or three of these at once, so it holds a
+  // list.
   "salutation",
   "industry",
   "businessType",
+  "businessSpecialisation",
   "customerStatus",
   "customerRating"
 ];
 
-// Served to the clients in /api/overview so the web app and the Expo app offer
-// the same choices without a release to keep them in step. "Other" is not
-// listed: the UI offers it and stores the typed text in the same field.
-const CONTACT_CHOICES = Object.freeze({
+// The starting choices every workspace gets. A workspace can add to or replace
+// any of these from Settings; what the clients actually offer is
+// contactChoicesFor(organisation), served in /api/overview so the web app and
+// the Expo app stay in step without a release. "Other" is not listed: the UI
+// offers it and stores the typed text in the same field.
+//
+// industry answers what trade the business is in; businessType answers what it
+// does within that trade. These were the wrong way round until migrateContactClassification
+// corrected them, which is why that migration exists.
+const CONTACT_CHOICE_DEFAULTS = Object.freeze({
   salutation: ["Mr.", "Ms.", "Mrs.", "Miss"],
-  industry: [
+  industry: ["Jewellery Industry", "Other Industry"],
+  businessType: [
     "Jewellery Manufacturer",
-    "Jewellery Retailer",
     "Jewellery Wholesaler",
+    "Jewellery Retailer",
+    "Jewellery Tools & Equipment Supplier",
     "Karigar",
-    "Jewellery Tools & Machinery",
-    "Gems & Stones",
-    "Other Industry"
+    "Factory"
   ],
-  businessType: ["Retailer", "Wholesaler", "Manufacturer", "Distributor", "Trader", "Service Provider"],
-  customerStatus: ["Existing Customer", "New Customer", "Prospect"]
+  customerStatus: ["Existing Customer", "New Customer"]
 });
+
+const CONTACT_CHOICE_FIELDS = Object.keys(CONTACT_CHOICE_DEFAULTS);
+
+// Only businessType takes several values; the rest are one each.
+const MULTI_CHOICE_FIELDS = Object.freeze(["businessType"]);
+
+// A workspace's own list where it has set one, the default otherwise. Blanks and
+// duplicates are dropped here rather than at every call site, so a list edited
+// by hand in Settings cannot put an empty option in a dropdown.
+function contactChoicesFor(organisation) {
+  const custom = (organisation && organisation.contactChoices) || {};
+  const choices = {};
+  for (const field of CONTACT_CHOICE_FIELDS) {
+    const configured = Array.isArray(custom[field])
+      ? [...new Set(custom[field].map((value) => cleanText(value)).filter(Boolean))]
+      : null;
+    choices[field] = configured && configured.length ? configured : [...CONTACT_CHOICE_DEFAULTS[field]];
+  }
+  return choices;
+}
+
+// businessType reads and writes as a list whichever way it was stored: contacts
+// saved before it became multi-value still hold a single string, and the clients
+// may send either.
+function toChoiceList(value) {
+  const list = Array.isArray(value) ? value : String(value == null ? "" : value).split(";");
+  return [...new Set(list.map((item) => cleanText(item)).filter(Boolean))];
+}
 
 const MAX_CUSTOMER_RATING = 5;
 
@@ -613,7 +650,8 @@ async function ensureStorage() {
       const locationsChanged = normalizeContactLocations(dbCache);
       const extractionFallbacksChanged = repairStoredCardExtractionFallbacks(dbCache);
       const displayNamesChanged = repairStoredContactDisplayNames(dbCache);
-      if (retentionChanged || exhibitionAssignmentsChanged || locationsChanged || extractionFallbacksChanged || displayNamesChanged) await saveDb(dbCache);
+      const classificationChanged = migrateContactClassification(dbCache);
+      if (retentionChanged || exhibitionAssignmentsChanged || locationsChanged || extractionFallbacksChanged || displayNamesChanged || classificationChanged) await saveDb(dbCache);
       console.log("Storage: PostgreSQL");
       return;
     } catch (err) {
@@ -634,7 +672,8 @@ async function ensureStorage() {
   const locationsChanged = normalizeContactLocations(dbCache);
   const extractionFallbacksChanged = repairStoredCardExtractionFallbacks(dbCache);
   const displayNamesChanged = repairStoredContactDisplayNames(dbCache);
-  if (retentionChanged || exhibitionAssignmentsChanged || locationsChanged || extractionFallbacksChanged || displayNamesChanged) await saveDb(dbCache);
+  const classificationChanged = migrateContactClassification(dbCache);
+  if (retentionChanged || exhibitionAssignmentsChanged || locationsChanged || extractionFallbacksChanged || displayNamesChanged || classificationChanged) await saveDb(dbCache);
   console.log("Storage: local JSON fallback");
 }
 
@@ -2747,6 +2786,65 @@ function proposedSavedNameFor(card, collection) {
   }
 }
 
+// industry and businessType were the wrong way round: industry held the trade
+// role ("Jewellery Wholesaler", "Karigar") and businessType held a generic one
+// ("Retailer", "Trader"). Contacts saved before the correction still hold those
+// values, so move each one to the field it belongs in.
+//
+// Nothing is discarded. A role found in industry moves into businessType, and
+// the generic role already in businessType is kept alongside it - which is part
+// of why businessType became a list rather than a single value.
+const LEGACY_INDUSTRY_ROLES = Object.freeze({
+  "jewellery manufacturer": "Jewellery Manufacturer",
+  "jewellery retailer": "Jewellery Retailer",
+  "jewellery wholesaler": "Jewellery Wholesaler",
+  "jewellery tools & machinery": "Jewellery Tools & Equipment Supplier",
+  "karigar": "Karigar",
+  // No equivalent in the new list, so it survives as a value of its own rather
+  // than being forced into the nearest option or dropped.
+  "gems & stones": "Gems & Stones"
+});
+
+// Only applied to a contact whose old industry proved it was in the jewellery
+// trade. "Retailer" on an Other Industry card is a retailer of something else,
+// and renaming it "Jewellery Retailer" would invent a fact about that business.
+const LEGACY_GENERIC_ROLES = Object.freeze({
+  "manufacturer": "Jewellery Manufacturer",
+  "wholesaler": "Jewellery Wholesaler",
+  "retailer": "Jewellery Retailer"
+});
+
+function migrateContactClassification(db) {
+  let changed = false;
+  const key = (value) => cleanText(value).toLowerCase();
+  for (const contact of db.contacts || []) {
+    const previousIndustry = cleanText(contact.industry);
+    const previousTypes = toChoiceList(contact.businessType);
+
+    let industry = previousIndustry;
+    const roles = [];
+    const movedRole = LEGACY_INDUSTRY_ROLES[key(previousIndustry)];
+    // A role sitting in industry means this contact predates the correction,
+    // which is also what tells us the generic roles below are jewellery ones.
+    if (movedRole) {
+      roles.push(movedRole);
+      industry = "Jewellery Industry";
+    }
+    for (const role of previousTypes) {
+      roles.push((movedRole && LEGACY_GENERIC_ROLES[key(role)]) || role);
+    }
+    const businessType = [...new Set(roles)];
+
+    const sameTypes = businessType.length === previousTypes.length
+      && businessType.every((role, index) => role === previousTypes[index]);
+    if (industry === previousIndustry && sameTypes && Array.isArray(contact.businessType)) continue;
+    contact.industry = industry;
+    contact.businessType = businessType;
+    changed = true;
+  }
+  return changed;
+}
+
 function repairStoredContactDisplayNames(db) {
   let changed = false;
   // One format lookup per workspace rather than one per contact.
@@ -3152,8 +3250,8 @@ function extractionSystemPrompt() {
     // worse than a blank, because the user may not think to check a field that
     // already looks answered.
     "Set salutation as follows. If the card prints a title before the name, use exactly that title ('Mr.', 'Ms.', 'Mrs.' or 'Miss'). If the card prints no title and the name is unambiguously a man's name, use 'Mr.'. If the card prints no title and the name is unambiguously a woman's name, use 'Ms.' — never 'Mrs.' or 'Miss', because the card does not say whether she is married. If the name could belong to either a man or a woman, or you are not confident, leave salutation blank rather than guessing.",
-    "Set industry to exactly one of: 'Jewellery Manufacturer', 'Jewellery Retailer', 'Jewellery Wholesaler', 'Karigar', 'Jewellery Tools & Machinery', 'Gems & Stones', 'Other Industry'. Choose the one the card supports — for example a showroom is a Jewellery Retailer, 'Mfg.' or 'Manufacturers' is a Jewellery Manufacturer, and a card selling tools or machinery to jewellers is 'Jewellery Tools & Machinery'. Leave it blank when the card does not make the trade clear.",
-    "Set businessType to 'Retailer', 'Wholesaler' or 'Manufacturer' only when the card states it in those words or an obvious equivalent (for example 'Mfg.' or 'Manufacturers' means Manufacturer, 'Showroom' means Retailer). Leave it blank when the card does not say.",
+    "Set industry to the trade the business is in: 'Jewellery Industry' when the card is anything to do with jewellery, gems, gold, silver or the tools and services that trade uses, otherwise 'Other Industry'. Leave it blank when the card does not make the trade clear.",
+    "Set businessType to what the business does within that trade, as an array of zero or more of: 'Jewellery Manufacturer', 'Jewellery Wholesaler', 'Jewellery Retailer', 'Jewellery Tools & Equipment Supplier', 'Karigar', 'Factory'. A card may state several, so return every one it supports — for example a showroom is a Jewellery Retailer, 'Mfg.' or 'Manufacturers' is a Jewellery Manufacturer, and a card selling tools or machinery to jewellers is a Jewellery Tools & Equipment Supplier. Return an empty array when the card does not say.",
     // notes is deliberately absent from the JSON shape. Remarks is the user's
     // own field (and where a voice note lands); when the model was asked for it
     // without being told what it was for, it filled it with leftover card text
@@ -3194,7 +3292,7 @@ function extractionUserPrompt() {
   "cardScript": "",
   "salutation": "",
   "industry": "",
-  "businessType": "",
+  "businessType": [],
   "tags": "",
   "rawVisibleText": "",
   "confidence": 0,
@@ -3251,7 +3349,16 @@ function parseJsonContent(content) {
   return JSON.parse(trimmed || "{}");
 }
 
+// Looked up from the cache rather than readDb(), which deep-clones the whole
+// database - far too much work to find one workspace's dropdown list on every
+// card. Read-only, so there is nothing to copy for safety.
+function contactChoicesForCollection(collection) {
+  const organisations = (dbCache && dbCache.organisations) || [];
+  return contactChoicesFor(organisations.find((item) => item.id === (collection && collection.organisationId)));
+}
+
 function normalizeExtraction(raw, collection) {
+  const choices = contactChoicesForCollection(collection);
   const extraction = {
     name: cleanText(raw.name),
     mobileNumber: cleanText(raw.mobileNumber),
@@ -3283,11 +3390,13 @@ function normalizeExtraction(raw, collection) {
     cardLanguage: cleanText(raw.cardLanguage),
     cardScript: cleanText(raw.cardScript),
     whatsappNumber: cleanText(raw.whatsappNumber),
-    // Only kept when the model returned one of the offered choices, so a
-    // hallucinated value never lands in a dropdown field.
-    salutation: CONTACT_CHOICES.salutation.includes(cleanText(raw.salutation)) ? cleanText(raw.salutation) : "",
-    industry: CONTACT_CHOICES.industry.includes(cleanText(raw.industry)) ? cleanText(raw.industry) : "",
-    businessType: CONTACT_CHOICES.businessType.includes(cleanText(raw.businessType)) ? cleanText(raw.businessType) : "",
+    // Only kept when the model returned one of the workspace's own choices, so a
+    // hallucinated value never lands in a dropdown field. A value the user types
+    // under "Other" comes in through the save path instead, which does not
+    // restrict it - the guard here is on what the model is allowed to invent.
+    salutation: choices.salutation.includes(cleanText(raw.salutation)) ? cleanText(raw.salutation) : "",
+    industry: choices.industry.includes(cleanText(raw.industry)) ? cleanText(raw.industry) : "",
+    businessType: toChoiceList(raw.businessType).filter((value) => choices.businessType.includes(value)),
     exhibitionName: collection.exhibitionName || "",
     exhibitionDate: collection.exhibitionDate || "",
     interest: cleanText(raw.interest),
@@ -6051,7 +6160,7 @@ async function handleApi(req, res, pathname) {
         needsOnboarding: organisationNeedsOnboarding(db, user),
         // The dropdown choices, so the web app and the Expo app stay in step
         // without shipping a release to change a list.
-        contactChoices: CONTACT_CHOICES,
+        contactChoices: contactChoicesFor(organisation),
         maxCustomerRating: MAX_CUSTOMER_RATING,
         usage: await authoritativePlanUsage(organisation),
         stats: {
@@ -6956,6 +7065,39 @@ async function handleApi(req, res, pathname) {
       return send(res, 200, { savedNameFormat: organisation.savedNameFormat, relabelled });
     }
 
+    // The dropdown lists a workspace offers. Sent whole rather than as add/remove
+    // so the order the user arranged is what they get back; an omitted field
+    // keeps whatever it had, and an empty list restores the default rather than
+    // leaving a dropdown with nothing in it.
+    if (req.method === "PUT" && pathname === "/api/settings/contact-choices") {
+      const organisation = db.organisations.find((o) => o.id === user.organisationId);
+      if (!organisation) return error(res, 404, "Workspace not found.");
+      const body = await readJson(req);
+      const next = { ...(organisation.contactChoices || {}) };
+      const updated = [];
+      for (const field of CONTACT_CHOICE_FIELDS) {
+        if (body[field] === undefined) continue;
+        if (!Array.isArray(body[field])) return error(res, 400, `Send ${field} as a list of options.`);
+        const options = [...new Set(body[field].map((value) => cleanText(value)).filter(Boolean))];
+        if (options.some((value) => value.length > 80)) return error(res, 400, "Keep each option under 80 characters.");
+        if (options.length > 60) return error(res, 400, "Keep each list under 60 options.");
+        // An empty list means "go back to the defaults" rather than "offer
+        // nothing", which would leave the field unusable.
+        if (options.length) next[field] = options;
+        else delete next[field];
+        updated.push(field);
+      }
+      if (!updated.length) return error(res, 400, "Nothing to update.");
+      organisation.contactChoices = next;
+      organisation.updatedAt = now();
+      // Values already on contacts are left alone even when an option is
+      // removed: the option stops being offered, but a contact that was
+      // classified last month keeps what it was classified as.
+      audit(db, user, "settings.contact_choices_updated", "organisation", organisation.id, { fields: updated });
+      await saveDb(db);
+      return send(res, 200, { contactChoices: contactChoicesFor(organisation) });
+    }
+
     if (req.method === "PUT" && pathname === "/api/settings/whatsapp") {
       const organisation = db.organisations.find((o) => o.id === user.organisationId);
       if (!organisation) return error(res, 404, "Workspace not found.");
@@ -7679,6 +7821,10 @@ function cleanContactFields(fields) {
     mobileNumber: normalizedFields.mobileNumber
   };
   for (const field of OPTIONAL_FIELDS) cleaned[field] = String(normalizedFields[field] || "").trim();
+  // businessType holds a list, and the loop above would have flattened it into
+  // "a,b". Accepts a list or a legacy single string either way, so a client that
+  // has not been updated yet still saves correctly.
+  for (const field of MULTI_CHOICE_FIELDS) cleaned[field] = toChoiceList(normalizedFields[field]);
   // Only set when the client actually sent one, so an ordinary save never
   // writes an empty override and pins the contact to a blank name.
   const savedNameOverride = String(fields?.savedName || "").trim();
@@ -8017,7 +8163,10 @@ function exportRow(contact, extraPeopleCount = 0) {
     contact.cardLanguage,
     contact.salutation,
     contact.industry,
-    contact.businessType,
+    // Semicolons, because a comma inside a CSV cell is noise a reader has to
+    // decode and a jeweller is routinely two of these at once.
+    toChoiceList(contact.businessType).join("; "),
+    contact.businessSpecialisation,
     contact.customerStatus,
     contact.customerRating,
     contact.exhibitionName,

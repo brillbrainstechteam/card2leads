@@ -116,8 +116,9 @@ const fieldLabels = {
   country: "Country",
   exhibitionName: "Exhibition Name",
   exhibitionDate: "Exhibition Date",
-  industry: "Industry / Profession",
+  industry: "Industry",
   businessType: "Business Type",
+  businessSpecialisation: "Business Specialisation",
   customerStatus: "Customer Status",
   customerRating: "Customer Rating",
   notes: "Remarks",
@@ -130,18 +131,33 @@ const fieldLabels = {
 const CHOICE_FIELD_FALLBACKS = {
   salutation: ["Mr.", "Ms.", "Mrs.", "Miss"],
   industry: ["Jewellery Industry", "Other Industry"],
-  businessType: ["Retailer", "Wholesaler", "Manufacturer"],
+  businessType: [
+    "Jewellery Manufacturer",
+    "Jewellery Wholesaler",
+    "Jewellery Retailer",
+    "Jewellery Tools & Equipment Supplier",
+    "Karigar",
+    "Factory"
+  ],
   customerStatus: ["Existing Customer", "New Customer"]
 };
+
+// A jeweller is routinely two or three of these at once, so businessType holds
+// a list. Stored and submitted as one semicolon-joined string, which keeps the
+// existing form plumbing working unchanged.
+const MULTI_CHOICE_FIELDS = ["businessType"];
+
+function choiceList(value) {
+  const list = Array.isArray(value) ? value : String(value == null ? "" : value).split(";");
+  return [...new Set(list.map((item) => String(item).trim()).filter(Boolean))];
+}
 
 function choicesFor(field) {
   const served = state.overview?.contactChoices?.[field];
   const base = Array.isArray(served) && served.length ? served : (CHOICE_FIELD_FALLBACKS[field] || []);
   // Anything a user already typed under "Other" is offered back, so a custom
   // value only has to be typed once and stays consistent across contacts.
-  const used = state.contacts
-    .map((contact) => String(contact?.[field] || "").trim())
-    .filter(Boolean);
+  const used = state.contacts.flatMap((contact) => choiceList(contact?.[field]));
   return [...new Set([...base, ...used])];
 }
 
@@ -3509,6 +3525,20 @@ function inputField(field, value, multiline = false, confidence = undefined) {
         ${Array.from({ length: max }, (_, i) => i + 1).map((n) => `<button type="button" class="star ${current >= n ? "on" : ""}" data-star="${n}" aria-label="${n} star${n === 1 ? "" : "s"}" aria-pressed="${current >= n}">&#9733;</button>`).join("")}
         <button type="button" class="star-clear ${current ? "" : "hidden"}" data-star="0" aria-label="Clear rating">Clear</button>
       </span>`;
+  } else if (MULTI_CHOICE_FIELDS.includes(field)) {
+    // Tick boxes rather than a multi-select: on a phone a native multi-select
+    // needs a long-press nobody discovers, and the chosen values are not
+    // visible without opening it. The hidden input is what the form submits,
+    // exactly as the star rating does, so nothing else has to change.
+    const options = choicesFor(field);
+    const picked = choiceList(value);
+    input = `<span class="choice-multi" data-multi-field="${field}">
+        <input type="hidden" name="${field}" value="${escapeAttr(picked.join("; "))}" />
+        <span class="choice-multi-options">
+          ${options.map((option) => `<label class="choice-chip${picked.includes(option) ? " on" : ""}"><input type="checkbox" data-multi-option value="${escapeAttr(option)}"${picked.includes(option) ? " checked" : ""} /><span>${escapeHtml(option)}</span></label>`).join("")}
+        </span>
+        <input class="choice-multi-other" data-multi-other placeholder="Add another and press Enter" />
+      </span>`;
   } else if (CHOICE_FIELD_FALLBACKS[field]) {
     const options = choicesFor(field);
     const current = String(value || "");
@@ -3556,6 +3586,52 @@ document.addEventListener("change", (event) => {
     other.classList.add("hidden");
     other.value = select.value;
   }
+});
+
+// Ticking a box, or typing a value that is not offered, rewrites the hidden
+// input the form actually submits. Delegated at module level so it works in the
+// review card and the edit-contact modal alike.
+function syncMultiChoice(wrap) {
+  const hidden = wrap.querySelector('input[type="hidden"]');
+  if (!hidden) return;
+  const picked = [...wrap.querySelectorAll("[data-multi-option]")]
+    .filter((box) => box.checked)
+    .map((box) => box.value);
+  hidden.value = picked.join("; ");
+  wrap.querySelectorAll(".choice-chip").forEach((chip) => {
+    chip.classList.toggle("on", Boolean(chip.querySelector("[data-multi-option]")?.checked));
+  });
+}
+
+document.addEventListener("change", (event) => {
+  const box = event.target.closest?.("[data-multi-option]");
+  const wrap = box?.closest(".choice-multi");
+  if (wrap) syncMultiChoice(wrap);
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  const other = event.target.closest?.("[data-multi-other]");
+  const wrap = other?.closest(".choice-multi");
+  if (!wrap) return;
+  // Enter inside a form would otherwise submit it, which is not what someone
+  // adding a value to a list means by it.
+  event.preventDefault();
+  const typed = other.value.trim();
+  if (!typed) return;
+  const existing = [...wrap.querySelectorAll("[data-multi-option]")];
+  const match = existing.find((box) => box.value.toLowerCase() === typed.toLowerCase());
+  if (match) match.checked = true;
+  else {
+    const label = document.createElement("label");
+    label.className = "choice-chip on";
+    label.innerHTML = `<input type="checkbox" data-multi-option checked /><span></span>`;
+    label.querySelector("[data-multi-option]").value = typed;
+    label.querySelector("span").textContent = typed;
+    wrap.querySelector(".choice-multi-options").appendChild(label);
+  }
+  other.value = "";
+  syncMultiChoice(wrap);
 });
 
 document.addEventListener("click", (event) => {
@@ -4146,7 +4222,7 @@ function contactsView() {
     if (filters.messaged === "sent" && !contact.messageSentAt) return false;
     if (filters.messaged === "not-sent" && contact.messageSentAt) return false;
     if (filters.industry && (contact.industry || "") !== filters.industry) return false;
-    if (filters.businessType && (contact.businessType || "") !== filters.businessType) return false;
+    if (filters.businessType && !choiceList(contact.businessType).includes(filters.businessType)) return false;
     if (filters.customerStatus && (contact.customerStatus || "") !== filters.customerStatus) return false;
     if (filters.salutation && (contact.salutation || "") !== filters.salutation) return false;
     // "__none" finds the contacts still waiting to be rated.
@@ -4532,7 +4608,7 @@ function contactsView() {
       ${cell(contact.cardLanguage)}
       ${cell(contact.salutation)}
       ${cell(contact.industry)}
-      ${cell(contact.businessType)}
+      ${cell(choiceList(contact.businessType).join("; "))}
       ${cell(contact.customerStatus)}
       <td class="cell-text" title="${escapeAttr(contact.customerRating ? `${contact.customerRating} of 5` : "")}">${contact.customerRating ? `<span class="rating-chip"><b>${escapeHtml(String(contact.customerRating))}</b>${"★".repeat(Number(contact.customerRating))}</span>` : ""}</td>
       ${cell(contact.tags)}

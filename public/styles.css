@@ -8808,3 +8808,12 @@ strong {
     height: 95px;
   }
 }
+
+/* Business type holds several values, so it is a row of tick boxes rather than
+   a dropdown: what is chosen stays readable without opening anything. */
+.choice-multi { display: flex; flex-direction: column; gap: 8px; }
+.choice-multi-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.choice-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border: 1px solid var(--line); border-radius: 999px; font-size: 12.5px; line-height: 1.5; cursor: pointer; background: var(--panel); color: var(--ink); white-space: nowrap; }
+.choice-chip input { margin: 0; }
+.choice-chip.on { border-color: var(--purple); background: var(--purple-soft); color: var(--purple-strong); font-weight: 600; }
+.choice-multi-other { font-size: 12.5px; }
