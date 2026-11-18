@@ -2214,11 +2214,11 @@ function uploadView() {
             ${collections.filter((collection) => collection.status !== "deleted").map((collection) => `<option value="${escapeAttr(collection.id)}" ${collection.id === selectedExistingId ? "selected" : ""}>${escapeHtml(collection.exhibitionName || collection.name)}</option>`).join("")}
           </select>
         </label>
-        <button type="button" class="secondary slim" id="startNewExhibition">+ New exhibition</button>
+        <button type="button" class="secondary slim" id="startNewExhibition">+ Add New Event</button>
       </div>` : `<div id="uploadSettings" class="new-exhibition-settings">
         <div class="new-exhibition-heading">
           <div>
-            <span class="destination-kicker">${needsFirstSheet ? "Save these cards to" : "New exhibition"}</span>
+            <span class="destination-kicker">${needsFirstSheet ? "Save these cards to" : "Add New Event"}</span>
             <h3>${needsFirstSheet ? "Name your first list" : "Create a separate contact list"}</h3>
           </div>
           ${needsFirstSheet ? "" : `<button type="button" class="secondary slim" id="cancelNewExhibition">Use current exhibition</button>`}
@@ -5683,7 +5683,7 @@ function collectionView() {
             <h2>Exhibition contact lists</h2>
             <p class="muted">Download an Excel/CSV file, or keep that exhibition synced to its own Google Sheet.</p>
           </div>
-          <button type="button" class="secondary" id="goToNewExhibition">New exhibition</button>
+          <button type="button" class="secondary" id="goToNewExhibition">Add New Event</button>
         </div>
         <div class="table-wrap">
           <table class="sheets-table">
