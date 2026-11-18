@@ -221,6 +221,7 @@ const EXPORT_COLUMNS = [
   "Website",
   "Address",
   "Address (Original Script)",
+  "Additional Addresses",
   "City",
   "State",
   "State Code",
@@ -334,7 +335,11 @@ const CONTACT_CHOICE_DEFAULTS = Object.freeze({
   // rest. Event Type is picked when an event is created; Lead Source is set per
   // contact. They share one option list on purpose.
   eventType: ["Exhibition", "Marketing", "Field Marketing", "Office Visit", "Customer Visit", "Magazine", "Advertisement"],
-  leadSource: ["Exhibition", "Marketing", "Field Marketing", "Office Visit", "Customer Visit", "Magazine", "Advertisement"]
+  leadSource: ["Exhibition", "Marketing", "Field Marketing", "Office Visit", "Customer Visit", "Magazine", "Advertisement"],
+  // Classifies each of a contact's additional addresses (a business with
+  // several showrooms / branches). Served to the clients and manageable from
+  // Settings like the rest; "Other" is typed in.
+  addressType: ["Head Office", "Branch Office", "Showroom", "Factory", "Registered Office"]
 });
 
 const CONTACT_CHOICE_FIELDS = Object.keys(CONTACT_CHOICE_DEFAULTS);
@@ -3297,6 +3302,7 @@ function extractionUserPrompt() {
   "website": "",
   "address": "",
   "addressNative": "",
+  "additionalAddresses": [],
   "city": "",
   "cityNative": "",
   "state": "",
@@ -3348,6 +3354,7 @@ Rules:
 - Put landline/office numbers in officeNumber.
 - If an office number contains a slash-separated alternate number or extension, preserve both in officeNumber separated by " / ".
 - Only put values containing "@" in emailAddress or secondaryEmail. Put domains and URLs without "@" in website, not in email fields.
+- Put the main/primary address in address. If the card prints more than one address (for example a head office and a showroom, or a factory), list each FURTHER address in additionalAddresses as { "type": "", "line": "" }, where type is its printed label if any (Head Office, Branch Office, Showroom, Factory, Registered Office) and line is the full address text. Leave additionalAddresses empty when only one address is printed; never invent an address.
 - confidence must be an integer from 0 to 100.
 - fieldConfidence must contain an integer 0 to 100 for every extracted field.
 - Use fieldConfidence below 70 when the text is partially cut, blurred, rotated, handwritten, or inferred from context.
@@ -3390,6 +3397,9 @@ function normalizeExtraction(raw, collection) {
     website: cleanText(raw.website),
     linkedInUrl: cleanText(raw.linkedInUrl),
     address: cleanText(raw.address),
+    // Any further addresses printed on the card (a second showroom, a factory).
+    // The single `address` above stays the primary one; these are additive.
+    addresses: sanitizeAddresses(raw.additionalAddresses || raw.addresses),
     city: toTitleCase(raw.city),
     state: toTitleCase(raw.state),
     postalCode: cleanText(raw.postalCode),
@@ -7892,6 +7902,32 @@ function validateContact(fields) {
   return { ok: true, reasons };
 }
 
+// A contact can carry several addresses - head office, a showroom, a factory.
+// Each is { type, line, primary }; blank lines are dropped, at most one is
+// primary, and the first is treated as primary when none was marked. Accepts a
+// few key spellings so the web form, the app and the extractor can all feed it.
+function sanitizeAddresses(list) {
+  let primaryTaken = false;
+  const cleaned = (Array.isArray(list) ? list : [])
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        const line = cleanText(item);
+        return line ? { type: "", line, primary: false } : null;
+      }
+      const line = cleanText(item.line ?? item.address ?? item.value ?? item.formattedValue);
+      if (!line) return null;
+      const type = cleanText(item.type ?? item.label ?? item.addressType ?? item.kind);
+      let primary = Boolean(item.primary ?? item.isPrimary);
+      if (primary && primaryTaken) primary = false;
+      if (primary) primaryTaken = true;
+      return { type, line, primary };
+    })
+    .filter(Boolean)
+    .slice(0, 20);
+  if (cleaned.length && !primaryTaken) cleaned[0].primary = true;
+  return cleaned;
+}
+
 function cleanContactFields(fields) {
   const normalizedFields = normalizePhoneFields(fields);
   const cleaned = {
@@ -7903,6 +7939,11 @@ function cleanContactFields(fields) {
   // "a,b". Accepts a list or a legacy single string either way, so a client that
   // has not been updated yet still saves correctly.
   for (const field of MULTI_CHOICE_FIELDS) cleaned[field] = toChoiceList(normalizedFields[field]);
+  // Additional addresses (a business with several showrooms or branches). Only
+  // set when the client actually sends the list, so an ordinary save from a
+  // client that does not know the field never clears it, and existing contacts
+  // that never had one keep it absent. The single `address` field is untouched.
+  if (Array.isArray(normalizedFields.addresses)) cleaned.addresses = sanitizeAddresses(normalizedFields.addresses);
   // Only set when the client actually sent one, so an ordinary save never
   // writes an empty override and pins the contact to a blank name.
   const savedNameOverride = String(fields?.savedName || "").trim();
@@ -8166,7 +8207,10 @@ function saveContactRecord(db, user, card, fields, options = {}) {
     // prefers an explicit value from the review screen, then the event's own
     // kind, so a card saved under an "Office Visit" event reads as that source.
     eventType: collection.eventType || cleaned.eventType || "",
-    leadSource: cleaned.leadSource || collection.leadSource || collection.eventType || ""
+    leadSource: cleaned.leadSource || collection.leadSource || collection.eventType || "",
+    // Additional addresses: the review screen's edits win; otherwise any extra
+    // addresses the scan found on the card are kept.
+    addresses: (Array.isArray(cleaned.addresses) && cleaned.addresses.length) ? cleaned.addresses : (card.extraction?.addresses || [])
   };
   // The exhibition is only known here, so the saved-contact name has to be
   // rebuilt now; deriving it earlier left the exhibition out of the name.
@@ -8238,6 +8282,11 @@ function exportRow(contact, extraPeopleCount = 0) {
     contact.website,
     contact.address,
     contact.addressNative,
+    // Each further address as "Type: line (primary)", separated by " | ".
+    (Array.isArray(contact.addresses) ? contact.addresses : [])
+      .map((entry) => `${[entry.type, entry.line].filter(Boolean).join(": ")}${entry.primary ? " (primary)" : ""}`)
+      .filter(Boolean)
+      .join(" | "),
     contact.city,
     contact.state,
     stateCode,
@@ -8747,15 +8796,21 @@ function contactToGooglePerson(contact) {
       title: String(contact.designation || ""),
       department: String(contact.department || "")
     }],
-    addresses: address ? [{
-      formattedValue: address,
-      streetAddress: String(contact.address || ""),
-      city: String(contact.city || ""),
-      region: String(contact.state || ""),
-      postalCode: String(contact.postalCode || ""),
-      country: String(contact.country || ""),
-      type: "work"
-    }] : [],
+    addresses: [
+      ...(address ? [{
+        formattedValue: address,
+        streetAddress: String(contact.address || ""),
+        city: String(contact.city || ""),
+        region: String(contact.state || ""),
+        postalCode: String(contact.postalCode || ""),
+        country: String(contact.country || ""),
+        type: "work"
+      }] : []),
+      // Each further address a contact carries (showroom, factory, branch).
+      ...(Array.isArray(contact.addresses) ? contact.addresses : [])
+        .filter((entry) => entry && entry.line)
+        .map((entry) => ({ formattedValue: String(entry.line), type: entry.type ? String(entry.type) : "other" }))
+    ],
     urls,
     biographies: remarks ? [{ value: remarks, contentType: "TEXT_PLAIN" }] : [],
     userDefined: [

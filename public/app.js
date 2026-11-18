@@ -6,7 +6,7 @@ const state = {
   cards: [],
   contacts: [],
   teamMembers: [],
-  contactFilters: { exhibition: "", assignee: "", city: "", state: "", messaged: "", industry: "", businessType: "", customerStatus: "", salutation: "", eventType: "", leadSource: "", rating: "" },
+  contactFilters: { exhibition: "", assignee: "", city: "", state: "", messaged: "", industry: "", businessType: "", customerStatus: "", salutation: "", eventType: "", leadSource: "", country: "", businessSpecialisation: "", dateAdded: "", eventDate: "", rating: "" },
   contactSearchQuery: "",
   // "compact" shows the everyday columns; "extended" adds every extracted field.
   contactsTableView: localStorage.getItem("card2leads.contactsTableView") === "extended" ? "extended" : "compact",
@@ -167,6 +167,18 @@ function choicesFor(field) {
 
 function maxCustomerRating() {
   return Number(state.overview?.maxCustomerRating) || 5;
+}
+
+// Scan-date (date-added) presets, matching the app so a filter means the same
+// thing on both. "today" is from local midnight; the others are rolling windows.
+const DATE_ADDED_PRESETS = [{ value: "today", label: "Today" }, { value: "7d", label: "Last 7 days" }, { value: "30d", label: "Last 30 days" }];
+function withinAddedPreset(createdAt, preset) {
+  if (!preset) return true;
+  const time = new Date(createdAt).getTime();
+  if (Number.isNaN(time)) return false;
+  if (preset === "today") { const start = new Date(); start.setHours(0, 0, 0, 0); return time >= start.getTime(); }
+  const days = preset === "7d" ? 7 : 30;
+  return time >= Date.now() - days * 24 * 60 * 60 * 1000;
 }
 
 const contactFields = Object.keys(fieldLabels);
@@ -1395,7 +1407,10 @@ const CHOICE_SETTING_LABELS = {
   industry: "Industry",
   businessType: "Business Type",
   customerStatus: "Customer Status",
-  salutation: "Salutation"
+  salutation: "Salutation",
+  eventType: "Event Type",
+  leadSource: "Lead Source",
+  addressType: "Address Type"
 };
 
 // Setting the same qualification across a stand's worth of cards. Every field
@@ -4373,7 +4388,7 @@ function blobToDataUrl(blob) {
 }
 
 function contactsView() {
-  const filters = state.contactFilters || { exhibition: "", assignee: "", city: "", state: "", messaged: "", industry: "", businessType: "", customerStatus: "", salutation: "", eventType: "", leadSource: "", rating: "" };
+  const filters = state.contactFilters || { exhibition: "", assignee: "", city: "", state: "", messaged: "", industry: "", businessType: "", customerStatus: "", salutation: "", eventType: "", leadSource: "", country: "", businessSpecialisation: "", dateAdded: "", eventDate: "", rating: "" };
   const visibleContacts = state.contacts.filter((contact) => {
     if (filters.exhibition && (contact.exhibitionName || "") !== filters.exhibition) return false;
     if (filters.assignee === "__unassigned" && contact.assignedToId) return false;
@@ -4388,6 +4403,10 @@ function contactsView() {
     if (filters.salutation && (contact.salutation || "") !== filters.salutation) return false;
     if (filters.eventType && (contact.eventType || "") !== filters.eventType) return false;
     if (filters.leadSource && (contact.leadSource || "") !== filters.leadSource) return false;
+    if (filters.country && (contact.country || "") !== filters.country) return false;
+    if (filters.businessSpecialisation && (contact.businessSpecialisation || "") !== filters.businessSpecialisation) return false;
+    if (filters.dateAdded && !withinAddedPreset(contact.createdAt, filters.dateAdded)) return false;
+    if (filters.eventDate && String(contact.exhibitionDate || "").slice(0, 10) !== filters.eventDate) return false;
     // "__none" finds the contacts still waiting to be rated.
     if (filters.rating === "__none" && contact.customerRating) return false;
     if (filters.rating && filters.rating !== "__none" && String(contact.customerRating || "") !== filters.rating) return false;
@@ -4396,7 +4415,9 @@ function contactsView() {
   const exhibitionNames = [...new Set(state.contacts.map((contact) => contact.exhibitionName).filter(Boolean))].sort();
   const cityNames = [...new Set(state.contacts.map((contact) => contact.city).filter(Boolean))].sort();
   const stateNames = [...new Set(state.contacts.map((contact) => contact.state).filter(Boolean))].sort();
-  const filtersActive = Boolean(filters.exhibition || filters.assignee || filters.city || filters.state || filters.messaged || filters.industry || filters.businessType || filters.customerStatus || filters.salutation || filters.eventType || filters.leadSource || filters.rating);
+  const countryNames = [...new Set(state.contacts.map((contact) => contact.country).filter(Boolean))].sort();
+  const eventDates = [...new Set(state.contacts.map((contact) => String(contact.exhibitionDate || "").slice(0, 10)).filter(Boolean))].sort().reverse();
+  const filtersActive = Boolean(filters.exhibition || filters.assignee || filters.city || filters.state || filters.country || filters.messaged || filters.industry || filters.businessType || filters.businessSpecialisation || filters.customerStatus || filters.salutation || filters.eventType || filters.leadSource || filters.dateAdded || filters.eventDate || filters.rating);
   const selectedIds = visibleContacts.filter((contact) => state.selectedContactIds.has(contact.id)).map((contact) => contact.id);
   const allVisibleSelected = visibleContacts.length > 0 && selectedIds.length === visibleContacts.length;
   const activeCollectionId = state.overview.activeCollection?.id || state.overview.collections?.find((collection) => collection.status !== "deleted")?.id || "";
@@ -4617,6 +4638,27 @@ function contactsView() {
               ${stateNames.map((name) => `<option value="${escapeAttr(name)}"${filters.state === name ? " selected" : ""}>${escapeHtml(name)}</option>`).join("")}
             </select>
           </label>
+          ${countryNames.length ? `<label class="filter-field">
+            <span>Country</span>
+            <select data-contact-filter="country">
+              <option value="">All countries</option>
+              ${countryNames.map((name) => `<option value="${escapeAttr(name)}"${filters.country === name ? " selected" : ""}>${escapeHtml(name)}</option>`).join("")}
+            </select>
+          </label>` : ""}
+          <label class="filter-field">
+            <span>Date added</span>
+            <select data-contact-filter="dateAdded">
+              <option value="">Any time</option>
+              ${DATE_ADDED_PRESETS.map((preset) => `<option value="${preset.value}"${filters.dateAdded === preset.value ? " selected" : ""}>${escapeHtml(preset.label)}</option>`).join("")}
+            </select>
+          </label>
+          ${eventDates.length ? `<label class="filter-field">
+            <span>Event date</span>
+            <select data-contact-filter="eventDate">
+              <option value="">All event dates</option>
+              ${eventDates.map((date) => `<option value="${escapeAttr(date)}"${filters.eventDate === date ? " selected" : ""}>${escapeHtml(date)}</option>`).join("")}
+            </select>
+          </label>` : ""}
           <label class="filter-field">
             <span>WhatsApp</span>
             <select id="filterMessaged">
@@ -4628,6 +4670,7 @@ function contactsView() {
           ${[
             ["industry", "Industry"],
             ["businessType", "Business type"],
+            ["businessSpecialisation", "Business specialisation"],
             ["customerStatus", "Customer status"],
             ["salutation", "Salutation"],
             ["eventType", "Event type"],
@@ -4853,7 +4896,7 @@ function contactsView() {
     render();
   });
   node.querySelector("#clearContactFilters")?.addEventListener("click", () => {
-    state.contactFilters = { exhibition: "", assignee: "", city: "", state: "", messaged: "", industry: "", businessType: "", customerStatus: "", salutation: "", eventType: "", leadSource: "", rating: "" };
+    state.contactFilters = { exhibition: "", assignee: "", city: "", state: "", messaged: "", industry: "", businessType: "", customerStatus: "", salutation: "", eventType: "", leadSource: "", country: "", businessSpecialisation: "", dateAdded: "", eventDate: "", rating: "" };
     render();
   });
   tbody && tbody.querySelectorAll("[data-select-contact]").forEach((checkbox) => checkbox.addEventListener("change", () => {
@@ -5372,6 +5415,72 @@ function wireCardPhotos(node, contact) {
   });
 }
 
+// A contact can carry several addresses - head office, a showroom, a factory.
+// The rows are serialised into a hidden input as JSON so the existing FormData
+// save keeps working; the single Address field above stays the primary one.
+function addressRowHtml(entry, types) {
+  const type = String(entry.type || "");
+  const isOther = Boolean(type) && !types.includes(type);
+  return `<div class="address-row" data-address-row>
+      <select data-address-type>
+        <option value="">Type…</option>
+        ${types.map((option) => `<option value="${escapeAttr(option)}"${option === type ? " selected" : ""}>${escapeHtml(option)}</option>`).join("")}
+        <option value="__other"${isOther ? " selected" : ""}>Other…</option>
+      </select>
+      <input data-address-type-other class="address-type-other ${isOther ? "" : "hidden"}" placeholder="Type" value="${escapeAttr(isOther ? type : "")}" />
+      <textarea data-address-line rows="2" placeholder="Full address">${escapeHtml(entry.line || "")}</textarea>
+      <label class="address-primary"><input type="radio" name="addressPrimary" data-address-primary${entry.primary ? " checked" : ""} /> Primary</label>
+      <button type="button" class="link-button" data-address-remove>Remove</button>
+    </div>`;
+}
+function addressesEditorHtml(contact) {
+  const addresses = Array.isArray(contact.addresses) ? contact.addresses : [];
+  const types = choicesFor("addressType");
+  return `
+    <div class="addresses-editor" data-addresses-editor>
+      <div class="addresses-head"><span>Additional addresses</span><small>Head office, showrooms, a factory — all under this contact. The Address field above stays the main one.</small></div>
+      <input type="hidden" name="addresses" data-addresses-json value="${escapeAttr(JSON.stringify(addresses))}" />
+      <div data-addresses-list>${addresses.map((entry) => addressRowHtml(entry, types)).join("")}</div>
+      <button type="button" class="secondary slim" data-address-add>+ Add address</button>
+      <template data-address-template>${addressRowHtml({ type: "", line: "", primary: false }, types)}</template>
+    </div>`;
+}
+function wireAddressesEditor(node) {
+  const root = node.querySelector("[data-addresses-editor]");
+  if (!root) return;
+  const json = root.querySelector("[data-addresses-json]");
+  const list = root.querySelector("[data-addresses-list]");
+  const template = root.querySelector("[data-address-template]");
+  const serialise = () => {
+    const rows = [...list.querySelectorAll("[data-address-row]")].map((row) => {
+      const typeSelect = row.querySelector("[data-address-type]");
+      const typeOther = row.querySelector("[data-address-type-other]");
+      const type = typeSelect.value === "__other" ? String(typeOther.value || "").trim() : typeSelect.value;
+      const line = String(row.querySelector("[data-address-line]").value || "").trim();
+      const primary = row.querySelector("[data-address-primary]").checked;
+      return { type, line, primary };
+    }).filter((entry) => entry.line);
+    if (!rows.some((entry) => entry.primary) && rows.length) rows[0].primary = true;
+    json.value = JSON.stringify(rows);
+  };
+  root.addEventListener("input", serialise);
+  root.addEventListener("change", (event) => {
+    if (event.target.matches("[data-address-type]")) {
+      const other = event.target.closest("[data-address-row]").querySelector("[data-address-type-other]");
+      other.classList.toggle("hidden", event.target.value !== "__other");
+    }
+    serialise();
+  });
+  root.querySelector("[data-address-add]").addEventListener("click", () => {
+    list.insertAdjacentHTML("beforeend", template.innerHTML);
+    serialise();
+  });
+  list.addEventListener("click", (event) => {
+    if (event.target.matches("[data-address-remove]")) { event.target.closest("[data-address-row]").remove(); serialise(); }
+  });
+  serialise();
+}
+
 function showEditContactModal(contact) {
   const formHtml = `
     ${cardPhotoStrip(contact)}
@@ -5379,6 +5488,7 @@ function showEditContactModal(contact) {
       <div class="form-grid">
         ${contactFields.map((field) => inputField(field, contact[field] || "", field === "notes" || field === "address")).join("")}
       </div>
+      ${addressesEditorHtml(contact)}
     </form>
   `;
   state.modal = {
@@ -5393,6 +5503,7 @@ function showEditContactModal(contact) {
     onRender: (node) => {
       const form = node.querySelector("#editContactForm");
       wireCardPhotos(node, contact);
+      wireAddressesEditor(node);
       form.querySelector("input, textarea, select")?.focus();
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -5416,6 +5527,9 @@ function showEditContactModal(contact) {
 async function updateContact(contactId, form) {
   try {
     const fields = Object.fromEntries(new FormData(form).entries());
+    // addresses rides along as a JSON string from the hidden input; the server
+    // wants the array. A malformed value is simply dropped rather than saved.
+    if (typeof fields.addresses === "string") { try { fields.addresses = JSON.parse(fields.addresses); } catch { delete fields.addresses; } }
     await api(`/api/contacts/${contactId}`, { method: "PATCH", body: { fields } });
     closeModal(false);
     await refreshAll();

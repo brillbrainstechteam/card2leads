@@ -8837,3 +8837,14 @@ strong {
 .bulk-classify { display: grid; gap: 14px; }
 .bulk-classify select[multiple] { min-height: 132px; padding: 6px; }
 .bulk-classify small { display: block; margin-top: 4px; font-size: 11.5px; line-height: 1.45; }
+
+/* Additional addresses editor on the contact dialog. */
+.addresses-editor { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border, #e6e3ef); display: grid; gap: 10px; }
+.addresses-head { display: grid; gap: 2px; }
+.addresses-head span { font-weight: 700; font-size: 14px; }
+.addresses-head small { color: var(--muted, #6b6b78); font-size: 11.5px; line-height: 1.45; }
+.address-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; padding: 10px; border: 1px solid var(--border, #e6e3ef); border-radius: 10px; }
+.address-row select, .address-row .address-type-other { flex: 0 0 auto; min-width: 140px; }
+.address-row textarea { flex: 1 1 220px; min-width: 200px; }
+.address-row .address-primary { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; white-space: nowrap; }
+.address-row .address-primary input { width: auto; }
