@@ -118,6 +118,7 @@ const fieldLabels = {
   exhibitionDate: "Exhibition Date",
   eventType: "Event Type",
   leadSource: "Lead Source",
+  scanDate: "Scan Date",
   industry: "Industry",
   businessType: "Business Type",
   businessSpecialisation: "Business Specialisation",
@@ -2203,6 +2204,7 @@ function uploadView() {
   // predefined kinds while still accepting anything typed.
   const draftEventType = state.draftEventType || "";
   const draftEventEndDate = state.draftEventEndDate || "";
+  const draftScanDate = state.draftScanDate || "";
   const node = el(`
     <section class="panel upload-panel">
       ${!createNewSelected ? `<div class="destination-selector">
@@ -2227,8 +2229,9 @@ function uploadView() {
             <datalist id="eventTypeOptions">${choicesFor("eventType").map((option) => `<option value="${escapeAttr(option)}"></option>`).join("")}</datalist>
           </label>
           <label>Contact list name <input id="collectionName" value="${escapeAttr(draftCollectionName)}" placeholder="GJEPC 2026 Leads" /></label>
-          <label>Start date <span class="optional-label">Optional</span><input id="exhibitionDate" type="date" value="${escapeAttr(draftExhibitionDate)}" /></label>
+          <label>Event date <span class="optional-label">Optional</span><input id="exhibitionDate" type="date" value="${escapeAttr(draftExhibitionDate)}" /></label>
           <label>End date <span class="optional-label">Optional</span><input id="eventEndDate" type="date" value="${escapeAttr(draftEventEndDate)}" /></label>
+          <label>Scan date <span class="optional-label">Optional</span><input id="eventScanDate" type="date" value="${escapeAttr(draftScanDate)}" /></label>
         </div>
         <div class="new-exhibition-actions">
           <button type="button" id="createExhibitionBtn">Create &amp; continue</button>
@@ -2386,6 +2389,7 @@ function uploadView() {
           exhibitionDate: node.querySelector("#exhibitionDate")?.value || "",
           eventType: (node.querySelector("#eventType")?.value || "").trim(),
           eventEndDate: node.querySelector("#eventEndDate")?.value || "",
+          scanDate: node.querySelector("#eventScanDate")?.value || "",
           destinationType: "excel",
           destinationName: `${collectionName} contacts`
         }
@@ -2398,6 +2402,7 @@ function uploadView() {
       state.draftExhibitionDate = "";
       state.draftEventType = "";
       state.draftEventEndDate = "";
+      state.draftScanDate = "";
       state.message = {
         text: `${exhibitionName} created. New cards will be saved to this exhibition.`,
         bad: false
@@ -2866,11 +2871,13 @@ function syncUploadDraft(node) {
   const exhibitionDate = node.querySelector("#exhibitionDate");
   const eventType = node.querySelector("#eventType");
   const eventEndDate = node.querySelector("#eventEndDate");
+  const eventScanDate = node.querySelector("#eventScanDate");
   if (collectionName) state.draftCollectionName = collectionName.value;
   if (exhibitionName) state.draftExhibitionName = exhibitionName.value;
   if (exhibitionDate) state.draftExhibitionDate = exhibitionDate.value;
   if (eventType) state.draftEventType = eventType.value;
   if (eventEndDate) state.draftEventEndDate = eventEndDate.value;
+  if (eventScanDate) state.draftScanDate = eventScanDate.value;
 }
 
 // ---- Card image editor: rotate, straighten and crop before upload ----
@@ -3688,7 +3695,8 @@ function inputField(field, value, multiline = false, confidence = undefined) {
     emailAddress: 'type="email" inputmode="email" autocomplete="off" autocapitalize="none" spellcheck="false"',
     secondaryEmail: 'type="email" inputmode="email" autocomplete="off" autocapitalize="none" spellcheck="false"',
     website: 'type="text" inputmode="url" autocomplete="off" autocapitalize="none" spellcheck="false"',
-    exhibitionDate: 'type="date"'
+    exhibitionDate: 'type="date"',
+    scanDate: 'type="date"'
   };
   let input;
   if (field === "customerRating") {
@@ -4405,7 +4413,7 @@ function contactsView() {
     if (filters.leadSource && (contact.leadSource || "") !== filters.leadSource) return false;
     if (filters.country && (contact.country || "") !== filters.country) return false;
     if (filters.businessSpecialisation && (contact.businessSpecialisation || "") !== filters.businessSpecialisation) return false;
-    if (filters.dateAdded && !withinAddedPreset(contact.createdAt, filters.dateAdded)) return false;
+    if (filters.dateAdded && !withinAddedPreset(contact.scanDate || contact.createdAt, filters.dateAdded)) return false;
     if (filters.eventDate && String(contact.exhibitionDate || "").slice(0, 10) !== filters.eventDate) return false;
     // "__none" finds the contacts still waiting to be rated.
     if (filters.rating === "__none" && contact.customerRating) return false;

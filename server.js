@@ -238,6 +238,7 @@ const EXPORT_COLUMNS = [
   "Exhibition Date",
   "Event Type",
   "Lead Source",
+  "Scan Date",
   "Remarks",
   "Voice Note",
   "Tags",
@@ -305,7 +306,11 @@ const OPTIONAL_FIELDS = [
   // collection at save so filters and exports work per contact; existing
   // contacts simply have them blank.
   "eventType",
-  "leadSource"
+  "leadSource",
+  // The date a card is treated as scanned on. Defaults to the event's scan date
+  // (or the real scan time when neither is set), and can be overridden per
+  // contact - so a pile of cards from last week's show can carry that date.
+  "scanDate"
 ];
 
 // The starting choices every workspace gets. A workspace can add to or replace
@@ -6361,6 +6366,8 @@ async function handleApi(req, res, pathname) {
         // before, so older clients that only send a name keep working.
         eventType: String(body.eventType || "").trim(),
         eventEndDate: String(body.eventEndDate || "").trim(),
+        // Optional default scan date for cards collected under this event.
+        scanDate: String(body.scanDate || "").trim(),
         destinationType,
         destinationName: String(body.destinationName || (destinationType === "google" ? `${name} Contacts` : `${name} Excel/CSV`)).trim(),
         savedContactCount: 0,
@@ -6406,6 +6413,11 @@ async function handleApi(req, res, pathname) {
         const nextEnd = String(body.eventEndDate).trim();
         if (nextEnd && !/^\d{4}-\d{2}-\d{2}$/.test(nextEnd)) return error(res, 400, "Enter the end date as YYYY-MM-DD, or leave it blank.");
         collection.eventEndDate = nextEnd;
+      }
+      if (body.scanDate != null) {
+        const nextScan = String(body.scanDate).trim();
+        if (nextScan && !/^\d{4}-\d{2}-\d{2}$/.test(nextScan)) return error(res, 400, "Enter the scan date as YYYY-MM-DD, or leave it blank.");
+        collection.scanDate = nextScan;
       }
       ["destinationType", "destinationName"].forEach((field) => {
         if (body[field] != null) collection[field] = String(body[field]);
@@ -8210,7 +8222,10 @@ function saveContactRecord(db, user, card, fields, options = {}) {
     leadSource: cleaned.leadSource || collection.leadSource || collection.eventType || "",
     // Additional addresses: the review screen's edits win; otherwise any extra
     // addresses the scan found on the card are kept.
-    addresses: (Array.isArray(cleaned.addresses) && cleaned.addresses.length) ? cleaned.addresses : (card.extraction?.addresses || [])
+    addresses: (Array.isArray(cleaned.addresses) && cleaned.addresses.length) ? cleaned.addresses : (card.extraction?.addresses || []),
+    // Scan date: an explicit value wins, then the event's default; left blank it
+    // falls back to the real scan time (createdAt) wherever it is shown.
+    scanDate: cleaned.scanDate || collection.scanDate || ""
   };
   // The exhibition is only known here, so the saved-contact name has to be
   // rebuilt now; deriving it earlier left the exhibition out of the name.
@@ -8305,6 +8320,7 @@ function exportRow(contact, extraPeopleCount = 0) {
     contact.exhibitionDate,
     contact.eventType,
     contact.leadSource,
+    contact.scanDate || dateOnly(contact.createdAt),
     exportRemarks(contact),
     exportVoiceNote(contact),
     contact.tags,
