@@ -8857,3 +8857,5 @@ strong {
 .invoice-table th, .invoice-table td { padding: 8px 6px; border-bottom: 1px solid var(--border, #e6e3ef); text-align: left; }
 .invoice-table th { font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted, #6b6b78); }
 .invoice-table a { color: var(--accent-strong, #241c53); font-weight: 600; }
+.invoice-link { display: inline-block; padding: 4px 10px; border-radius: 6px; background: var(--accent-strong, #241c53); color: #fff; font-weight: 600; font-size: 12px; text-decoration: none; white-space: nowrap; }
+.invoice-link:hover { opacity: .9; }

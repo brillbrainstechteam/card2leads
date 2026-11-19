@@ -2583,6 +2583,31 @@ function assignInvoiceNumber(db, org, payment) {
   return org.invoices[key];
 }
 
+// Assign numbers to every paid payment that doesn't have one yet, in payment-
+// date order, so an older payment always carries a lower number than a newer
+// one — regardless of the order invoices are first downloaded. Run before
+// issuing any invoice. Caller persists with saveDb.
+async function syncInvoiceNumbers(db) {
+  if (!pgPool) return;
+  let rows = [];
+  try {
+    rows = (await pgPool.query(
+      "select id, client_id, amount_paise, plan, status, provider_payment_id, completed_at, created_at from payments where status = 'paid' order by coalesce(completed_at, created_at) asc, id asc"
+    )).rows;
+  } catch (err) {
+    console.error("[invoice-seq] sync failed:", err.message);
+    return;
+  }
+  const orgById = new Map(db.organisations.map((o) => [o.id, o]));
+  for (const p of rows) {
+    const org = orgById.get(p.client_id);
+    if (!org) continue;
+    const existing = org.invoices && org.invoices[invoiceKey(p)];
+    if (existing) continue;
+    assignInvoiceNumber(db, org, p);
+  }
+}
+
 function invoiceLineDescription(payment) {
   const plan = String(payment.plan || "").toLowerCase();
   if (plan === "topup") return "Card2Leads — scan credits top-up";
@@ -2608,6 +2633,7 @@ function orgContactPhone(db, org) {
 async function notifyInvoiceForPayment(db, org, payment) {
   try {
     if (!org || !payment || payment.status !== "paid") return false;
+    await syncInvoiceNumbers(db);
     const record = assignInvoiceNumber(db, org, payment);
     if (record.notifiedAt) return false;
     const html = buildInvoiceHtml(org, payment, record);
@@ -4981,6 +5007,7 @@ async function handleAdminApi(req, res, pathname) {
     const paymentId = String(new URL(req.url, `http://${req.headers.host}`).searchParams.get("payment") || "");
     const payment = await fetchClientPayment(clientId, paymentId);
     if (!payment || payment.status !== "paid") return error(res, 404, "Paid invoice not found for this payment.");
+    await syncInvoiceNumbers(db);
     const record = assignInvoiceNumber(db, org, payment);
     await saveDb(db);
     return send(res, 200, buildInvoiceHtml(org, payment, record), { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "private, no-store" });
@@ -7467,6 +7494,7 @@ async function handleApi(req, res, pathname) {
       const payment = await fetchClientPayment(user.organisationId, paymentId);
       if (!payment || payment.status !== "paid") return error(res, 404, "Paid invoice not found for this payment.");
       const organisation = db.organisations.find((o) => o.id === user.organisationId);
+      await syncInvoiceNumbers(db);
       const record = assignInvoiceNumber(db, organisation, payment);
       await saveDb(db);
       return send(res, 200, buildInvoiceHtml(organisation, payment, record), { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "private, no-store" });
