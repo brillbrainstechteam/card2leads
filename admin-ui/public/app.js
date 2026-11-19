@@ -593,9 +593,11 @@
           sub: bp.gstin ? ("Current GSTIN: " + bp.gstin) : "No GST details saved for this client yet.",
           note: { kind: "info", text: "Shows on the client's tax invoices. The GSTIN sets the place of supply — CGST+SGST for Maharashtra, IGST for other states." },
           fields: [
-            { key: "legalName", type: "text", label: "Registered business name", required: true, placeholder: "e.g. Dishaa Gold and Platinum", value: bp.legalName || "" },
-            { key: "gstin", type: "text", label: "GSTIN", placeholder: "27AAMFD5405C1ZQ", value: bp.gstin || "" },
-            { key: "address", type: "text", label: "Billing address", placeholder: "Registered address", value: bp.address || "" }
+            { key: "legalName", type: "text", label: "Business name", required: true, placeholder: "e.g. Dishaa Gold and Platinum", value: bp.legalName || "" },
+            { key: "gstin", type: "text", label: "GST number", placeholder: "27AAMFD5405C1ZQ", value: bp.gstin || "" },
+            { key: "address", type: "text", label: "Address", placeholder: "Street / building address", value: bp.address || "" },
+            { key: "city", type: "text", label: "City", placeholder: "e.g. Mumbai", value: bp.city || "" },
+            { key: "stateCode", type: "text", label: "State code (2 digits, e.g. 27)", placeholder: "27", value: bp.stateCode || "" }
           ]
         };
       }

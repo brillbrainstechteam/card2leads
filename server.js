@@ -2484,6 +2484,7 @@ function billingSummary(organisation) {
           legalName: String(organisation.billingProfile.legalName || ""),
           gstin: String(organisation.billingProfile.gstin || ""),
           address: String(organisation.billingProfile.address || ""),
+          city: String(organisation.billingProfile.city || ""),
           stateCode: String(organisation.billingProfile.stateCode || ""),
           stateName: String(organisation.billingProfile.stateName || "")
         }
@@ -2533,6 +2534,7 @@ function invoiceBuyer(organisation) {
     legalName: String(profile.legalName || organisation?.name || "").trim(),
     gstin,
     address: String(profile.address || "").trim(),
+    city: String(profile.city || "").trim(),
     stateCode,
     stateName: GST_STATE_NAMES[stateCode] || String(profile.stateName || "")
   };
@@ -2647,13 +2649,13 @@ function buildInvoiceHtml(organisation, payment, invoiceRecord) {
         <div class="muted">${esc(INVOICE_SELLER.address)}</div>
         <div>GSTIN/UIN: ${esc(INVOICE_SELLER.gstin)}</div>
         <div class="muted">State: ${esc(INVOICE_SELLER.stateName)}, Code: ${esc(INVOICE_SELLER.stateCode)}</div>
-        <div class="muted">PAN: ${esc(INVOICE_SELLER.pan)} &middot; CIN: ${esc(INVOICE_SELLER.cin)}</div>
         <div class="muted">Email: ${esc(INVOICE_SELLER.email)}</div>
       </div>
       <div class="party">
         <h3>Billed to (Buyer / Consignee)</h3>
         <strong>${esc(buyer.legalName || "—")}</strong>
         <div class="muted">${esc(buyer.address || "")}</div>
+        ${buyer.city ? `<div class="muted">${esc(buyer.city)}</div>` : ""}
         ${buyer.gstin ? `<div>GSTIN/UIN: ${esc(buyer.gstin)}</div>` : `<div class="muted">GSTIN/UIN: not provided (unregistered)</div>`}
         <div class="muted">State: ${esc(buyer.stateName || "—")}${buyer.stateCode ? `, Code: ${esc(buyer.stateCode)}` : ""}</div>
         <div class="muted">Place of supply: ${esc(placeOfSupply)}</div>
@@ -4947,10 +4949,11 @@ async function handleAdminApi(req, res, pathname) {
       const legalName = String(body.legalName || "").trim().slice(0, 200);
       const gstin = String(body.gstin || "").trim().toUpperCase();
       const address = String(body.address || "").trim().slice(0, 400);
+      const city = String(body.city || "").trim().slice(0, 120);
       if (!legalName) return error(res, 400, "Enter the registered business name.");
       if (gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/.test(gstin)) return error(res, 400, "Enter a valid 15-character GSTIN, or leave it blank.");
-      const stateCode = stateCodeFromGstin(gstin);
-      org.billingProfile = { legalName, gstin, address, stateCode, stateName: GST_STATE_NAMES[stateCode] || "", updatedAt: now(), updatedBy: admin.email || admin.id };
+      const stateCode = stateCodeFromGstin(gstin) || String(body.stateCode || "").trim().slice(0, 2);
+      org.billingProfile = { legalName, gstin, address, city, stateCode, stateName: GST_STATE_NAMES[stateCode] || "", updatedAt: now(), updatedBy: admin.email || admin.id };
       org.updatedAt = now();
       await saveDb(db);
       await adminAudit(admin, { clientId, action: "BILLING_PROFILE_SET", previousValue: prev, newValue: { billingProfile: org.billingProfile }, reason });
@@ -7358,10 +7361,11 @@ async function handleApi(req, res, pathname) {
       const legalName = String(body.legalName || "").trim().slice(0, 200);
       const gstin = String(body.gstin || "").trim().toUpperCase();
       const address = String(body.address || "").trim().slice(0, 400);
+      const city = String(body.city || "").trim().slice(0, 120);
       if (!legalName) return error(res, 400, "Enter the registered business name for the invoice.");
       if (gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/.test(gstin)) return error(res, 400, "Enter a valid 15-character GSTIN, or leave it blank.");
-      const stateCode = stateCodeFromGstin(gstin);
-      organisation.billingProfile = { legalName, gstin, address, stateCode, stateName: GST_STATE_NAMES[stateCode] || "", updatedAt: now(), updatedBy: user.id };
+      const stateCode = stateCodeFromGstin(gstin) || String(body.stateCode || "").trim().slice(0, 2);
+      organisation.billingProfile = { legalName, gstin, address, city, stateCode, stateName: GST_STATE_NAMES[stateCode] || "", updatedAt: now(), updatedBy: user.id };
       organisation.updatedAt = now();
       await saveDb(db);
       return send(res, 200, { ok: true, billingProfile: billingSummary(organisation).billingProfile });

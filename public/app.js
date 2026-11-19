@@ -5828,30 +5828,32 @@ function billingProfileComplete() {
 function promptBillingThen(proceed) {
   const profile = state.overview?.billing?.billingProfile || {};
   state.modal = {
-    title: "Your billing details",
-    body: "Add your business details so your payment invoice is GST-compliant. GSTIN is optional if you are not registered.",
+    title: "Get a GST invoice for this payment",
+    body: "Add your business details and we'll generate a GST tax invoice. You can also do this anytime from Account.",
     className: "wide-dialog",
-    confirmText: "Save & continue to payment",
+    confirmText: "Save details",
     confirmClass: "primary",
     keepOpenOnConfirm: true,
     contentHtml: `
       <form id="payBillingForm" class="billing-profile-form">
-        <label>Registered business name<input name="legalName" value="${escapeAttr(profile.legalName || "")}" placeholder="Legal business name" required /></label>
-        <label>GSTIN <span class="muted">(optional)</span><input name="gstin" value="${escapeAttr(profile.gstin || "")}" maxlength="15" autocapitalize="characters" spellcheck="false" placeholder="27AAAAA0000A1Z5" /></label>
-        <label>Billing address<textarea name="address" rows="2" placeholder="Registered address">${escapeHtml(profile.address || "")}</textarea></label>
+        <label>Business name<input name="legalName" value="${escapeAttr(profile.legalName || "")}" placeholder="Registered business name" required /></label>
+        <label>GST number <span class="muted">(optional)</span><input name="gstin" value="${escapeAttr(profile.gstin || "")}" maxlength="15" autocapitalize="characters" spellcheck="false" placeholder="27AAAAA0000A1Z5" /></label>
+        <label>Address<textarea name="address" rows="2" placeholder="Street / building address">${escapeHtml(profile.address || "")}</textarea></label>
+        <label>City<input name="city" value="${escapeAttr(profile.city || "")}" placeholder="City" /></label>
+        <label>State code <span class="muted">(2 digits, e.g. 27 for Maharashtra)</span><input name="stateCode" value="${escapeAttr(profile.stateCode || "")}" maxlength="2" inputmode="numeric" placeholder="27" /></label>
         <p class="choice-settings-status" id="payBillingStatus"></p>
       </form>`,
     onConfirm: async () => {
       const form = document.querySelector("#payBillingForm");
       const status = document.querySelector("#payBillingStatus");
       const data = Object.fromEntries(new FormData(form).entries());
-      if (!String(data.legalName || "").trim()) { if (status) { status.textContent = "Enter the registered business name."; status.classList.add("bad"); } return; }
+      if (!String(data.legalName || "").trim()) { if (status) { status.textContent = "Enter the business name."; status.classList.add("bad"); } return; }
       if (status) { status.textContent = "Saving…"; status.classList.remove("bad"); }
       try {
-        const result = await api("/api/billing/profile", { method: "PUT", body: { legalName: data.legalName, gstin: data.gstin, address: data.address } });
+        const result = await api("/api/billing/profile", { method: "PUT", body: { legalName: data.legalName, gstin: data.gstin, address: data.address, city: data.city, stateCode: data.stateCode } });
         if (state.overview?.billing) state.overview.billing.billingProfile = result.billingProfile;
         closeModal(false);
-        proceed();
+        if (typeof proceed === "function") proceed();
       } catch (err) { if (status) { status.textContent = err.message; status.classList.add("bad"); } }
     }
   };
@@ -5859,7 +5861,6 @@ function promptBillingThen(proceed) {
 }
 
 async function startOneTimePlan(plan) {
-  if (!billingProfileComplete()) return promptBillingThen(() => startOneTimePlan(plan));
   try {
     // Fetch the checkout script and create the order together: they do not
     // depend on each other, and serialising them doubled the wait.
@@ -5882,6 +5883,7 @@ async function startOneTimePlan(plan) {
           await refreshAll();
           state.message = { text: `One-time ${statusLabel(order.plan)} plan activated.`, bad: false };
           render();
+          if (!billingProfileComplete()) promptBillingThen();
         } catch (err) {
           state.message = { text: err.message, bad: true };
           render();
@@ -5900,7 +5902,6 @@ async function startOneTimePlan(plan) {
 // Pays the custom plan an admin quoted for this workspace. The amount is never
 // sent from here — the server reads it back from the stored quote.
 async function startCustomPlan() {
-  if (!billingProfileComplete()) return promptBillingThen(() => startCustomPlan());
   try {
     const [Razorpay, order] = await Promise.all([
       loadRazorpay(),
@@ -5921,6 +5922,7 @@ async function startCustomPlan() {
           await refreshAll();
           state.message = { text: `Custom plan activated · ${Number(order.scans).toLocaleString("en-IN")} scans.`, bad: false };
           render();
+          if (!billingProfileComplete()) promptBillingThen();
         } catch (err) {
           state.message = { text: err.message, bad: true };
           render();
@@ -5988,7 +5990,6 @@ function requestTopupPurchase() {
 }
 
 async function startTopup() {
-  if (!billingProfileComplete()) return promptBillingThen(() => startTopup());
   try {
     const [Razorpay, order] = await Promise.all([
       loadRazorpay(),
@@ -6009,6 +6010,7 @@ async function startTopup() {
           await refreshAll();
           state.message = { text: `${order.scans} extra scans are ready to use.`, bad: false };
           render();
+          if (!billingProfileComplete()) promptBillingThen();
         } catch (err) {
           state.message = { text: err.message, bad: true };
           render();
@@ -6161,9 +6163,11 @@ function accountView() {
           <h3>GST &amp; invoices</h3>
           <p class="muted">Add your GST details to show on tax invoices, then download a GST invoice for any payment.</p>
           <form id="billingProfileForm" class="billing-profile-form">
-            <label>Registered business name<input name="legalName" value="${escapeAttr(billing.billingProfile?.legalName || "")}" placeholder="Legal business name" /></label>
-            <label>GSTIN<input name="gstin" value="${escapeAttr(billing.billingProfile?.gstin || "")}" placeholder="27AAAAA0000A1Z5" maxlength="15" autocapitalize="characters" spellcheck="false" /></label>
-            <label>Billing address<textarea name="address" rows="2" placeholder="Registered address">${escapeHtml(billing.billingProfile?.address || "")}</textarea></label>
+            <label>Business name<input name="legalName" value="${escapeAttr(billing.billingProfile?.legalName || "")}" placeholder="Registered business name" /></label>
+            <label>GST number<input name="gstin" value="${escapeAttr(billing.billingProfile?.gstin || "")}" placeholder="27AAAAA0000A1Z5" maxlength="15" autocapitalize="characters" spellcheck="false" /></label>
+            <label>Address<textarea name="address" rows="2" placeholder="Street / building address">${escapeHtml(billing.billingProfile?.address || "")}</textarea></label>
+            <label>City<input name="city" value="${escapeAttr(billing.billingProfile?.city || "")}" placeholder="City" /></label>
+            <label>State code <span class="muted">(2 digits, e.g. 27)</span><input name="stateCode" value="${escapeAttr(billing.billingProfile?.stateCode || "")}" maxlength="2" inputmode="numeric" placeholder="27" /></label>
             <div class="actions"><button type="submit">Save GST details</button><span class="choice-settings-status" id="billingProfileStatus"></span></div>
           </form>
           <div id="invoiceList" class="invoice-list"><p class="muted">Loading payments…</p></div>
@@ -6370,9 +6374,11 @@ function accountBillingView() {
           <h3>GST &amp; invoices</h3>
           <p class="muted">Add your GST details to show on tax invoices, then download a GST invoice for any payment.</p>
           <form id="billingProfileForm" class="billing-profile-form">
-            <label>Registered business name<input name="legalName" value="${escapeAttr(billing.billingProfile?.legalName || "")}" placeholder="Legal business name" /></label>
-            <label>GSTIN<input name="gstin" value="${escapeAttr(billing.billingProfile?.gstin || "")}" placeholder="27AAAAA0000A1Z5" maxlength="15" autocapitalize="characters" spellcheck="false" /></label>
-            <label>Billing address<textarea name="address" rows="2" placeholder="Registered address">${escapeHtml(billing.billingProfile?.address || "")}</textarea></label>
+            <label>Business name<input name="legalName" value="${escapeAttr(billing.billingProfile?.legalName || "")}" placeholder="Registered business name" /></label>
+            <label>GST number<input name="gstin" value="${escapeAttr(billing.billingProfile?.gstin || "")}" placeholder="27AAAAA0000A1Z5" maxlength="15" autocapitalize="characters" spellcheck="false" /></label>
+            <label>Address<textarea name="address" rows="2" placeholder="Street / building address">${escapeHtml(billing.billingProfile?.address || "")}</textarea></label>
+            <label>City<input name="city" value="${escapeAttr(billing.billingProfile?.city || "")}" placeholder="City" /></label>
+            <label>State code <span class="muted">(2 digits, e.g. 27)</span><input name="stateCode" value="${escapeAttr(billing.billingProfile?.stateCode || "")}" maxlength="2" inputmode="numeric" placeholder="27" /></label>
             <div class="actions"><button type="submit">Save GST details</button><span class="choice-settings-status" id="billingProfileStatus"></span></div>
           </form>
           <div id="invoiceList" class="invoice-list"><p class="muted">Loading payments…</p></div>
@@ -6407,7 +6413,7 @@ function accountBillingView() {
     const data = Object.fromEntries(new FormData(billingForm).entries());
     if (status) { status.textContent = "Saving…"; status.classList.remove("bad"); }
     try {
-      const result = await api("/api/billing/profile", { method: "PUT", body: { legalName: data.legalName, gstin: data.gstin, address: data.address } });
+      const result = await api("/api/billing/profile", { method: "PUT", body: { legalName: data.legalName, gstin: data.gstin, address: data.address, city: data.city, stateCode: data.stateCode } });
       if (state.overview?.billing) state.overview.billing.billingProfile = result.billingProfile;
       if (status) status.textContent = "Saved. It will appear on your invoices.";
     } catch (err) { if (status) { status.textContent = err.message; status.classList.add("bad"); } }
