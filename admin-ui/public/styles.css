@@ -181,8 +181,12 @@ tbody tr:hover { background: var(--surface-2); }
 .btn-sm.btn-brand:hover { background: #1f57e6; }
 .btn-sm.btn-warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
 .btn-sm.btn-danger { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
-.overflow { position: relative; }
-.overflow-menu { position: absolute; right: 0; top: calc(100% + 6px); background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); padding: 6px; min-width: 200px; z-index: 5; display: flex; flex-direction: column; gap: 2px; }
+.overflow { position: static; }
+/* Anchored to the whole actions row (position:relative), not the tiny ••• button,
+   and right-aligned, so the 200px menu always opens inside the drawer. Anchoring
+   to the button pushed it past the drawer's left edge, which .drawer's
+   overflow-y:auto (which also clips overflow-x) then cut off. */
+.overflow-menu { position: absolute; right: 0; top: calc(100% + 6px); background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); padding: 6px; min-width: 200px; max-width: calc(100% - 4px); z-index: 20; display: flex; flex-direction: column; gap: 2px; }
 .overflow-menu button { text-align: left; background: none; border: none; padding: 9px 11px; border-radius: 7px; font-size: 13px; color: var(--text); }
 .overflow-menu button:hover { background: var(--surface-2); }
 .overflow-menu button.danger { color: var(--danger); }
