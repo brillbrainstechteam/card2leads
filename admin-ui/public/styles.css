@@ -186,6 +186,9 @@ tbody tr:hover { background: var(--surface-2); }
    into the drawer (the button is the last action, so there are always buttons /
    space to its left to hold the 200px menu without being clipped). */
 .overflow-menu { position: absolute; right: 0; top: calc(100% + 6px); background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); padding: 6px; min-width: 200px; z-index: 20; display: flex; flex-direction: column; gap: 2px; }
+/* The JS toggles the [hidden] attribute to open/close the menu; without this,
+   the display:flex above overrides [hidden]'s display:none and it never closes. */
+.overflow-menu[hidden] { display: none; }
 .overflow-menu button { text-align: left; background: none; border: none; padding: 9px 11px; border-radius: 7px; font-size: 13px; color: var(--text); }
 .overflow-menu button:hover { background: var(--surface-2); }
 .overflow-menu button.danger { color: var(--danger); }
