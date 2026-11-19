@@ -8859,3 +8859,39 @@ strong {
 .invoice-table a { color: var(--accent-strong, #241c53); font-weight: 600; }
 .invoice-link { display: inline-block; padding: 4px 10px; border-radius: 6px; background: var(--accent-strong, #241c53); color: #fff; font-weight: 600; font-size: 12px; text-decoration: none; white-space: nowrap; }
 .invoice-link:hover { opacity: .9; }
+
+/* ---- Updating contacts from a spreadsheet ---- */
+.bulk-update-steps { margin: 0; padding-left: 20px; display: grid; gap: 14px; }
+.bulk-update-steps li { padding-left: 4px; }
+.bulk-update-steps p { margin: 4px 0 8px; font-size: 13px; }
+.bulk-update-steps input[type="file"] { font-size: 13px; }
+.bulk-update-status { margin: 10px 0 0; font-size: 13px; color: var(--muted); min-height: 18px; }
+.bulk-update-status.bad { color: var(--danger, #c0392b); }
+.bulk-update-status:empty { display: none; }
+
+.bulk-update-preview { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.bulk-update-headline { margin: 0 0 10px; font-size: 14px; }
+.bulk-update-problems { margin-bottom: 12px; font-size: 13px; }
+.bulk-update-problems ul { margin: 8px 0 0; padding-left: 18px; }
+.bulk-update-problems li { margin-bottom: 4px; }
+
+/* The change list can run to hundreds of rows, so it scrolls inside the dialog
+   rather than pushing the Update button off the bottom of the screen. */
+.bulk-update-table-wrap { max-height: 320px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 14px; }
+.bulk-update-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.bulk-update-table th { position: sticky; top: 0; background: var(--surface, #fff); text-align: left; padding: 8px 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); border-bottom: 1px solid var(--border); }
+.bulk-update-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.bulk-update-table tr:last-child td { border-bottom: none; }
+
+.bulk-change { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin-bottom: 3px; }
+.bulk-change-field { min-width: 150px; color: var(--muted); font-size: 12px; }
+.bulk-change-was { color: var(--muted); text-decoration: line-through; }
+.bulk-change-arrow { color: var(--muted); }
+.bulk-change-now { font-weight: 600; }
+
+.bulk-update-done p { margin: 0 0 8px; }
+
+@media (max-width: 640px) {
+  .bulk-change-field { min-width: 0; flex: 1 1 100%; }
+}
+.bulk-update-filename { margin: 6px 0 0; font-size: 12px; color: var(--muted); }

@@ -1990,6 +1990,185 @@ function exportHref(format, collectionId, ids = [], all = false, useFilters = fa
   return `/api/export.${format}?${params.toString()}`;
 }
 
+// ---- Filling in the newer fields from a spreadsheet ----
+// A workspace that has been scanning for a year has hundreds of contacts saved
+// before Industry, Business Type and the rest existed. This is the way to fill
+// those in without opening each contact: download the sheet, work through it in
+// Excel with the same dropdowns the app offers, send it back.
+function bulkUpdateHref(collectionId, useFilters) {
+  const href = exportHref("xlsx", collectionId, [], true, useFilters);
+  return href.replace("/api/export.xlsx?", "/api/contacts/bulk-update.xlsx?");
+}
+
+function showBulkUpdateModal(collectionId, useFilters) {
+  state.bulkUpdate = { stage: "choose", file: null, fileName: "", summary: null, busy: false };
+  state.modal = {
+    title: "Update contacts from a spreadsheet",
+    body: "Download the sheet, fill in the columns in Excel, then send the same file back. Only the classification columns are read — names and numbers are left alone.",
+    className: "wide-dialog",
+    contentHtml: `<div id="bulkUpdateBody"></div>`,
+    actions: [{ label: "Close" }],
+    onRender: (node) => renderBulkUpdateBody(node, collectionId, useFilters)
+  };
+  render();
+}
+
+function renderBulkUpdateBody(node, collectionId, useFilters) {
+  const body = node.querySelector("#bulkUpdateBody");
+  if (!body) return;
+  const stateNow = state.bulkUpdate || { stage: "choose" };
+  const summary = stateNow.summary;
+
+  if (stateNow.stage === "done") {
+    body.innerHTML = `
+      <div class="bulk-update-done">
+        <p><b>${summary.updated} contact${summary.updated === 1 ? "" : "s"} updated.</b></p>
+        ${summary.notFound ? `<p class="muted">${summary.notFound} row${summary.notFound === 1 ? "" : "s"} did not match a saved contact and ${summary.notFound === 1 ? "was" : "were"} left alone.</p>` : ""}
+        <p class="muted">You can download the sheet again at any time to carry on.</p>
+      </div>`;
+    return;
+  }
+
+  body.innerHTML = `
+    <ol class="bulk-update-steps">
+      <li>
+        <b>Download the sheet</b>
+        <p class="muted">One row per saved contact. The first columns identify the contact and are ignored when you send the file back.</p>
+        <a class="button-link" href="${bulkUpdateHref(collectionId, useFilters)}"><button type="button" class="secondary">Download update sheet</button></a>
+      </li>
+      <li>
+        <b>Fill it in</b>
+        <p class="muted">Every column that has a set list shows it as a dropdown, the same options as the app. You can type your own value where the app lets you, and clearing a cell clears that value. Business Type takes more than one, separated by a semicolon.</p>
+      </li>
+      <li>
+        <b>Send it back</b>
+        <p class="muted">Nothing is saved until you have seen what it would change.</p>
+        <input type="file" id="bulkUpdateFile" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+        ${stateNow.fileName ? `<p class="bulk-update-filename">Read from <b>${escapeHtml(stateNow.fileName)}</b></p>` : ""}
+      </li>
+    </ol>
+    <p class="bulk-update-status" id="bulkUpdateStatus" role="status" aria-live="polite">${stateNow.busy ? "Reading the sheet…" : ""}</p>
+    ${summary && stateNow.stage === "preview" ? bulkUpdatePreviewHtml(summary) : ""}
+  `;
+
+  body.querySelector("#bulkUpdateFile")?.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    state.bulkUpdate.file = file;
+    state.bulkUpdate.fileName = file.name;
+    await previewBulkUpdate(node, collectionId, useFilters);
+  });
+  body.querySelector("[data-bulk-apply]")?.addEventListener("click", async () => {
+    await applyBulkUpdate(node, collectionId, useFilters);
+  });
+}
+
+function bulkUpdatePreviewHtml(summary) {
+  if (!summary.willUpdate && !summary.problems?.length) {
+    return `<div class="bulk-update-preview"><p>Nothing in that sheet is different from what is already saved.</p></div>`;
+  }
+  const rows = (summary.preview || []).map((update) => {
+    const fields = Object.keys(update.changes).map((field) => {
+      const was = update.before?.[field];
+      const now = Array.isArray(update.changes[field]) ? update.changes[field].join("; ") : update.changes[field];
+      return `<div class="bulk-change"><span class="bulk-change-field">${escapeHtml(bulkFieldLabel(field))}</span><span class="bulk-change-was">${escapeHtml(was || "—")}</span><span class="bulk-change-arrow">→</span><span class="bulk-change-now">${escapeHtml(now || "—")}</span></div>`;
+    }).join("");
+    return `<tr><td>${escapeHtml(update.name || update.contactId)}</td><td>${fields}</td></tr>`;
+  }).join("");
+  return `
+    <div class="bulk-update-preview">
+      <p class="bulk-update-headline">
+        <b>${summary.willUpdate} contact${summary.willUpdate === 1 ? "" : "s"} would change.</b>
+        ${summary.unchanged ? ` ${summary.unchanged} already match the sheet.` : ""}
+        ${summary.notFound ? ` ${summary.notFound} row${summary.notFound === 1 ? "" : "s"} matched no contact.` : ""}
+        ${summary.rejected ? ` ${summary.rejected} row${summary.rejected === 1 ? "" : "s"} could not be applied.` : ""}
+      </p>
+      ${summary.problems?.length ? `
+      <details class="bulk-update-problems">
+        <summary>${summary.problems.length} row${summary.problems.length === 1 ? "" : "s"} to look at</summary>
+        <ul>${summary.problems.map((p) => `<li>Row ${p.row}: ${escapeHtml(p.reason || "could not be matched")} <span class="muted">(${escapeHtml(String(p.key || ""))})</span></li>`).join("")}</ul>
+      </details>` : ""}
+      ${rows ? `
+      <div class="bulk-update-table-wrap">
+        <table class="bulk-update-table">
+          <thead><tr><th>Contact</th><th>Changes</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        ${summary.willUpdate > (summary.preview || []).length ? `<p class="muted">Showing the first ${(summary.preview || []).length}. All ${summary.willUpdate} will be updated.</p>` : ""}
+      </div>` : ""}
+      ${summary.willUpdate ? `<button type="button" class="primary" data-bulk-apply>Update ${summary.willUpdate} contact${summary.willUpdate === 1 ? "" : "s"}</button>` : ""}
+    </div>`;
+}
+
+function bulkFieldLabel(field) {
+  const labels = {
+    salutation: "Salutation",
+    industry: "Industry",
+    businessType: "Business Type",
+    businessSpecialisation: "Business Specialisation",
+    customerStatus: "Customer Status",
+    customerRating: "Customer Rating",
+    leadSource: "Lead Source"
+  };
+  return labels[field] || field;
+}
+
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || "").split(",").pop() || "");
+    reader.onerror = () => reject(new Error("That file could not be read."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function sendBulkUpdate(apply) {
+  const file = state.bulkUpdate?.file;
+  if (!file) throw new Error("Choose the filled-in sheet first.");
+  const fileBase64 = await readFileAsBase64(file);
+  return api("/api/contacts/bulk-update", { method: "POST", body: { fileBase64, apply } });
+}
+
+// The dialog reports into itself rather than through a toast, because a toast
+// re-renders the view and would take the preview down with it.
+function setBulkUpdateStatus(node, text, bad = false) {
+  const status = node.querySelector("#bulkUpdateStatus");
+  if (!status) return;
+  status.textContent = text || "";
+  status.classList.toggle("bad", Boolean(bad));
+}
+
+async function previewBulkUpdate(node, collectionId, useFilters) {
+  state.bulkUpdate.busy = true;
+  setBulkUpdateStatus(node, "Reading the sheet…");
+  try {
+    const summary = await sendBulkUpdate(false);
+    state.bulkUpdate.summary = summary;
+    state.bulkUpdate.stage = "preview";
+    state.bulkUpdate.busy = false;
+    renderBulkUpdateBody(node, collectionId, useFilters);
+  } catch (err) {
+    state.bulkUpdate.busy = false;
+    setBulkUpdateStatus(node, err.message || "That sheet could not be read.", true);
+  }
+}
+
+async function applyBulkUpdate(node, collectionId, useFilters) {
+  const button = node.querySelector("[data-bulk-apply]");
+  if (button) { button.disabled = true; button.textContent = "Updating…"; }
+  try {
+    const result = await sendBulkUpdate(true);
+    state.bulkUpdate.summary = result;
+    state.bulkUpdate.stage = "done";
+    renderBulkUpdateBody(node, collectionId, useFilters);
+    // The contacts on screen are now out of date.
+    await refreshAll();
+  } catch (err) {
+    if (button) { button.disabled = false; button.textContent = "Try again"; }
+    setBulkUpdateStatus(node, err.message || "Those changes could not be saved.", true);
+  }
+}
+
 function contactsWorkspaceView() {
   // Sheets & Sync tab removed: Google connect/disconnect lives in Account, and
   // per-exhibition exports/sync are handled here via the Export menu + filters.
@@ -4481,6 +4660,8 @@ function contactsView() {
         <a data-scope-export="xlsx" href="${exportHref("xlsx", activeCollectionId, [], true, downloadFilterActive)}">Excel spreadsheet</a>
         <a data-scope-export="csv" href="${exportHref("csv", activeCollectionId, [], true, downloadFilterActive)}">CSV file</a>
         <a data-scope-export="vcf" href="${exportHref("vcf", activeCollectionId, [], true, downloadFilterActive)}">VCF (phone contacts)</a>
+        <span class="export-sync-heading">Fill in older contacts</span>
+        <button type="button" data-menu-action="bulk-update">Update from a spreadsheet</button>
         <span class="export-sync-heading">Google</span>
         ${!google.configured
           ? `<span class="export-sync-note">Google integration is not configured.</span>`
@@ -5164,6 +5345,9 @@ function contactsView() {
   });
   node.querySelector("#workflowSyncSheet")?.addEventListener("click", async (event) => {
     await syncContactsGoogleSheet(event.currentTarget, activeCollectionId, [...state.selectedContactIds]);
+  });
+  node.querySelector('[data-menu-action="bulk-update"]')?.addEventListener("click", () => {
+    showBulkUpdateModal(activeCollectionId, downloadFilterActive);
   });
   node.querySelector('[data-menu-action="create-sheet"]')?.addEventListener("click", async (event) => {
     await createContactsGoogleSheet(event.currentTarget, activeCollectionId);

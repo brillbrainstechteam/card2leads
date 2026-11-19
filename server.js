@@ -2,6 +2,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const zlib = require("zlib");
 const { URL } = require("url");
 require("dotenv").config();
 const { Pool } = require("pg");
@@ -7819,6 +7820,59 @@ async function handleApi(req, res, pathname) {
       return send(res, 200, { ok: true });
     }
 
+    // The same selection as the ordinary Excel export, but trimmed to the
+    // columns that can be sent back, with the app's own dropdowns on them.
+    if (req.method === "GET" && pathname === "/api/contacts/bulk-update.xlsx") {
+      if (!rateLimit(req, res, "bulk-update-sheet", 60, 60 * 60 * 1000)) return;
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const { collection, contacts, baseName, exportAll } = exportSelection(db, user, url);
+      const organisation = db.organisations.find((o) => o.id === user.organisationId);
+      const xlsx = buildBulkUpdateWorkbook(contacts, contactChoicesFor(organisation));
+      audit(db, user, "contacts.bulk_update_sheet", "collection", collection?.id || "", { contacts: contacts.length, all: exportAll });
+      await saveDb(db);
+      return send(res, 200, xlsx, {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": `attachment; filename="${baseName} - update.xlsx"`
+      });
+    }
+
+    // Two steps on purpose: the first call reports what the sheet would change
+    // and writes nothing, and only a second call carrying apply:true writes it.
+    // Nobody should discover what a spreadsheet did to six hundred contacts
+    // after the fact.
+    if (req.method === "POST" && pathname === "/api/contacts/bulk-update") {
+      if (!rateLimit(req, res, "bulk-update-apply", 60, 60 * 60 * 1000)) return;
+      const body = await readJson(req);
+      const base64 = String(body.fileBase64 || "").split(",").pop() || "";
+      if (!base64) return error(res, 400, "Attach the filled-in update sheet.");
+      const buffer = Buffer.from(base64, "base64");
+      if (!buffer.length) return error(res, 400, "That file could not be read.");
+      if (buffer.length > 25 * 1024 * 1024) return error(res, 400, "That file is too large. Split it and upload it in parts.");
+      const organisation = db.organisations.find((o) => o.id === user.organisationId);
+      let plan;
+      try {
+        plan = planBulkContactUpdate(db, user, buffer, contactChoicesFor(organisation));
+      } catch (err) {
+        return error(res, 400, err.message);
+      }
+      const summary = {
+        willUpdate: plan.updates.length,
+        unchanged: plan.unchanged,
+        notFound: plan.notFound.length,
+        rejected: plan.problems.length,
+        columns: plan.columns,
+        // Enough rows to show what is about to happen without sending a
+        // thousand of them to the browser.
+        preview: plan.updates.slice(0, 50),
+        problems: [...plan.notFound, ...plan.problems].slice(0, 50)
+      };
+      if (!body.apply) return send(res, 200, { applied: false, ...summary });
+      const updated = applyBulkContactUpdate(db, user, plan);
+      audit(db, user, "contacts.bulk_updated_from_sheet", "contact", "", { count: updated, columns: plan.columns });
+      await saveDb(db);
+      return send(res, 200, { applied: true, updated, ...summary });
+    }
+
     if (req.method === "GET" && pathname === "/api/export.xlsx") {
       if (!rateLimit(req, res, "export-xlsx", 60, 60 * 60 * 1000)) return;
       const url = new URL(req.url, `http://${req.headers.host}`);
@@ -9745,6 +9799,371 @@ if (require.main === module) {
     });
 }
 
+// ---- Updating the classification fields from a spreadsheet ----
+// A workspace that has been scanning for months has hundreds of contacts saved
+// before the classification fields existed, and filling those in one contact at
+// a time is not realistic. So they download their contacts, fill the columns in
+// Excel with the same dropdowns the app offers, and send the file back.
+
+const BULK_UPDATE_KEY_COLUMN = "Contact ID";
+
+// The columns that are read back and written. Everything else in the sheet is
+// context for the person filling it in and is ignored on the way back, so an
+// accidental edit to a name or a phone number cannot get in through this door.
+const BULK_UPDATE_FIELDS = [
+  { column: "Salutation", field: "salutation", choice: "salutation" },
+  { column: "Industry", field: "industry", choice: "industry" },
+  { column: "Business Type", field: "businessType", choice: "businessType", multi: true },
+  { column: "Business Specialisation", field: "businessSpecialisation" },
+  { column: "Customer Status", field: "customerStatus", choice: "customerStatus" },
+  { column: "Customer Rating", field: "customerRating", rating: true },
+  { column: "Lead Source", field: "leadSource", choice: "leadSource" }
+];
+
+// Shown so the person filling the sheet in knows which contact each row is,
+// never read back.
+const BULK_UPDATE_CONTEXT = ["Name", "Mobile Number", "Company Name", "Event"];
+
+function bulkUpdateContextValue(column, contact) {
+  if (column === "Name") return contact.name || "";
+  if (column === "Mobile Number") return contact.mobileNumber || "";
+  if (column === "Company Name") return contact.companyName || "";
+  if (column === "Event") return contact.exhibitionName || "";
+  return "";
+}
+
+function bulkUpdateHeaders() {
+  return [BULK_UPDATE_KEY_COLUMN, ...BULK_UPDATE_CONTEXT, ...BULK_UPDATE_FIELDS.map((spec) => spec.column)];
+}
+
+// ---- Writing the workbook ----
+
+// A second sheet holds the option lists and the dropdowns point at it. Putting
+// them in a sheet rather than inline in the validation keeps working when a
+// workspace adds an option containing a comma, and when a list outgrows the 255
+// characters Excel allows an inline list — both of which would otherwise
+// produce a file Excel repairs by silently dropping the dropdowns.
+function buildBulkUpdateWorkbook(contacts, choices) {
+  const headers = bulkUpdateHeaders();
+  const rows = [headers, ...contacts.map((contact) => [
+    contact.id,
+    ...BULK_UPDATE_CONTEXT.map((column) => bulkUpdateContextValue(column, contact)),
+    ...BULK_UPDATE_FIELDS.map((spec) => {
+      if (spec.multi) return toChoiceList(contact[spec.field]).join("; ");
+      return String(contact[spec.field] ?? "");
+    })
+  ])];
+
+  // One option column per field that has a list, in the order they appear in
+  // the sheet, so the dropdown for column N points at the options under the
+  // same heading.
+  const optionColumns = BULK_UPDATE_FIELDS
+    .map((spec, index) => ({ spec, index }))
+    .filter(({ spec }) => spec.choice || spec.rating)
+    .map(({ spec, index }) => ({
+      spec,
+      // +1 for the key column, +1 again because spreadsheet columns are 1-based.
+      sheetColumn: 1 + BULK_UPDATE_CONTEXT.length + index + 1,
+      options: spec.rating
+        ? Array.from({ length: MAX_CUSTOMER_RATING }, (_, i) => String(i + 1))
+        : (choices[spec.choice] || [])
+    }));
+
+  const optionRows = [optionColumns.map(({ spec }) => spec.column)];
+  const deepest = Math.max(1, ...optionColumns.map(({ options }) => options.length));
+  for (let r = 0; r < deepest; r += 1) {
+    optionRows.push(optionColumns.map(({ options }) => options[r] || ""));
+  }
+
+  const lastDataRow = Math.max(2, rows.length);
+  const validations = optionColumns.map(({ sheetColumn, options }, i) => {
+    const letter = columnName(sheetColumn);
+    const optionLetter = columnName(i + 1);
+    const range = `Options!$${optionLetter}$2:$${optionLetter}$${1 + Math.max(1, options.length)}`;
+    // showErrorMessage="0" is deliberate: the list is offered as a dropdown but
+    // a value typed by hand is still accepted, which is how the app itself
+    // treats these fields — every one of them allows "Other".
+    return `<dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="0" sqref="${letter}2:${letter}${lastDataRow}"><formula1>${range}</formula1></dataValidation>`;
+  }).join("");
+
+  const files = {
+    "[Content_Types].xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`,
+    "_rels/.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+    "xl/_rels/workbook.xml.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
+    "xl/workbook.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Contacts" sheetId="1" r:id="rId1"/><sheet name="Options" sheetId="2" r:id="rId3"/></sheets></workbook>`,
+    "xl/styles.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font><font><sz val="11"/><color rgb="FF808080"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF1EFFA"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf><xf numFmtId="0" fontId="2" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs></styleSheet>`,
+    "xl/worksheets/sheet1.xml": bulkUpdateSheetXml(rows, validations),
+    "xl/worksheets/sheet2.xml": bulkOptionsSheetXml(optionRows)
+  };
+  return zipStore(files);
+}
+
+function bulkUpdateSheetXml(rows, validations) {
+  const width = rows[0].length;
+  // The key and the context columns are shaded and greyed: they are there to
+  // identify the row, and anything typed into them is ignored on the way back.
+  const readOnlyUpTo = 1 + BULK_UPDATE_CONTEXT.length;
+  const body = rows.map((row, r) => {
+    const cells = row.map((value, c) => {
+      const ref = `${columnName(c + 1)}${r + 1}`;
+      const style = r === 0 ? ' s="1"' : (c < readOnlyUpTo ? ' s="3"' : ' s="2"');
+      return `<c r="${ref}" t="inlineStr"${style}><is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`;
+    }).join("");
+    return `<row r="${r + 1}">${cells}</row>`;
+  }).join("");
+  // The header row is frozen so the columns stay readable while scrolling
+  // through a few hundred contacts.
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="1" width="26" customWidth="1"/><col min="2" max="${width}" width="24" customWidth="1"/></cols><sheetData>${body}</sheetData><autoFilter ref="A1:${columnName(width)}${Math.max(rows.length, 1)}"/><dataValidations count="${(validations.match(/<dataValidation /g) || []).length}">${validations}</dataValidations></worksheet>`;
+}
+
+function bulkOptionsSheetXml(rows) {
+  const body = rows.map((row, r) => {
+    const cells = row.map((value, c) =>
+      `<c r="${columnName(c + 1)}${r + 1}" t="inlineStr"${r === 0 ? ' s="1"' : ""}><is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`
+    ).join("");
+    return `<row r="${r + 1}">${cells}</row>`;
+  }).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="${Math.max(1, rows[0].length)}" width="30" customWidth="1"/></cols><sheetData>${body}</sheetData></worksheet>`;
+}
+
+// ---- Reading the workbook back ----
+
+// Excel saves a deflated zip; the workbook written above is stored uncompressed.
+// Both are read, because what comes back is whatever Excel wrote.
+function unzipEntries(buffer) {
+  const entries = new Map();
+  let eocd = -1;
+  const floor = Math.max(0, buffer.length - 66000);
+  for (let i = buffer.length - 22; i >= floor; i -= 1) {
+    if (buffer.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error("That file is not a spreadsheet Card2Leads can read.");
+  const count = buffer.readUInt16LE(eocd + 10);
+  let offset = buffer.readUInt32LE(eocd + 16);
+  for (let n = 0; n < count; n += 1) {
+    if (offset + 46 > buffer.length || buffer.readUInt32LE(offset) !== 0x02014b50) break;
+    const method = buffer.readUInt16LE(offset + 10);
+    const compressedSize = buffer.readUInt32LE(offset + 20);
+    const nameLength = buffer.readUInt16LE(offset + 28);
+    const extraLength = buffer.readUInt16LE(offset + 30);
+    const commentLength = buffer.readUInt16LE(offset + 32);
+    const localOffset = buffer.readUInt32LE(offset + 42);
+    const name = buffer.toString("utf8", offset + 46, offset + 46 + nameLength);
+    if (localOffset + 30 <= buffer.length) {
+      const dataStart = localOffset + 30 + buffer.readUInt16LE(localOffset + 26) + buffer.readUInt16LE(localOffset + 28);
+      const data = buffer.subarray(dataStart, dataStart + compressedSize);
+      try {
+        entries.set(name, method === 8 ? zlib.inflateRawSync(data) : Buffer.from(data));
+      } catch {
+        // A part that will not inflate is skipped rather than failing the whole
+        // upload; the sheet itself is what matters and it is checked below.
+      }
+    }
+    offset += 46 + nameLength + extraLength + commentLength;
+  }
+  return entries;
+}
+
+function unescapeXml(value) {
+  return String(value ?? "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCodePoint(parseInt(code, 16)))
+    .replace(/&amp;/g, "&");
+}
+
+function sharedStringsFrom(xml) {
+  // A single shared string can be split over several runs, so the <t> pieces
+  // inside one <si> are joined rather than taken one at a time.
+  return [...String(xml).matchAll(/<si>([\s\S]*?)<\/si>/g)].map((match) =>
+    [...match[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((run) => unescapeXml(run[1])).join("")
+  );
+}
+
+function columnIndexFromName(name) {
+  let index = 0;
+  for (const ch of String(name)) index = index * 26 + (ch.charCodeAt(0) - 64);
+  return index - 1;
+}
+
+function parseSheetRows(xml, shared) {
+  const rows = [];
+  for (const rowMatch of String(xml).matchAll(/<row[^>]*?r="(\d+)"[^>]*?>([\s\S]*?)<\/row>/g)) {
+    const cells = [];
+    for (const cellMatch of rowMatch[2].matchAll(/<c\s([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+      const attrs = cellMatch[1] || "";
+      const inner = cellMatch[2] || "";
+      const ref = (attrs.match(/r="([A-Z]+)\d+"/) || [])[1];
+      if (!ref) continue;
+      const type = (attrs.match(/t="([^"]+)"/) || [])[1] || "n";
+      let value = "";
+      if (type === "s") {
+        value = shared[Number((inner.match(/<v>([\s\S]*?)<\/v>/) || [])[1])] ?? "";
+      } else if (type === "inlineStr") {
+        value = [...inner.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((run) => unescapeXml(run[1])).join("");
+      } else {
+        value = unescapeXml((inner.match(/<v>([\s\S]*?)<\/v>/) || [])[1] || "");
+      }
+      cells[columnIndexFromName(ref)] = value;
+    }
+    rows[Number(rowMatch[1]) - 1] = cells;
+  }
+  return rows.map((row) => Array.from(row || [], (cell) => String(cell ?? "")));
+}
+
+// The first worksheet of the workbook, as rows of strings.
+function readWorkbookRows(buffer) {
+  const entries = unzipEntries(buffer);
+  const workbook = entries.get("xl/workbook.xml");
+  const rels = entries.get("xl/_rels/workbook.xml.rels");
+  let sheetPath = "xl/worksheets/sheet1.xml";
+  if (workbook && rels) {
+    // Follow the relationship of the first sheet rather than assuming sheet1,
+    // because a workbook round-tripped through Excel or Google Sheets may have
+    // its sheets stored in a different order than they are listed.
+    const firstId = (String(workbook).match(/<sheet[^>]*r:id="([^"]+)"/) || [])[1];
+    const target = firstId && (String(rels).match(new RegExp(`Id="${firstId}"[^>]*Target="([^"]+)"`)) || [])[1];
+    if (target) sheetPath = target.startsWith("/") ? target.slice(1) : `xl/${target.replace(/^\.\//, "")}`;
+  }
+  const sheet = entries.get(sheetPath) || entries.get("xl/worksheets/sheet1.xml");
+  if (!sheet) throw new Error("That file has no readable worksheet in it.");
+  const shared = entries.has("xl/sharedStrings.xml") ? sharedStringsFrom(entries.get("xl/sharedStrings.xml")) : [];
+  return parseSheetRows(sheet, shared);
+}
+
+// ---- Working out what the sheet would change ----
+
+// Reads the sheet against the saved contacts and reports what it would do,
+// without writing anything. The same result drives the preview the user
+// confirms and the write that follows it, so what they approve is what runs.
+function planBulkContactUpdate(db, user, buffer, choices) {
+  const rows = readWorkbookRows(buffer);
+  if (!rows.length) throw new Error("That spreadsheet is empty.");
+
+  const header = rows[0].map((cell) => cleanText(cell).toLowerCase());
+  const columnFor = (label) => header.indexOf(label.toLowerCase());
+  const keyIndex = columnFor(BULK_UPDATE_KEY_COLUMN);
+  if (keyIndex < 0) {
+    throw new Error(`This sheet has no "${BULK_UPDATE_KEY_COLUMN}" column. Download the update sheet again and fill that copy in.`);
+  }
+  const present = BULK_UPDATE_FIELDS
+    .map((spec) => ({ spec, index: columnFor(spec.column) }))
+    .filter((entry) => entry.index >= 0);
+  if (!present.length) {
+    throw new Error("None of the columns this sheet can update were found. Download the update sheet again and fill that copy in.");
+  }
+
+  const byId = new Map();
+  // Matching on the number is a fallback for a sheet that lost its ID column,
+  // so it has to cope with the number being typed back in another shape:
+  // "+91 98250 11111", "09825011111" and "9825011111" are one person. The last
+  // ten digits carry that, but they can also collide between two saved
+  // contacts - and updating the wrong person's record silently is far worse
+  // than not matching, so a colliding key is dropped rather than guessed at.
+  const byMobile = new Map();
+  const ambiguous = new Set();
+  const mobileKeysFor = (value) => {
+    const digits = String(value || "").replace(/\D/g, "");
+    if (!digits) return [];
+    return digits.length > 10 ? [digits, digits.slice(-10)] : [digits];
+  };
+  for (const contact of db.contacts) {
+    if (contact.organisationId !== user.organisationId || contact.deletedAt) continue;
+    byId.set(contact.id, contact);
+    for (const mobileKey of mobileKeysFor(contact.normalizedMobileNumber || contact.mobileNumber)) {
+      if (byMobile.has(mobileKey) && byMobile.get(mobileKey) !== contact) ambiguous.add(mobileKey);
+      else byMobile.set(mobileKey, contact);
+    }
+  }
+
+  const plan = { updates: [], unchanged: 0, notFound: [], problems: [], blankRows: 0, columns: present.map((entry) => entry.spec.column) };
+  const seen = new Map();
+  for (let r = 1; r < rows.length; r += 1) {
+    const row = rows[r];
+    if (!row || !row.some((cell) => cleanText(cell))) { plan.blankRows += 1; continue; }
+    const key = cleanText(row[keyIndex]);
+    // Falling back to the mobile number means a sheet that lost its ID column
+    // to a copy-paste still lands on the right contact.
+    let contact = byId.get(key) || null;
+    if (!contact) {
+      const keys = mobileKeysFor(key);
+      if (keys.some((mobileKey) => ambiguous.has(mobileKey))) {
+        plan.notFound.push({ row: r + 1, key, reason: "More than one saved contact has this number, so this row was left alone." });
+        continue;
+      }
+      contact = keys.map((mobileKey) => byMobile.get(mobileKey)).find(Boolean) || null;
+    }
+    if (!contact) {
+      plan.notFound.push({ row: r + 1, key: key || "(blank)", reason: "No saved contact matches this row." });
+      continue;
+    }
+    // Two rows for one contact is ambiguous - a copied row, usually. Letting
+    // the lower one win silently would make the result depend on row order and
+    // would flip back and forth if the same sheet were sent twice, so the
+    // repeat is reported and the first row is the one that counts.
+    if (seen.has(contact.id)) {
+      plan.problems.push({ row: r + 1, key, reason: `This contact is already on row ${seen.get(contact.id)}, so this row was left alone.` });
+      continue;
+    }
+    seen.set(contact.id, r + 1);
+
+    const changes = {};
+    const before = {};
+    for (const { spec, index } of present) {
+      const raw = row[index];
+      if (raw === undefined) continue;
+      const text = cleanText(raw);
+      // A cleared cell clears the value, which is how someone undoes a wrong
+      // entry. It is counted as a change so the preview shows it.
+      if (spec.multi) {
+        const next = toChoiceList(text);
+        const current = toChoiceList(contact[spec.field]);
+        if (next.join("|") === current.join("|")) continue;
+        changes[spec.field] = next;
+        before[spec.field] = current.join("; ");
+      } else if (spec.rating) {
+        const next = normalizeCustomerRating(text);
+        // Checked before the comparison below: a typo like "ten" normalises to
+        // a blank, which on a contact that has no rating yet would otherwise
+        // look like "nothing changed" and never be mentioned.
+        if (text && !next) {
+          plan.problems.push({ row: r + 1, key, reason: `"${text}" is not a rating between 1 and ${MAX_CUSTOMER_RATING}.` });
+          continue;
+        }
+        if (next === String(contact[spec.field] ?? "")) continue;
+        changes[spec.field] = next;
+        before[spec.field] = String(contact[spec.field] ?? "");
+      } else {
+        if (text === String(contact[spec.field] ?? "")) continue;
+        changes[spec.field] = text;
+        before[spec.field] = String(contact[spec.field] ?? "");
+      }
+    }
+
+    if (!Object.keys(changes).length) { plan.unchanged += 1; continue; }
+    plan.updates.push({ row: r + 1, contactId: contact.id, name: contact.name || "", changes, before });
+  }
+  return plan;
+}
+
+function applyBulkContactUpdate(db, user, plan) {
+  let updated = 0;
+  for (const update of plan.updates) {
+    const contact = db.contacts.find((c) => c.id === update.contactId && c.organisationId === user.organisationId && !c.deletedAt);
+    if (!contact) continue;
+    Object.assign(contact, update.changes);
+    contact.updatedAt = now();
+    contact.updatedBy = user.id;
+    // A contact whose details moved on has to go to Sheets again.
+    contact.googleSheetsSyncStatus = contact.googleSheetsSyncStatus === "synced" ? "pending" : contact.googleSheetsSyncStatus;
+    updated += 1;
+  }
+  return updated;
+}
+
 function buildXlsx(rows) {
   const files = {
     "[Content_Types].xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`,
@@ -9861,6 +10280,11 @@ function crc32(buffer) {
 
 module.exports = {
   EXPORT_COLUMNS,
+  bulkUpdateHeaders,
+  buildBulkUpdateWorkbook,
+  readWorkbookRows,
+  planBulkContactUpdate,
+  applyBulkContactUpdate,
   gstBreakdown,
   buildInvoiceHtml,
   applyDerivedContactFields,

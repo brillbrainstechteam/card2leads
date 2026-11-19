@@ -651,3 +651,156 @@ test("office numbers preserve slash-separated alternatives or extensions", () =>
   assert.equal(consecutive.officeNumber, "04212485551 / 52 / 53");
   assert.equal(validateContact(consecutive).ok, true);
 });
+
+// ---- Updating contacts from a spreadsheet ----
+// The sheet goes out, someone edits it in Excel, it comes back. The cases worth
+// guarding are the ones where a wrong answer would be silent: a row matched to
+// the wrong contact, a value written to a column nobody meant to touch, or a
+// typo accepted as though it were a real value.
+const {
+  bulkUpdateHeaders,
+  buildBulkUpdateWorkbook,
+  readWorkbookRows,
+  planBulkContactUpdate,
+  applyBulkContactUpdate
+} = require("../server.js");
+
+const bulkChoices = {
+  salutation: ["Mr.", "Ms."],
+  industry: ["Jewellery Industry", "Other Industry"],
+  businessType: ["Jewellery Retailer", "Karigar"],
+  customerStatus: ["Existing Customer", "New Customer"],
+  leadSource: ["Exhibition", "Magazine"]
+};
+
+function bulkContacts() {
+  return [
+    { id: "con_1", organisationId: "org", name: "Kamlesh Patel", mobileNumber: "+919825011111", normalizedMobileNumber: "+919825011111", companyName: "Dishaa", exhibitionName: "GJEPC", salutation: "Mr.", industry: "", businessType: [], customerStatus: "", customerRating: "", leadSource: "", businessSpecialisation: "" },
+    { id: "con_2", organisationId: "org", name: "Nita Shah", mobileNumber: "+919820022222", normalizedMobileNumber: "+919820022222", companyName: "Shah", exhibitionName: "GJEPC", salutation: "", industry: "Jewellery Industry", businessType: ["Karigar"], customerStatus: "New Customer", customerRating: "3", leadSource: "", businessSpecialisation: "" }
+  ];
+}
+
+// Rebuild a workbook from a grid of strings, deflated the way Excel writes one
+// - which exercises the other branch of the reader, since the sheet the server
+// sends out is stored uncompressed.
+function bulkWorkbookFrom(grid) {
+  const zlib = require("zlib");
+  const esc = (v) => String(v == null ? "" : v).replace(/[<>&'"]/g, (ch) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" }[ch]));
+  const col = (i) => { let n = ""; let x = i; while (x > 0) { const r = (x - 1) % 26; n = String.fromCharCode(65 + r) + n; x = Math.floor((x - 1) / 26); } return n; };
+  const body = grid.map((row, r) =>
+    `<row r="${r + 1}">${row.map((v, c) => `<c r="${col(c + 1)}${r + 1}" t="inlineStr"><is><t xml:space="preserve">${esc(v)}</t></is></c>`).join("")}</row>`
+  ).join("");
+  const parts = {
+    "xl/workbook.xml": `<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Contacts" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+    "xl/_rels/workbook.xml.rels": `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`,
+    "xl/worksheets/sheet1.xml": `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${body}</sheetData></worksheet>`
+  };
+  const table = (() => { const t = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  const crc32 = (buf) => { let c = 0xffffffff; for (const b of buf) c = table[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const locals = []; const centrals = []; let offset = 0;
+  for (const [name, content] of Object.entries(parts)) {
+    const raw = Buffer.from(content, "utf8");
+    const data = zlib.deflateRawSync(raw);
+    const nameBuf = Buffer.from(name);
+    const crc = crc32(raw);
+    const local = Buffer.alloc(30 + nameBuf.length);
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(8, 8);
+    local.writeUInt32LE(crc, 14); local.writeUInt32LE(data.length, 18); local.writeUInt32LE(raw.length, 22);
+    local.writeUInt16LE(nameBuf.length, 26); nameBuf.copy(local, 30);
+    locals.push(local, data);
+    const central = Buffer.alloc(46 + nameBuf.length);
+    central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(8, 10); central.writeUInt32LE(crc, 16); central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(raw.length, 24); central.writeUInt16LE(nameBuf.length, 28);
+    central.writeUInt32LE(offset, 42); nameBuf.copy(central, 46);
+    centrals.push(central);
+    offset += local.length + data.length;
+  }
+  const centralBuf = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(centrals.length, 8); end.writeUInt16LE(centrals.length, 10);
+  end.writeUInt32LE(centralBuf.length, 12); end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, centralBuf, end]);
+}
+
+test("the bulk update sheet round-trips through a spreadsheet unchanged", () => {
+  const rows = readWorkbookRows(buildBulkUpdateWorkbook(bulkContacts(), bulkChoices));
+  assert.deepEqual(rows[0], bulkUpdateHeaders());
+  assert.equal(rows[1][0], "con_1");
+  assert.equal(rows[2][rows[0].indexOf("Business Type")], "Karigar");
+  assert.equal(rows[2][rows[0].indexOf("Customer Rating")], "3");
+});
+
+test("a filled-in sheet updates only the classification columns", () => {
+  const contacts = bulkContacts();
+  const grid = readWorkbookRows(buildBulkUpdateWorkbook(contacts, bulkChoices));
+  const header = grid[0];
+  const at = (name) => header.indexOf(name);
+
+  grid[1][at("Industry")] = "Jewellery Industry";
+  grid[1][at("Business Type")] = "Jewellery Retailer; Karigar";
+  grid[1][at("Customer Rating")] = "5";
+  // A value the dropdown never offered has to be kept: every one of these
+  // fields allows "Other" in the app itself.
+  grid[2][at("Industry")] = "Textiles & Apparel";
+  // Editing a context column must have no effect at all.
+  grid[2][at("Name")] = "SHOULD NOT BE SAVED";
+  grid[2][at("Mobile Number")] = "+910000000000";
+
+  const db = { contacts };
+  const user = { id: "usr", organisationId: "org" };
+  const plan = planBulkContactUpdate(db, user, bulkWorkbookFrom(grid), bulkChoices);
+  assert.equal(plan.updates.length, 2);
+  // Planning writes nothing: the preview someone approves must not be the
+  // change itself.
+  assert.equal(contacts[0].customerRating, "");
+
+  assert.equal(applyBulkContactUpdate(db, user, plan), 2);
+  assert.deepEqual(contacts[0].businessType, ["Jewellery Retailer", "Karigar"]);
+  assert.equal(contacts[0].customerRating, "5");
+  assert.equal(contacts[1].industry, "Textiles & Apparel");
+  assert.equal(contacts[1].name, "Nita Shah");
+  assert.equal(contacts[1].mobileNumber, "+919820022222");
+
+  // Sending the same sheet again must do nothing.
+  assert.equal(planBulkContactUpdate(db, user, bulkWorkbookFrom(grid), bulkChoices).updates.length, 0);
+});
+
+test("a bulk update sheet reports rows it cannot safely apply", () => {
+  const contacts = bulkContacts();
+  const grid = readWorkbookRows(buildBulkUpdateWorkbook(contacts, bulkChoices));
+  const header = grid[0];
+  const at = (name) => header.indexOf(name);
+
+  // A rating that is not a rating must be called out, not quietly dropped.
+  grid[1][at("Customer Rating")] = "ten";
+  const ghost = new Array(header.length).fill("");
+  ghost[0] = "con_missing";
+  grid.push(ghost);
+  // A second row for a contact already in the sheet: applying both would make
+  // the outcome depend on row order.
+  const repeat = new Array(header.length).fill("");
+  repeat[0] = "con_2";
+  repeat[at("Industry")] = "Other Industry";
+  grid.push(repeat);
+
+  const db = { contacts };
+  const user = { id: "usr", organisationId: "org" };
+  const plan = planBulkContactUpdate(db, user, bulkWorkbookFrom(grid), bulkChoices);
+  assert.ok(plan.problems.some((p) => /rating/.test(p.reason)));
+  assert.ok(plan.problems.some((p) => /already on row/.test(p.reason)));
+  assert.ok(plan.notFound.some((p) => p.key === "con_missing"));
+  assert.equal(contacts[0].customerRating, "");
+
+  // A sheet with no key column cannot be matched at all, and says so.
+  assert.throws(
+    () => planBulkContactUpdate(db, user, bulkWorkbookFrom(grid.map((r) => r.slice(1))), bulkChoices),
+    /Contact ID/
+  );
+  // And something that is not a spreadsheet gets a sentence, not a stack trace.
+  assert.throws(
+    () => planBulkContactUpdate(db, user, Buffer.from("not a spreadsheet"), bulkChoices),
+    /spreadsheet/i
+  );
+});
