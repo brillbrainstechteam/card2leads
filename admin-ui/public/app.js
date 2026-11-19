@@ -713,7 +713,7 @@
           "</select></div>";
       }
       if (f.type === "textarea") {
-        return '<div><label>' + esc(f.label) + '</label><textarea data-field="' + f.key + '" placeholder="' + esc(f.placeholder || "") + '"></textarea></div>';
+        return '<div><label>' + esc(f.label) + '</label><textarea data-field="' + f.key + '" placeholder="' + esc(f.placeholder || "") + '">' + esc(f.value || "") + '</textarea></div>';
       }
       if (f.type === "date") {
         // Native date picker, floored at tomorrow so a window can't be opened
@@ -723,7 +723,7 @@
           (f.value ? ' value="' + esc(f.value) + '"' : "") + "></div>";
       }
       return '<div><label>' + esc(f.label) + '</label><input data-field="' + f.key + '" type="' + (f.type === "number" ? "number" : "text") + '"' +
-        (f.min != null ? ' min="' + f.min + '"' : "") + ' placeholder="' + esc(f.placeholder || "") + '"></div>';
+        (f.min != null ? ' min="' + f.min + '"' : "") + (f.value != null && f.value !== "" ? ' value="' + esc(f.value) + '"' : "") + ' placeholder="' + esc(f.placeholder || "") + '"></div>';
     }).join("");
 
     var noteHtml = spec.note ? '<div class="' + (spec.note.kind === "danger" ? "danger-note" : "warn-note") + '">' + esc(spec.note.text) + "</div>" : "";
