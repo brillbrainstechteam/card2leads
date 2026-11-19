@@ -2551,9 +2551,12 @@ function invoiceFinancialYear(dateIso) {
 // Invoice numbers must be stable and sequential within a financial year. They
 // are kept in the JSON db keyed by the payment id (the payments themselves live
 // in Postgres), so a number assigned once never changes on re-download.
+function invoiceKey(payment) {
+  return String(payment.provider_payment_id || payment.id || "");
+}
 function assignInvoiceNumber(db, payment) {
   db.invoices = db.invoices && typeof db.invoices === "object" && !Array.isArray(db.invoices) ? db.invoices : {};
-  const key = String(payment.id);
+  const key = invoiceKey(payment);
   if (db.invoices[key]) return db.invoices[key];
   const fy = invoiceFinancialYear(payment.completed_at || payment.created_at);
   const seq = Object.values(db.invoices).filter((inv) => inv.fy === fy).length + 1;
@@ -2567,6 +2570,49 @@ function invoiceLineDescription(payment) {
   if (plan === "custom") return "Card2Leads — custom scan plan";
   if (plan) return `Card2Leads — ${plan.charAt(0).toUpperCase()}${plan.slice(1)} plan`;
   return "Card2Leads — subscription";
+}
+
+// The workspace's primary contact email / phone, used to deliver its invoices.
+function orgContactEmail(db, org) {
+  const users = (db.users || []).filter((u) => u && u.organisationId === org.id && u.email && u.status !== "deleted");
+  users.sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+  return users[0] ? String(users[0].email) : "";
+}
+function orgContactPhone(db, org) {
+  const users = (db.users || []).filter((u) => u && u.organisationId === org.id && u.phone && u.status !== "deleted");
+  return users[0] ? String(users[0].phone) : "";
+}
+
+// Email (and, when configured, WhatsApp) the GST invoice for a paid payment,
+// once. Safe to call from several places — the notifiedAt flag dedupes, so a
+// payment's invoice is never sent twice.
+async function notifyInvoiceForPayment(db, org, payment) {
+  try {
+    if (!org || !payment || payment.status !== "paid") return false;
+    const record = assignInvoiceNumber(db, payment);
+    if (record.notifiedAt) return false;
+    const html = buildInvoiceHtml(org, payment, record);
+    const to = orgContactEmail(db, org);
+    let sent = false;
+    if (to && emailDeliveryEnabled()) {
+      await sendRawEmail({ to, subject: `Your Card2Leads tax invoice ${record.number}`, html, replyTo: INVOICE_SELLER.email });
+      sent = true;
+    }
+    const waSent = await sendWhatsAppInvoice(db, org, payment, record).catch(() => false);
+    if (sent || waSent) record.notifiedAt = now();
+    return sent || waSent;
+  } catch (err) {
+    console.error("[invoice-notify] failed:", err.message);
+    return false;
+  }
+}
+
+// WhatsApp delivery is gated on a configured Business API. The exact payload is
+// wired once the provider (Meta Cloud API / Gupshup / Twilio) and template are
+// known; until then this is a safe no-op rather than a guessed request.
+async function sendWhatsAppInvoice(db, org, payment, record) {
+  if (!process.env.WHATSAPP_API_URL || !process.env.WHATSAPP_API_TOKEN) return false;
+  return false;
 }
 
 // Rupees to Indian-English words (lakh/crore), e.g. "INR Forty Four Thousand
@@ -5543,6 +5589,7 @@ async function handleApi(req, res, pathname) {
             await setLedgerBalance({ clientId: organisation.id, type: "PLAN_ALLOCATION", quantity: organisation.scanLimit, targetBalance: organisation.scanLimit, source: "plan", referenceId: orderId, idempotencyKey: `allocation:${orderId}`, metadata: { plan: "custom", mode: "custom", scans: quote.scans } });
             await recordSubscription({ clientId: organisation.id, plan: "custom", status: "active", billingMode: "one_time", providerReference: orderId, startDate: now(), currentPeriodEnd: organisation.currentPeriodEnd, source: "webhook", eventId: eventId || `order:${orderId}`, metadata: { paymentId: paymentEntity?.id || "" } });
             await recordProductEvent({ name: "plan_activated", clientId: organisation.id, source: "webhook", idempotencyKey: `plan:${orderId}`, metadata: { plan: "custom", mode: "custom" } });
+            await notifyInvoiceForPayment(db, organisation, { provider_payment_id: paymentEntity?.id || orderId, amount_paise: Number(paymentEntity?.amount) || Number(pendingOrder?.amount) || 0, plan: "custom", status: "paid", completed_at: now(), created_at: now() });
           }
         } else if (organisation && notes.type === "topup" && orderId) {
           organisation.grantedTopupOrders = Array.isArray(organisation.grantedTopupOrders) ? organisation.grantedTopupOrders : [];
@@ -5554,6 +5601,7 @@ async function handleApi(req, res, pathname) {
             audit(db, { organisationId: organisation.id }, "billing.topup_charged", "organisation", organisation.id, { orderId });
             await recordPayment({ clientId: organisation.id, amountPaise: Number(paymentEntity?.amount) || TOPUP_AMOUNT_PAISE, plan: "topup", status: "paid", providerPaymentId: paymentEntity?.id || "", providerOrderId: orderId });
             await recordUsageLedger({ clientId: organisation.id, type: "TOPUP_PURCHASE", quantity: scans, balanceEffect: scans, source: "topup", referenceId: orderId, idempotencyKey: `topup:${orderId}`, metadata: { scans } });
+            await notifyInvoiceForPayment(db, organisation, { provider_payment_id: paymentEntity?.id || orderId, amount_paise: Number(paymentEntity?.amount) || TOPUP_AMOUNT_PAISE, plan: "topup", status: "paid", completed_at: now(), created_at: now() });
           }
         } else if (organisation && (notes.type === "one_time_plan" || pendingOneTimeOrder(organisation, orderId)) && orderId) {
           const pendingOrder = pendingOneTimeOrder(organisation, orderId);
@@ -5564,6 +5612,7 @@ async function handleApi(req, res, pathname) {
             await setLedgerBalance({ clientId: organisation.id, type: "PLAN_ALLOCATION", quantity: organisation.scanLimit, targetBalance: organisation.scanLimit, source: "plan", referenceId: orderId, idempotencyKey: `allocation:${orderId}`, metadata: { plan, mode: "one_time" } });
             await recordSubscription({ clientId: organisation.id, plan, status: "active", billingMode: "one_time", providerReference: orderId, startDate: now(), currentPeriodEnd: organisation.currentPeriodEnd, source: "webhook", eventId: eventId || `order:${orderId}`, metadata: { paymentId: paymentEntity?.id || "" } });
             await recordProductEvent({ name: "plan_activated", clientId: organisation.id, source: "webhook", idempotencyKey: `plan:${orderId}`, metadata: { plan, mode: "one_time" } });
+            await notifyInvoiceForPayment(db, organisation, { provider_payment_id: paymentEntity?.id || orderId, amount_paise: PLAN_PRICES_PAISE[plan] || Number(paymentEntity?.amount) || 0, plan, status: "paid", completed_at: now(), created_at: now() });
           }
         }
       } else if (event === "payment.failed") {
@@ -7368,6 +7417,15 @@ async function handleApi(req, res, pathname) {
       organisation.billingProfile = { legalName, gstin, address, city, stateCode, stateName: GST_STATE_NAMES[stateCode] || "", updatedAt: now(), updatedBy: user.id };
       organisation.updatedAt = now();
       await saveDb(db);
+      // Details were likely added right after paying — send the invoice(s) for
+      // any payment in the last week that has not gone out yet.
+      try {
+        const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        const recent = (await fetchClientPayments(user.organisationId, 20)).filter((p) => new Date(p.completed_at || p.created_at).getTime() >= cutoff);
+        let notified = false;
+        for (const p of recent) { if (await notifyInvoiceForPayment(db, organisation, p)) notified = true; }
+        if (notified) await saveDb(db);
+      } catch (err) { console.error("[invoice-notify] profile save:", err.message); }
       return send(res, 200, { ok: true, billingProfile: billingSummary(organisation).billingProfile });
     }
 
