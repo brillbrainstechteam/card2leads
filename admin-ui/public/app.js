@@ -413,7 +413,7 @@
 
     var payments = (c.payments && c.payments.length) ?
       '<table class="mini-table"><thead><tr><th>Date</th><th>Amount</th><th>Plan</th><th>Status</th><th>Invoice</th></tr></thead><tbody>' +
-      c.payments.map(function (p) { return "<tr><td>" + fmtDate(p.created_at) + "</td><td>" + money(p.amount_paise, p.currency) + "</td><td>" + esc(p.plan || "—") + "</td><td>" + esc(p.status) + "</td><td>" + (p.status === "paid" ? '<a href="/api/admin/clients/' + encodeURIComponent(c.id) + '/invoice?payment=' + encodeURIComponent(p.id) + '" target="_blank" rel="noopener">GST invoice</a>' : "—") + "</td></tr>"; }).join("") +
+      c.payments.map(function (p) { return "<tr><td>" + fmtDate(p.created_at) + "</td><td>" + money(p.amount_paise, p.currency) + "</td><td>" + esc(p.plan || "—") + "</td><td>" + esc(p.status) + "</td><td>" + (p.status === "paid" ? '<a href="/api/admin/clients/' + encodeURIComponent(c.clientId) + '/invoice?payment=' + encodeURIComponent(p.id) + '" target="_blank" rel="noopener">GST invoice</a>' : "—") + "</td></tr>"; }).join("") +
       "</tbody></table>" :
       '<div class="empty-mini">No payment records yet.</div>';
 
