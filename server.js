@@ -2554,14 +2554,33 @@ function invoiceFinancialYear(dateIso) {
 function invoiceKey(payment) {
   return String(payment.provider_payment_id || payment.id || "");
 }
-function assignInvoiceNumber(db, payment) {
-  db.invoices = db.invoices && typeof db.invoices === "object" && !Array.isArray(db.invoices) ? db.invoices : {};
+function paymentScans(payment) {
+  if (Number(payment.scans)) return Number(payment.scans);
+  const plan = String(payment.plan || "").toLowerCase();
+  if (PLAN_LIMITS[plan]) return Number(PLAN_LIMITS[plan]);
+  if (plan === "topup") return Number(TOPUP_SCANS) || 0;
+  return 0;
+}
+// A single global invoice series per financial year: BBTech/2026-27/0001…
+// Records are stored on each organisation (which persists to Postgres via its
+// data jsonb), and the next number is the highest sequence seen across ALL
+// organisations for that year + 1 — so numbers stay unique, sequential and
+// never reset. A top-level db.invoices was being dropped by normalizeDb(),
+// which is why every invoice came out 0001.
+function assignInvoiceNumber(db, org, payment) {
+  org.invoices = org.invoices && typeof org.invoices === "object" && !Array.isArray(org.invoices) ? org.invoices : {};
   const key = invoiceKey(payment);
-  if (db.invoices[key]) return db.invoices[key];
+  if (org.invoices[key]) return org.invoices[key];
   const fy = invoiceFinancialYear(payment.completed_at || payment.created_at);
-  const seq = Object.values(db.invoices).filter((inv) => inv.fy === fy).length + 1;
-  db.invoices[key] = { number: `BB/${fy}/${String(seq).padStart(4, "0")}`, fy, issuedAt: now(), paymentId: key };
-  return db.invoices[key];
+  let maxSeq = 0;
+  for (const o of db.organisations) {
+    for (const inv of Object.values(o.invoices || {})) {
+      if (inv && inv.fy === fy && Number(inv.seq) > maxSeq) maxSeq = Number(inv.seq);
+    }
+  }
+  const seq = maxSeq + 1;
+  org.invoices[key] = { number: `BBTech/${fy}/${String(seq).padStart(4, "0")}`, fy, seq, scans: paymentScans(payment), issuedAt: now(), paymentKey: key };
+  return org.invoices[key];
 }
 
 function invoiceLineDescription(payment) {
@@ -2589,7 +2608,7 @@ function orgContactPhone(db, org) {
 async function notifyInvoiceForPayment(db, org, payment) {
   try {
     if (!org || !payment || payment.status !== "paid") return false;
-    const record = assignInvoiceNumber(db, payment);
+    const record = assignInvoiceNumber(db, org, payment);
     if (record.notifiedAt) return false;
     const html = buildInvoiceHtml(org, payment, record);
     const to = orgContactEmail(db, org);
@@ -2709,7 +2728,7 @@ function buildInvoiceHtml(organisation, payment, invoiceRecord) {
     </div>
     <table>
       <thead><tr><th>Description</th><th class="c">SAC</th><th class="r">Taxable value</th></tr></thead>
-      <tbody><tr><td>${esc(invoiceLineDescription(payment))}</td><td class="c">${esc(INVOICE_SELLER.sac)}</td><td class="r">${inr(b.taxable)}</td></tr></tbody>
+      <tbody><tr><td>${esc(invoiceLineDescription(payment))}${invoiceRecord.scans ? ` — ${Number(invoiceRecord.scans).toLocaleString("en-IN")} scan credits` : ""}</td><td class="c">${esc(INVOICE_SELLER.sac)}</td><td class="r">${inr(b.taxable)}</td></tr></tbody>
       <tfoot>
         <tr><td colspan="2">Taxable value</td><td class="r">${inr(b.taxable)}</td></tr>
         ${taxFoot}
@@ -4962,7 +4981,7 @@ async function handleAdminApi(req, res, pathname) {
     const paymentId = String(new URL(req.url, `http://${req.headers.host}`).searchParams.get("payment") || "");
     const payment = await fetchClientPayment(clientId, paymentId);
     if (!payment || payment.status !== "paid") return error(res, 404, "Paid invoice not found for this payment.");
-    const record = assignInvoiceNumber(db, payment);
+    const record = assignInvoiceNumber(db, org, payment);
     await saveDb(db);
     return send(res, 200, buildInvoiceHtml(org, payment, record), { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "private, no-store" });
   }
@@ -5589,7 +5608,7 @@ async function handleApi(req, res, pathname) {
             await setLedgerBalance({ clientId: organisation.id, type: "PLAN_ALLOCATION", quantity: organisation.scanLimit, targetBalance: organisation.scanLimit, source: "plan", referenceId: orderId, idempotencyKey: `allocation:${orderId}`, metadata: { plan: "custom", mode: "custom", scans: quote.scans } });
             await recordSubscription({ clientId: organisation.id, plan: "custom", status: "active", billingMode: "one_time", providerReference: orderId, startDate: now(), currentPeriodEnd: organisation.currentPeriodEnd, source: "webhook", eventId: eventId || `order:${orderId}`, metadata: { paymentId: paymentEntity?.id || "" } });
             await recordProductEvent({ name: "plan_activated", clientId: organisation.id, source: "webhook", idempotencyKey: `plan:${orderId}`, metadata: { plan: "custom", mode: "custom" } });
-            await notifyInvoiceForPayment(db, organisation, { provider_payment_id: paymentEntity?.id || orderId, amount_paise: Number(paymentEntity?.amount) || Number(pendingOrder?.amount) || 0, plan: "custom", status: "paid", completed_at: now(), created_at: now() });
+            await notifyInvoiceForPayment(db, organisation, { provider_payment_id: paymentEntity?.id || orderId, amount_paise: Number(paymentEntity?.amount) || Number(pendingOrder?.amount) || 0, plan: "custom", scans: Number(quote.scans) || 0, status: "paid", completed_at: now(), created_at: now() });
           }
         } else if (organisation && notes.type === "topup" && orderId) {
           organisation.grantedTopupOrders = Array.isArray(organisation.grantedTopupOrders) ? organisation.grantedTopupOrders : [];
@@ -5601,7 +5620,7 @@ async function handleApi(req, res, pathname) {
             audit(db, { organisationId: organisation.id }, "billing.topup_charged", "organisation", organisation.id, { orderId });
             await recordPayment({ clientId: organisation.id, amountPaise: Number(paymentEntity?.amount) || TOPUP_AMOUNT_PAISE, plan: "topup", status: "paid", providerPaymentId: paymentEntity?.id || "", providerOrderId: orderId });
             await recordUsageLedger({ clientId: organisation.id, type: "TOPUP_PURCHASE", quantity: scans, balanceEffect: scans, source: "topup", referenceId: orderId, idempotencyKey: `topup:${orderId}`, metadata: { scans } });
-            await notifyInvoiceForPayment(db, organisation, { provider_payment_id: paymentEntity?.id || orderId, amount_paise: Number(paymentEntity?.amount) || TOPUP_AMOUNT_PAISE, plan: "topup", status: "paid", completed_at: now(), created_at: now() });
+            await notifyInvoiceForPayment(db, organisation, { provider_payment_id: paymentEntity?.id || orderId, amount_paise: Number(paymentEntity?.amount) || TOPUP_AMOUNT_PAISE, plan: "topup", scans: scans, status: "paid", completed_at: now(), created_at: now() });
           }
         } else if (organisation && (notes.type === "one_time_plan" || pendingOneTimeOrder(organisation, orderId)) && orderId) {
           const pendingOrder = pendingOneTimeOrder(organisation, orderId);
@@ -7448,7 +7467,7 @@ async function handleApi(req, res, pathname) {
       const payment = await fetchClientPayment(user.organisationId, paymentId);
       if (!payment || payment.status !== "paid") return error(res, 404, "Paid invoice not found for this payment.");
       const organisation = db.organisations.find((o) => o.id === user.organisationId);
-      const record = assignInvoiceNumber(db, payment);
+      const record = assignInvoiceNumber(db, organisation, payment);
       await saveDb(db);
       return send(res, 200, buildInvoiceHtml(organisation, payment, record), { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "private, no-store" });
     }
