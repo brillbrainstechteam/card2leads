@@ -254,9 +254,10 @@ async function init() {
   }
   const checkoutPlan = url.searchParams.get("checkoutPlan") || "";
   const checkoutTopup = url.searchParams.get("checkoutTopup") === "1";
+  const checkoutCustom = url.searchParams.get("checkoutCustom") === "1";
   // Arriving to pay: pull the checkout script now, in parallel with sign-in and
   // the workspace load, so it is cached by the time the payment opens.
-  if (checkoutPlan || checkoutTopup) void loadRazorpay().catch(() => {});
+  if (checkoutPlan || checkoutTopup || checkoutCustom) void loadRazorpay().catch(() => {});
   const authNotice = url.searchParams.get("auth");
   if (authNotice === "verify_failed" || authNotice === "google_failed") state.authOpen = true;
   if (authNotice === "verified") state.authInfo = "Email verified. You are signed in. Complete the workspace setup to start scanning cards.";
@@ -286,6 +287,7 @@ async function init() {
   // chose there, instead of making them find and pick the plan again.
   if (state.user && checkoutPlan) void startOneTimePlan(checkoutPlan);
   else if (state.user && checkoutTopup) void startTopup();
+  else if (state.user && checkoutCustom) void startCustomPlan();
 }
 
 // A client on the one-per-business rule gets one row per company in every
