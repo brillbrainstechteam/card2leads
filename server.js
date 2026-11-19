@@ -2498,11 +2498,14 @@ function billingSummary(organisation) {
 // gets CGST+SGST; anyone else gets a single IGST line.
 const GST_RATE = 0.18;
 const INVOICE_SELLER = Object.freeze({
-  legalName: "BRILLBRAINS CONSULTANTS PRIVATE LIMITED",
+  legalName: "Brillbrains Consultants Private Limited",
   gstin: "27AALCB6043Q1Z2",
   stateCode: "27",
   stateName: "Maharashtra",
-  address: "E-204, Agarwal Residency, Shankar Lane, Kandivali West, Mumbai, Maharashtra 400067",
+  address: "E-204, Agarwal Residency, Shankar Lane, Kandivali West, Mumbai, Mumbai Suburban, Maharashtra - 400067",
+  cin: "U70200MH2023PTC402766",
+  pan: "AALCB6043Q",
+  email: "accounts@dgtrainings.com",
   sac: "997331"
 });
 const GST_STATE_NAMES = Object.freeze({ "01": "Jammu & Kashmir", "02": "Himachal Pradesh", "03": "Punjab", "04": "Chandigarh", "05": "Uttarakhand", "06": "Haryana", "07": "Delhi", "08": "Rajasthan", "09": "Uttar Pradesh", "10": "Bihar", "11": "Sikkim", "12": "Arunachal Pradesh", "13": "Nagaland", "14": "Manipur", "15": "Mizoram", "16": "Tripura", "17": "Meghalaya", "18": "Assam", "19": "West Bengal", "20": "Jharkhand", "21": "Odisha", "22": "Chhattisgarh", "23": "Madhya Pradesh", "24": "Gujarat", "25": "Daman & Diu", "26": "Dadra & Nagar Haveli", "27": "Maharashtra", "28": "Andhra Pradesh", "29": "Karnataka", "30": "Goa", "31": "Lakshadweep", "32": "Kerala", "33": "Tamil Nadu", "34": "Puducherry", "35": "Andaman & Nicobar", "36": "Telangana", "37": "Andhra Pradesh", "38": "Ladakh" });
@@ -2564,6 +2567,26 @@ function invoiceLineDescription(payment) {
   return "Card2Leads — subscription";
 }
 
+// Rupees to Indian-English words (lakh/crore), e.g. "INR Forty Four Thousand
+// Eight Hundred Twenty Two and Thirty Paise Only" — required on a GST invoice.
+function amountInWords(amount) {
+  const paisaTotal = Math.round(Number(amount || 0) * 100);
+  const rupees = Math.floor(paisaTotal / 100);
+  const paise = paisaTotal % 100;
+  const ones = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
+  const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+  const two = (n) => n < 20 ? ones[n] : `${tens[Math.floor(n / 10)]}${n % 10 ? " " + ones[n % 10] : ""}`;
+  const three = (n) => `${n >= 100 ? `${ones[Math.floor(n / 100)]} Hundred${n % 100 ? " " : ""}` : ""}${n % 100 ? two(n % 100) : ""}`;
+  const words = (n) => {
+    if (n === 0) return "Zero";
+    const crore = Math.floor(n / 10000000); n %= 10000000;
+    const lakh = Math.floor(n / 100000); n %= 100000;
+    const thousand = Math.floor(n / 1000); n %= 1000;
+    return [crore && `${two(crore)} Crore`, lakh && `${two(lakh)} Lakh`, thousand && `${two(thousand)} Thousand`, n && three(n)].filter(Boolean).join(" ").trim();
+  };
+  return `INR ${words(rupees)}${paise ? ` and ${two(paise)} Paise` : ""} Only`;
+}
+
 function buildInvoiceHtml(organisation, payment, invoiceRecord) {
   const esc = (value) => String(value == null ? "" : value).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const inr = (value) => `₹${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -2595,7 +2618,11 @@ function buildInvoiceHtml(organisation, payment, invoiceRecord) {
   td.c,th.c{text-align:center}
   tfoot td{border-bottom:none}
   .total td{font-weight:700;font-size:15px;border-top:2px solid #1a1a24}
-  .note{margin-top:18px;color:#6b6b78;font-size:11.5px}
+  .words{margin-top:16px;font-size:12.5px}
+  .foot{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-top:18px}
+  .note{color:#6b6b78;font-size:11px;max-width:60%}
+  .sign{text-align:right;min-width:200px}
+  .sign-line{margin-top:40px;border-top:1px solid #1a1a24;padding-top:4px;font-size:11.5px}
   .actions{max-width:760px;margin:0 auto 14px;text-align:right}
   button{background:#241c53;color:#fff;border:0;border-radius:8px;padding:9px 18px;font-size:13px;cursor:pointer}
   @media print{body{background:#fff;padding:0}.sheet{border:0}.actions{display:none}}
@@ -2615,17 +2642,20 @@ function buildInvoiceHtml(organisation, payment, invoiceRecord) {
     </div>
     <div class="parties">
       <div class="party">
-        <h3>Billed by</h3>
+        <h3>Billed by (Seller)</h3>
         <strong>${esc(INVOICE_SELLER.legalName)}</strong>
         <div class="muted">${esc(INVOICE_SELLER.address)}</div>
-        <div>GSTIN: ${esc(INVOICE_SELLER.gstin)}</div>
-        <div class="muted">State: ${esc(INVOICE_SELLER.stateName)} (${esc(INVOICE_SELLER.stateCode)})</div>
+        <div>GSTIN/UIN: ${esc(INVOICE_SELLER.gstin)}</div>
+        <div class="muted">State: ${esc(INVOICE_SELLER.stateName)}, Code: ${esc(INVOICE_SELLER.stateCode)}</div>
+        <div class="muted">PAN: ${esc(INVOICE_SELLER.pan)} &middot; CIN: ${esc(INVOICE_SELLER.cin)}</div>
+        <div class="muted">Email: ${esc(INVOICE_SELLER.email)}</div>
       </div>
       <div class="party">
-        <h3>Billed to</h3>
+        <h3>Billed to (Buyer / Consignee)</h3>
         <strong>${esc(buyer.legalName || "—")}</strong>
         <div class="muted">${esc(buyer.address || "")}</div>
-        ${buyer.gstin ? `<div>GSTIN: ${esc(buyer.gstin)}</div>` : `<div class="muted">GSTIN: not provided</div>`}
+        ${buyer.gstin ? `<div>GSTIN/UIN: ${esc(buyer.gstin)}</div>` : `<div class="muted">GSTIN/UIN: not provided (unregistered)</div>`}
+        <div class="muted">State: ${esc(buyer.stateName || "—")}${buyer.stateCode ? `, Code: ${esc(buyer.stateCode)}` : ""}</div>
         <div class="muted">Place of supply: ${esc(placeOfSupply)}</div>
       </div>
     </div>
@@ -2638,7 +2668,11 @@ function buildInvoiceHtml(organisation, payment, invoiceRecord) {
         <tr class="total"><td colspan="2">Total (incl. GST)</td><td class="r">${inr(b.total)}</td></tr>
       </tfoot>
     </table>
-    <p class="note">Amount is inclusive of GST at 18% (SAC ${esc(INVOICE_SELLER.sac)}). This is a computer-generated invoice and does not require a signature.</p>
+    <div class="words"><span class="muted">Amount chargeable (in words):</span> <strong>${esc(amountInWords(b.total))}</strong></div>
+    <div class="foot">
+      <div class="note">Amount is inclusive of GST at 18% (SAC ${esc(INVOICE_SELLER.sac)}). Whether tax is payable under reverse charge: No. This is a computer-generated invoice.</div>
+      <div class="sign"><div class="muted">For ${esc(INVOICE_SELLER.legalName)}</div><div class="sign-line">Authorised Signatory</div></div>
+    </div>
   </div>
 </body></html>`;
 }

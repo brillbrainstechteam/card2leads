@@ -5818,7 +5818,48 @@ function loadRazorpay() {
   });
 }
 
+function billingProfileComplete() {
+  return Boolean(state.overview?.billing?.billingProfile?.legalName);
+}
+
+// Before any payment, make sure we have the buyer's billing details so the
+// invoice is GST-compliant. If they are missing, collect them first and then
+// continue to the payment the user asked for.
+function promptBillingThen(proceed) {
+  const profile = state.overview?.billing?.billingProfile || {};
+  state.modal = {
+    title: "Your billing details",
+    body: "Add your business details so your payment invoice is GST-compliant. GSTIN is optional if you are not registered.",
+    className: "wide-dialog",
+    confirmText: "Save & continue to payment",
+    confirmClass: "primary",
+    keepOpenOnConfirm: true,
+    contentHtml: `
+      <form id="payBillingForm" class="billing-profile-form">
+        <label>Registered business name<input name="legalName" value="${escapeAttr(profile.legalName || "")}" placeholder="Legal business name" required /></label>
+        <label>GSTIN <span class="muted">(optional)</span><input name="gstin" value="${escapeAttr(profile.gstin || "")}" maxlength="15" autocapitalize="characters" spellcheck="false" placeholder="27AAAAA0000A1Z5" /></label>
+        <label>Billing address<textarea name="address" rows="2" placeholder="Registered address">${escapeHtml(profile.address || "")}</textarea></label>
+        <p class="choice-settings-status" id="payBillingStatus"></p>
+      </form>`,
+    onConfirm: async () => {
+      const form = document.querySelector("#payBillingForm");
+      const status = document.querySelector("#payBillingStatus");
+      const data = Object.fromEntries(new FormData(form).entries());
+      if (!String(data.legalName || "").trim()) { if (status) { status.textContent = "Enter the registered business name."; status.classList.add("bad"); } return; }
+      if (status) { status.textContent = "Saving…"; status.classList.remove("bad"); }
+      try {
+        const result = await api("/api/billing/profile", { method: "PUT", body: { legalName: data.legalName, gstin: data.gstin, address: data.address } });
+        if (state.overview?.billing) state.overview.billing.billingProfile = result.billingProfile;
+        closeModal(false);
+        proceed();
+      } catch (err) { if (status) { status.textContent = err.message; status.classList.add("bad"); } }
+    }
+  };
+  render();
+}
+
 async function startOneTimePlan(plan) {
+  if (!billingProfileComplete()) return promptBillingThen(() => startOneTimePlan(plan));
   try {
     // Fetch the checkout script and create the order together: they do not
     // depend on each other, and serialising them doubled the wait.
@@ -5859,6 +5900,7 @@ async function startOneTimePlan(plan) {
 // Pays the custom plan an admin quoted for this workspace. The amount is never
 // sent from here — the server reads it back from the stored quote.
 async function startCustomPlan() {
+  if (!billingProfileComplete()) return promptBillingThen(() => startCustomPlan());
   try {
     const [Razorpay, order] = await Promise.all([
       loadRazorpay(),
@@ -5946,6 +5988,7 @@ function requestTopupPurchase() {
 }
 
 async function startTopup() {
+  if (!billingProfileComplete()) return promptBillingThen(() => startTopup());
   try {
     const [Razorpay, order] = await Promise.all([
       loadRazorpay(),
