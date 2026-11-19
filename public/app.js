@@ -6115,8 +6115,19 @@ function accountView() {
           </div>
         </div>
         <div class="account-block">
+          <h3>GST &amp; invoices</h3>
+          <p class="muted">Add your GST details to show on tax invoices, then download a GST invoice for any payment.</p>
+          <form id="billingProfileForm" class="billing-profile-form">
+            <label>Registered business name<input name="legalName" value="${escapeAttr(billing.billingProfile?.legalName || "")}" placeholder="Legal business name" /></label>
+            <label>GSTIN<input name="gstin" value="${escapeAttr(billing.billingProfile?.gstin || "")}" placeholder="27AAAAA0000A1Z5" maxlength="15" autocapitalize="characters" spellcheck="false" /></label>
+            <label>Billing address<textarea name="address" rows="2" placeholder="Registered address">${escapeHtml(billing.billingProfile?.address || "")}</textarea></label>
+            <div class="actions"><button type="submit">Save GST details</button><span class="choice-settings-status" id="billingProfileStatus"></span></div>
+          </form>
+          <div id="invoiceList" class="invoice-list"><p class="muted">Loading payments…</p></div>
+        </div>
+        <div class="account-block">
           <h3>Privacy documents</h3>
-          
+
           <div class="actions">
             <a href="/privacy-policy" target="_blank"><button class="secondary" type="button">Privacy policy</button></a>
             <a href="/terms" target="_blank"><button class="secondary" type="button">Terms</button></a>
@@ -6191,6 +6202,18 @@ function initAccountBillingTabs(node) {
       });
     });
   });
+}
+
+async function loadInvoiceList(node) {
+  const listEl = node.querySelector("#invoiceList");
+  if (!listEl) return;
+  try {
+    const { payments } = await api("/api/billing/payments");
+    if (!payments || !payments.length) { listEl.innerHTML = `<p class="muted">No payments yet. Your invoices will appear here after your first payment.</p>`; return; }
+    listEl.innerHTML = `<table class="invoice-table"><thead><tr><th>Date</th><th>Plan</th><th>Amount</th><th></th></tr></thead><tbody>${payments.map((p) => `<tr><td>${escapeHtml(displayDate(p.date))}</td><td>${escapeHtml(statusLabel(p.plan || "—"))}</td><td>&#8377;${Number(p.amount).toLocaleString("en-IN")}</td><td><a href="/api/billing/invoice?payment=${encodeURIComponent(p.id)}" target="_blank" rel="noopener">Invoice</a></td></tr>`).join("")}</tbody></table>`;
+  } catch {
+    listEl.innerHTML = `<p class="muted">Could not load payments right now.</p>`;
+  }
 }
 
 function accountBillingView() {
@@ -6301,8 +6324,19 @@ function accountBillingView() {
           </div>
         </div>
         <div class="account-block">
+          <h3>GST &amp; invoices</h3>
+          <p class="muted">Add your GST details to show on tax invoices, then download a GST invoice for any payment.</p>
+          <form id="billingProfileForm" class="billing-profile-form">
+            <label>Registered business name<input name="legalName" value="${escapeAttr(billing.billingProfile?.legalName || "")}" placeholder="Legal business name" /></label>
+            <label>GSTIN<input name="gstin" value="${escapeAttr(billing.billingProfile?.gstin || "")}" placeholder="27AAAAA0000A1Z5" maxlength="15" autocapitalize="characters" spellcheck="false" /></label>
+            <label>Billing address<textarea name="address" rows="2" placeholder="Registered address">${escapeHtml(billing.billingProfile?.address || "")}</textarea></label>
+            <div class="actions"><button type="submit">Save GST details</button><span class="choice-settings-status" id="billingProfileStatus"></span></div>
+          </form>
+          <div id="invoiceList" class="invoice-list"><p class="muted">Loading payments…</p></div>
+        </div>
+        <div class="account-block">
           <h3>Privacy documents</h3>
-          
+
           <div class="actions">
             <a href="/privacy-policy" target="_blank"><button class="secondary" type="button">Privacy policy</button></a>
             <a href="/terms" target="_blank"><button class="secondary" type="button">Terms</button></a>
@@ -6323,6 +6357,19 @@ function accountBillingView() {
   node.querySelectorAll("[data-pay-once]").forEach((btn) => btn.addEventListener("click", () => startOneTimePlan(btn.dataset.payOnce)));
   node.querySelector("#payCustomQuote")?.addEventListener("click", () => startCustomPlan());
   node.querySelector("#buyTopup")?.addEventListener("click", requestTopupPurchase);
+  const billingForm = node.querySelector("#billingProfileForm");
+  billingForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const status = node.querySelector("#billingProfileStatus");
+    const data = Object.fromEntries(new FormData(billingForm).entries());
+    if (status) { status.textContent = "Saving…"; status.classList.remove("bad"); }
+    try {
+      const result = await api("/api/billing/profile", { method: "PUT", body: { legalName: data.legalName, gstin: data.gstin, address: data.address } });
+      if (state.overview?.billing) state.overview.billing.billingProfile = result.billingProfile;
+      if (status) status.textContent = "Saved. It will appear on your invoices.";
+    } catch (err) { if (status) { status.textContent = err.message; status.classList.add("bad"); } }
+  });
+  loadInvoiceList(node);
   node.querySelectorAll(".disconnectGoogleAccount").forEach((btn) => btn.addEventListener("click", () => {
     state.modal = {
       title: "Disconnect Google?",

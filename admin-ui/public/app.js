@@ -412,8 +412,8 @@
       '<div class="empty-mini">No ledger entries yet. Populated once the usage ledger goes live (Phase 2).</div>';
 
     var payments = (c.payments && c.payments.length) ?
-      '<table class="mini-table"><thead><tr><th>Date</th><th>Amount</th><th>Plan</th><th>Status</th></tr></thead><tbody>' +
-      c.payments.map(function (p) { return "<tr><td>" + fmtDate(p.created_at) + "</td><td>" + money(p.amount_paise, p.currency) + "</td><td>" + esc(p.plan || "—") + "</td><td>" + esc(p.status) + "</td></tr>"; }).join("") +
+      '<table class="mini-table"><thead><tr><th>Date</th><th>Amount</th><th>Plan</th><th>Status</th><th>Invoice</th></tr></thead><tbody>' +
+      c.payments.map(function (p) { return "<tr><td>" + fmtDate(p.created_at) + "</td><td>" + money(p.amount_paise, p.currency) + "</td><td>" + esc(p.plan || "—") + "</td><td>" + esc(p.status) + "</td><td>" + (p.status === "paid" ? '<a href="/api/admin/clients/' + encodeURIComponent(c.id) + '/invoice?payment=' + encodeURIComponent(p.id) + '" target="_blank" rel="noopener">GST invoice</a>' : "—") + "</td></tr>"; }).join("") +
       "</tbody></table>" :
       '<div class="empty-mini">No payment records yet.</div>';
 
@@ -513,6 +513,7 @@
       '<button class="btn-sm" data-act="change-plan">Change Plan</button>' +
       '<button class="btn-sm" data-act="custom-allowance">Custom Allowance</button>' +
       '<button class="btn-sm" data-act="custom-quote">Custom Plan Quote</button>' +
+      '<button class="btn-sm" data-act="billing-profile">GST / Billing</button>' +
       (locked
         ? '<button class="btn-sm" data-act="reactivate">Reactivate</button>'
         : '<button class="btn-sm btn-warn" data-act="suspend">Suspend</button>') +
@@ -582,6 +583,19 @@
             { key: "validityDays", type: "number", label: "Valid for (days)", required: true, placeholder: "e.g. 365", min: 1 },
             { key: "note", type: "text", label: "Note to client (optional)", placeholder: "e.g. Agreed rate for IIJS 2026" },
             { key: "reason", type: "text", label: "Reason", required: true, placeholder: "Why these terms?" }
+          ]
+        };
+      }
+      case "billing-profile": {
+        var bp = c.billingProfile || {};
+        return {
+          endpoint: "billing-profile", title: "GST / Billing details", submitLabel: "Save details",
+          sub: bp.gstin ? ("Current GSTIN: " + bp.gstin) : "No GST details saved for this client yet.",
+          note: { kind: "info", text: "Shows on the client's tax invoices. The GSTIN sets the place of supply — CGST+SGST for Maharashtra, IGST for other states." },
+          fields: [
+            { key: "legalName", type: "text", label: "Registered business name", required: true, placeholder: "e.g. Dishaa Gold and Platinum", value: bp.legalName || "" },
+            { key: "gstin", type: "text", label: "GSTIN", placeholder: "27AAMFD5405C1ZQ", value: bp.gstin || "" },
+            { key: "address", type: "text", label: "Billing address", placeholder: "Registered address", value: bp.address || "" }
           ]
         };
       }

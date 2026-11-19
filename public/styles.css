@@ -8848,3 +8848,12 @@ strong {
 .address-row textarea { flex: 1 1 220px; min-width: 200px; }
 .address-row .address-primary { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; white-space: nowrap; }
 .address-row .address-primary input { width: auto; }
+
+/* GST billing profile + invoice list on the Account screen. */
+.billing-profile-form { display: grid; gap: 10px; margin: 6px 0 14px; }
+.billing-profile-form label { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted, #6b6b78); }
+.billing-profile-form input, .billing-profile-form textarea { padding: 8px 10px; }
+.invoice-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.invoice-table th, .invoice-table td { padding: 8px 6px; border-bottom: 1px solid var(--border, #e6e3ef); text-align: left; }
+.invoice-table th { font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted, #6b6b78); }
+.invoice-table a { color: var(--accent-strong, #241c53); font-weight: 600; }

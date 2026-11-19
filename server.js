@@ -2477,8 +2477,170 @@ function billingSummary(organisation) {
     topupAmount: TOPUP_AMOUNT_PAISE / 100,
     topupBalance: expired ? 0 : remainingTopupScans(organisation),
     canTopup: topupAllowed,
-    topupUnavailableReason: topupAllowed ? "" : topupUnavailableReason(organisation)
+    topupUnavailableReason: topupAllowed ? "" : topupUnavailableReason(organisation),
+    // The buyer's saved GST / billing details, used on invoices.
+    billingProfile: organisation?.billingProfile
+      ? {
+          legalName: String(organisation.billingProfile.legalName || ""),
+          gstin: String(organisation.billingProfile.gstin || ""),
+          address: String(organisation.billingProfile.address || ""),
+          stateCode: String(organisation.billingProfile.stateCode || ""),
+          stateName: String(organisation.billingProfile.stateName || "")
+        }
+      : null
   };
+}
+
+// --- GST invoices --------------------------------------------------------
+// Card2Leads is a SaaS service (SAC 997331), taxed at 18%. The amount actually
+// charged is treated as GST-inclusive, so the tax is backed out of it and the
+// client's total never changes. A buyer in the seller's state (Maharashtra)
+// gets CGST+SGST; anyone else gets a single IGST line.
+const GST_RATE = 0.18;
+const INVOICE_SELLER = Object.freeze({
+  legalName: "BRILLBRAINS CONSULTANTS PRIVATE LIMITED",
+  gstin: "27AALCB6043Q1Z2",
+  stateCode: "27",
+  stateName: "Maharashtra",
+  address: "E-204, Agarwal Residency, Shankar Lane, Kandivali West, Mumbai, Maharashtra 400067",
+  sac: "997331"
+});
+const GST_STATE_NAMES = Object.freeze({ "01": "Jammu & Kashmir", "02": "Himachal Pradesh", "03": "Punjab", "04": "Chandigarh", "05": "Uttarakhand", "06": "Haryana", "07": "Delhi", "08": "Rajasthan", "09": "Uttar Pradesh", "10": "Bihar", "11": "Sikkim", "12": "Arunachal Pradesh", "13": "Nagaland", "14": "Manipur", "15": "Mizoram", "16": "Tripura", "17": "Meghalaya", "18": "Assam", "19": "West Bengal", "20": "Jharkhand", "21": "Odisha", "22": "Chhattisgarh", "23": "Madhya Pradesh", "24": "Gujarat", "25": "Daman & Diu", "26": "Dadra & Nagar Haveli", "27": "Maharashtra", "28": "Andhra Pradesh", "29": "Karnataka", "30": "Goa", "31": "Lakshadweep", "32": "Kerala", "33": "Tamil Nadu", "34": "Puducherry", "35": "Andaman & Nicobar", "36": "Telangana", "37": "Andhra Pradesh", "38": "Ladakh" });
+
+function invoiceRound2(value) { return Math.round((Number(value) + Number.EPSILON) * 100) / 100; }
+function stateCodeFromGstin(gstin) { const code = String(gstin || "").trim().slice(0, 2); return /^[0-9]{2}$/.test(code) ? code : ""; }
+
+function gstBreakdown(amountPaise, buyerStateCode) {
+  const total = invoiceRound2(Number(amountPaise || 0) / 100);
+  const taxable = invoiceRound2(total / (1 + GST_RATE));
+  const gst = invoiceRound2(total - taxable);
+  const intra = buyerStateCode ? String(buyerStateCode) === INVOICE_SELLER.stateCode : true;
+  if (intra) {
+    const cgst = invoiceRound2(gst / 2);
+    return { total, taxable, cgst, sgst: invoiceRound2(gst - cgst), igst: 0, gst, intra: true };
+  }
+  return { total, taxable, cgst: 0, sgst: 0, igst: gst, gst, intra: false };
+}
+
+function invoiceBuyer(organisation) {
+  const profile = organisation?.billingProfile || {};
+  const gstin = String(profile.gstin || "").trim().toUpperCase();
+  const stateCode = stateCodeFromGstin(gstin) || String(profile.stateCode || "");
+  return {
+    legalName: String(profile.legalName || organisation?.name || "").trim(),
+    gstin,
+    address: String(profile.address || "").trim(),
+    stateCode,
+    stateName: GST_STATE_NAMES[stateCode] || String(profile.stateName || "")
+  };
+}
+
+// Indian GST financial year (April–March), e.g. "2026-27".
+function invoiceFinancialYear(dateIso) {
+  const d = new Date(dateIso || now());
+  const year = d.getUTCFullYear();
+  const start = d.getUTCMonth() >= 3 ? year : year - 1;
+  return `${start}-${String(start + 1).slice(-2)}`;
+}
+
+// Invoice numbers must be stable and sequential within a financial year. They
+// are kept in the JSON db keyed by the payment id (the payments themselves live
+// in Postgres), so a number assigned once never changes on re-download.
+function assignInvoiceNumber(db, payment) {
+  db.invoices = db.invoices && typeof db.invoices === "object" && !Array.isArray(db.invoices) ? db.invoices : {};
+  const key = String(payment.id);
+  if (db.invoices[key]) return db.invoices[key];
+  const fy = invoiceFinancialYear(payment.completed_at || payment.created_at);
+  const seq = Object.values(db.invoices).filter((inv) => inv.fy === fy).length + 1;
+  db.invoices[key] = { number: `BB/${fy}/${String(seq).padStart(4, "0")}`, fy, issuedAt: now(), paymentId: key };
+  return db.invoices[key];
+}
+
+function invoiceLineDescription(payment) {
+  const plan = String(payment.plan || "").toLowerCase();
+  if (plan === "topup") return "Card2Leads — scan credits top-up";
+  if (plan === "custom") return "Card2Leads — custom scan plan";
+  if (plan) return `Card2Leads — ${plan.charAt(0).toUpperCase()}${plan.slice(1)} plan`;
+  return "Card2Leads — subscription";
+}
+
+function buildInvoiceHtml(organisation, payment, invoiceRecord) {
+  const esc = (value) => String(value == null ? "" : value).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const inr = (value) => `₹${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const buyer = invoiceBuyer(organisation);
+  const b = gstBreakdown(payment.amount_paise, buyer.stateCode);
+  const date = new Date(payment.completed_at || payment.created_at || now()).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  const taxFoot = b.intra
+    ? `<tr><td colspan="2">CGST @ 9%</td><td class="r">${inr(b.cgst)}</td></tr><tr><td colspan="2">SGST @ 9%</td><td class="r">${inr(b.sgst)}</td></tr>`
+    : `<tr><td colspan="2">IGST @ 18%</td><td class="r">${inr(b.igst)}</td></tr>`;
+  const placeOfSupply = buyer.stateName ? `${buyer.stateName}${buyer.stateCode ? ` (${buyer.stateCode})` : ""}` : "—";
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Invoice ${esc(invoiceRecord.number)}</title>
+<style>
+  :root{color-scheme:light}
+  *{box-sizing:border-box}
+  body{font-family:Arial,Helvetica,sans-serif;color:#1a1a24;background:#f4f4f7;margin:0;padding:24px;font-size:13px;line-height:1.5}
+  .sheet{max-width:760px;margin:0 auto;background:#fff;border:1px solid #e6e3ef;border-radius:10px;padding:32px}
+  .top{display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;border-bottom:2px solid #1a1a24;padding-bottom:16px}
+  h1{font-size:22px;margin:0 0 4px}
+  .muted{color:#6b6b78}
+  .meta{text-align:right}
+  .parties{display:flex;gap:24px;flex-wrap:wrap;margin:20px 0}
+  .party{flex:1 1 240px}
+  .party h3{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#6b6b78;margin:0 0 6px}
+  .party strong{font-size:14px}
+  table{width:100%;border-collapse:collapse;margin-top:12px}
+  th,td{padding:9px 10px;border-bottom:1px solid #eceaf3;text-align:left}
+  th{background:#faf9fe;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#6b6b78}
+  td.r,th.r{text-align:right}
+  td.c,th.c{text-align:center}
+  tfoot td{border-bottom:none}
+  .total td{font-weight:700;font-size:15px;border-top:2px solid #1a1a24}
+  .note{margin-top:18px;color:#6b6b78;font-size:11.5px}
+  .actions{max-width:760px;margin:0 auto 14px;text-align:right}
+  button{background:#241c53;color:#fff;border:0;border-radius:8px;padding:9px 18px;font-size:13px;cursor:pointer}
+  @media print{body{background:#fff;padding:0}.sheet{border:0}.actions{display:none}}
+</style></head><body>
+  <div class="actions"><button onclick="window.print()">Download / Print PDF</button></div>
+  <div class="sheet">
+    <div class="top">
+      <div>
+        <h1>Tax Invoice</h1>
+        <div class="muted">Card2Leads by BrillBrains</div>
+      </div>
+      <div class="meta">
+        <div><strong>${esc(invoiceRecord.number)}</strong></div>
+        <div class="muted">Date: ${esc(date)}</div>
+        <div class="muted">Payment: ${esc(payment.provider_payment_id || payment.id || "")}</div>
+      </div>
+    </div>
+    <div class="parties">
+      <div class="party">
+        <h3>Billed by</h3>
+        <strong>${esc(INVOICE_SELLER.legalName)}</strong>
+        <div class="muted">${esc(INVOICE_SELLER.address)}</div>
+        <div>GSTIN: ${esc(INVOICE_SELLER.gstin)}</div>
+        <div class="muted">State: ${esc(INVOICE_SELLER.stateName)} (${esc(INVOICE_SELLER.stateCode)})</div>
+      </div>
+      <div class="party">
+        <h3>Billed to</h3>
+        <strong>${esc(buyer.legalName || "—")}</strong>
+        <div class="muted">${esc(buyer.address || "")}</div>
+        ${buyer.gstin ? `<div>GSTIN: ${esc(buyer.gstin)}</div>` : `<div class="muted">GSTIN: not provided</div>`}
+        <div class="muted">Place of supply: ${esc(placeOfSupply)}</div>
+      </div>
+    </div>
+    <table>
+      <thead><tr><th>Description</th><th class="c">SAC</th><th class="r">Taxable value</th></tr></thead>
+      <tbody><tr><td>${esc(invoiceLineDescription(payment))}</td><td class="c">${esc(INVOICE_SELLER.sac)}</td><td class="r">${inr(b.taxable)}</td></tr></tbody>
+      <tfoot>
+        <tr><td colspan="2">Taxable value</td><td class="r">${inr(b.taxable)}</td></tr>
+        ${taxFoot}
+        <tr class="total"><td colspan="2">Total (incl. GST)</td><td class="r">${inr(b.total)}</td></tr>
+      </tfoot>
+    </table>
+    <p class="note">Amount is inclusive of GST at 18% (SAC ${esc(INVOICE_SELLER.sac)}). This is a computer-generated invoice and does not require a signature.</p>
+  </div>
+</body></html>`;
 }
 
 async function razorpayApi(path, { method = "GET", body } = {}) {
@@ -4122,6 +4284,7 @@ function clientSummary(db, org, ledgerUsage = null) {
       : null,
     // A quote the client has been sent but not yet paid.
     customQuote: org.customQuote ? { ...org.customQuote, amount: Number(org.customQuote.pricePaise || 0) / 100 } : null,
+    billingProfile: org.billingProfile || null,
     currentPeriodEnd: org.currentPeriodEnd || null,
     exportOnePerBusiness: Boolean(org.exportOnePerBusiness),
     userCount: users.length,
@@ -4216,6 +4379,29 @@ async function recordPayment(payment) {
     );
   } catch (err) {
     console.error("[payment] write failed:", err.message);
+  }
+}
+
+// Paid payments for a client, newest first. Payments live only in Postgres, so
+// without it there is nothing to invoice.
+async function fetchClientPayments(clientId, limit = 100) {
+  if (!pgPool || !clientId) return [];
+  try {
+    const r = await pgPool.query("select * from payments where client_id = $1 and status = 'paid' order by created_at desc limit $2", [clientId, limit]);
+    return r.rows;
+  } catch (err) {
+    console.error("[payment] list failed:", err.message);
+    return [];
+  }
+}
+async function fetchClientPayment(clientId, paymentId) {
+  if (!pgPool || !clientId || !paymentId) return null;
+  try {
+    const r = await pgPool.query("select * from payments where id = $1 and client_id = $2 limit 1", [paymentId, clientId]);
+    return r.rows[0] || null;
+  } catch (err) {
+    console.error("[payment] read failed:", err.message);
+    return null;
   }
 }
 
@@ -4685,6 +4871,20 @@ async function handleAdminApi(req, res, pathname) {
     });
   }
 
+  // A client's GST invoice for one payment, downloaded by the admin.
+  if (req.method === "GET" && pathname.startsWith("/api/admin/clients/") && pathname.endsWith("/invoice")) {
+    const clientId = decodeURIComponent(pathname.split("/")[4]);
+    const db = readDb();
+    const org = db.organisations.find((o) => o.id === clientId);
+    if (!org) return error(res, 404, "Client not found.");
+    const paymentId = String(new URL(req.url, `http://${req.headers.host}`).searchParams.get("payment") || "");
+    const payment = await fetchClientPayment(clientId, paymentId);
+    if (!payment || payment.status !== "paid") return error(res, 404, "Paid invoice not found for this payment.");
+    const record = assignInvoiceNumber(db, payment);
+    await saveDb(db);
+    return send(res, 200, buildInvoiceHtml(org, payment, record), { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "private, no-store" });
+  }
+
   // ---- Operational actions (spec §80): each requires a reason and writes an
   // immutable admin-audit entry. Org mutations go through readDb()->saveDb().
   if (req.method === "POST" && pathname.startsWith("/api/admin/clients/") && pathname.split("/").length === 6) {
@@ -4698,6 +4898,30 @@ async function handleAdminApi(req, res, pathname) {
     const reason = String(body.reason || "").trim();
     const needsReason = ["credits", "change-plan", "custom-allowance", "export-rules", "suspend", "cancel-subscription", "initiate-deletion"].includes(action);
     if (needsReason && !reason) return error(res, 400, "A reason is required for this action.");
+
+    // The client's GST / billing details for their invoices. An admin can set
+    // these on the client's behalf (e.g. a client who gave them over the phone).
+    if (action === "billing-profile") {
+      const prev = { billingProfile: org.billingProfile || null };
+      if (body.clear) {
+        org.billingProfile = null;
+        org.updatedAt = now();
+        await saveDb(db);
+        await adminAudit(admin, { clientId, action: "BILLING_PROFILE_CLEARED", previousValue: prev, newValue: { billingProfile: null }, reason });
+        return send(res, 200, { ok: true, billingProfile: null });
+      }
+      const legalName = String(body.legalName || "").trim().slice(0, 200);
+      const gstin = String(body.gstin || "").trim().toUpperCase();
+      const address = String(body.address || "").trim().slice(0, 400);
+      if (!legalName) return error(res, 400, "Enter the registered business name.");
+      if (gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/.test(gstin)) return error(res, 400, "Enter a valid 15-character GSTIN, or leave it blank.");
+      const stateCode = stateCodeFromGstin(gstin);
+      org.billingProfile = { legalName, gstin, address, stateCode, stateName: GST_STATE_NAMES[stateCode] || "", updatedAt: now(), updatedBy: admin.email || admin.id };
+      org.updatedAt = now();
+      await saveDb(db);
+      await adminAudit(admin, { clientId, action: "BILLING_PROFILE_SET", previousValue: prev, newValue: { billingProfile: org.billingProfile }, reason });
+      return send(res, 200, { ok: true, billingProfile: org.billingProfile });
+    }
 
     if (action === "notes") {
       const note = String(body.note || "").trim();
@@ -7091,6 +7315,48 @@ async function handleApi(req, res, pathname) {
       return send(res, 200, { url: `${baseUrl(req)}/api/billing/checkout?token=${encodeURIComponent(token)}` });
     }
 
+    // The workspace's own GST / billing details, used on its invoices. Saved by
+    // the client themselves; an admin can also set them from the admin panel.
+    if (req.method === "PUT" && pathname === "/api/billing/profile") {
+      const organisation = db.organisations.find((o) => o.id === user.organisationId);
+      if (!organisation) return error(res, 404, "Workspace not found.");
+      const body = await readJson(req);
+      const legalName = String(body.legalName || "").trim().slice(0, 200);
+      const gstin = String(body.gstin || "").trim().toUpperCase();
+      const address = String(body.address || "").trim().slice(0, 400);
+      if (!legalName) return error(res, 400, "Enter the registered business name for the invoice.");
+      if (gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/.test(gstin)) return error(res, 400, "Enter a valid 15-character GSTIN, or leave it blank.");
+      const stateCode = stateCodeFromGstin(gstin);
+      organisation.billingProfile = { legalName, gstin, address, stateCode, stateName: GST_STATE_NAMES[stateCode] || "", updatedAt: now(), updatedBy: user.id };
+      organisation.updatedAt = now();
+      await saveDb(db);
+      return send(res, 200, { ok: true, billingProfile: billingSummary(organisation).billingProfile });
+    }
+
+    // A client's own paid payments, each downloadable as a GST invoice.
+    if (req.method === "GET" && pathname === "/api/billing/payments") {
+      const rows = await fetchClientPayments(user.organisationId);
+      return send(res, 200, {
+        payments: rows.map((p) => ({
+          id: p.id,
+          amount: Number(p.amount_paise || 0) / 100,
+          plan: p.plan || "",
+          date: iso(p.completed_at || p.created_at),
+          providerPaymentId: p.provider_payment_id || ""
+        }))
+      });
+    }
+
+    if (req.method === "GET" && pathname === "/api/billing/invoice") {
+      const paymentId = String(new URL(req.url, `http://${req.headers.host}`).searchParams.get("payment") || "");
+      const payment = await fetchClientPayment(user.organisationId, paymentId);
+      if (!payment || payment.status !== "paid") return error(res, 404, "Paid invoice not found for this payment.");
+      const organisation = db.organisations.find((o) => o.id === user.organisationId);
+      const record = assignInvoiceNumber(db, payment);
+      await saveDb(db);
+      return send(res, 200, buildInvoiceHtml(organisation, payment, record), { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "private, no-store" });
+    }
+
     // The workspace's saved-contact name format. Saving it relabels every
     // existing contact straight away, so the list, exports and the next Google
     // sync all agree. Names a user typed by hand keep their text.
@@ -9452,6 +9718,8 @@ function crc32(buffer) {
 
 module.exports = {
   EXPORT_COLUMNS,
+  gstBreakdown,
+  buildInvoiceHtml,
   applyDerivedContactFields,
   exportSelection,
   expandCardPeople,
