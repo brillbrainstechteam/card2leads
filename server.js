@@ -9262,12 +9262,30 @@ function buildVcf(contacts) {
         `ADR;TYPE=WORK:;;${vCardEscape(contact.address)};${vCardEscape(contact.city)};${vCardEscape(contact.state)};${vCardEscape(contact.postalCode)};${vCardEscape(contact.country)}`
       );
     }
+    // Any further addresses (head office, showroom, factory) become their own
+    // ADR lines so they import as real addresses; the type is kept in the street
+    // component since vCard has no standard field for it.
+    for (const extra of Array.isArray(contact.addresses) ? contact.addresses : []) {
+      if (!extra || !extra.line) continue;
+      const label = extra.type ? `${extra.type}: ${extra.line}` : String(extra.line);
+      lines.push(`ADR;TYPE=WORK:;;${vCardEscape(label)};;;;`);
+    }
+    const businessTypes = toChoiceList(contact.businessType);
     const exhibitionLabel = googleContactGroupLabel(contact.exhibitionName, contact.exhibitionDate);
     const noteParts = [
       contact.name ? `Contact: ${contact.name}` : "",
       contact.nameNative ? `Name (original): ${contact.nameNative}` : "",
       contact.companyNameNative ? `Company (original): ${contact.companyNameNative}` : "",
       contact.cardLanguage ? `Card language: ${contact.cardLanguage}` : "",
+      contact.salutation ? `Salutation: ${contact.salutation}` : "",
+      contact.industry ? `Industry: ${contact.industry}` : "",
+      businessTypes.length ? `Business type: ${businessTypes.join(", ")}` : "",
+      contact.businessSpecialisation ? `Business specialisation: ${contact.businessSpecialisation}` : "",
+      contact.customerStatus ? `Customer status: ${contact.customerStatus}` : "",
+      Number(contact.customerRating) ? `Rating: ${contact.customerRating}/5` : "",
+      contact.eventType ? `Event type: ${contact.eventType}` : "",
+      contact.leadSource ? `Lead source: ${contact.leadSource}` : "",
+      contact.scanDate ? `Scan date: ${contact.scanDate}` : "",
       exportRemarks(contact),
       exhibitionLabel ? `Exhibition: ${exhibitionLabel}` : ""
     ].filter(Boolean);
