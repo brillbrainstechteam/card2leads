@@ -2009,10 +2009,10 @@ function bulkUpdateHref(collectionId, useFilters) {
 }
 
 function showBulkUpdateModal(collectionId, useFilters) {
-  state.bulkUpdate = { stage: "choose", file: null, fileName: "", summary: null, busy: false };
+  state.bulkUpdate = { stage: "choose", file: null, fileName: "", fileSize: 0, summary: null, busy: false };
   state.modal = {
-    title: "Update contacts from a spreadsheet",
-    body: "Download your contacts, fill in the highlighted columns in Excel, and upload the same file back.",
+    title: "Upload contacts",
+    body: "Upload the Excel you downloaded from Contacts, with the columns you changed filled in.",
     className: "wide-dialog",
     contentHtml: `<div id="bulkUpdateBody"></div>`,
     actions: [{ label: "Close" }],
@@ -2037,31 +2037,43 @@ function renderBulkUpdateBody(node, collectionId, useFilters) {
     return;
   }
 
+  // No template to fetch first: the file people edit is the Excel they already
+  // download from Contacts, so this screen only has to take it back.
+  const picked = Boolean(stateNow.fileName);
   body.innerHTML = `
-    <ol class="bulk-update-steps">
-      <li>
-        <b>Download</b>
-        <a class="button-link" href="${bulkUpdateHref(collectionId, useFilters)}"><button type="button" class="secondary">Download contacts</button></a>
-      </li>
-      <li>
-        <b>Fill in the highlighted columns</b>
-        <p class="muted">They have dropdowns. Business Type takes several, separated by a semicolon.</p>
-      </li>
-      <li>
-        <b>Upload</b>
-        <input type="file" id="bulkUpdateFile" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
-        ${stateNow.fileName ? `<p class="bulk-update-filename">Read from <b>${escapeHtml(stateNow.fileName)}</b></p>` : ""}
-      </li>
-    </ol>
-    <p class="bulk-update-status" id="bulkUpdateStatus" role="status" aria-live="polite">${stateNow.busy ? "Reading the sheet…" : ""}</p>
+    ${picked ? `
+    <div class="upload-file">
+      <span class="upload-file-icon" aria-hidden="true">${fileGlyph()}</span>
+      <div class="upload-file-detail">
+        <b>${escapeHtml(stateNow.fileName)}</b>
+        <span class="muted">${stateNow.fileSize ? `${formatBytes(stateNow.fileSize)} · ` : ""}${stateNow.busy ? "Reading…" : "Ready"}</span>
+      </div>
+      ${stateNow.busy ? "" : `<span class="upload-file-ok" aria-hidden="true">✓</span>`}
+    </div>
     ${summary && stateNow.stage === "preview" ? bulkUpdatePreviewHtml(summary) : ""}
+    <div class="upload-actions">
+      <button type="button" class="secondary" data-bulk-replace>Replace file</button>
+    </div>`
+    : `
+    <div class="upload-drop">
+      <span class="upload-drop-icon" aria-hidden="true">${uploadGlyph()}</span>
+      <button type="button" class="primary" data-bulk-choose>Choose file</button>
+      <p class="muted">Excel (.xlsx) downloaded from Contacts</p>
+    </div>`}
+    <input type="file" id="bulkUpdateFile" class="visually-hidden" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+    <p class="bulk-update-status" id="bulkUpdateStatus" role="status" aria-live="polite"></p>
   `;
+
+  const fileInput = body.querySelector("#bulkUpdateFile");
+  body.querySelector("[data-bulk-choose]")?.addEventListener("click", () => fileInput?.click());
+  body.querySelector("[data-bulk-replace]")?.addEventListener("click", () => fileInput?.click());
 
   body.querySelector("#bulkUpdateFile")?.addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
     state.bulkUpdate.file = file;
     state.bulkUpdate.fileName = file.name;
+    state.bulkUpdate.fileSize = file.size;
     await previewBulkUpdate(node, collectionId, useFilters);
   });
   body.querySelector("[data-bulk-apply]")?.addEventListener("click", async () => {
@@ -2102,8 +2114,16 @@ function bulkUpdatePreviewHtml(summary) {
         </table>
         ${summary.willUpdate > (summary.preview || []).length ? `<p class="muted">Showing the first ${(summary.preview || []).length}. All ${summary.willUpdate} will be updated.</p>` : ""}
       </div>` : ""}
-      ${summary.willUpdate ? `<button type="button" class="primary" data-bulk-apply>Update ${summary.willUpdate} contact${summary.willUpdate === 1 ? "" : "s"}</button>` : ""}
+      ${summary.willUpdate ? `<button type="button" class="primary bulk-apply" data-bulk-apply>Update ${summary.willUpdate} contact${summary.willUpdate === 1 ? "" : "s"}</button>` : ""}
     </div>`;
+}
+
+function uploadGlyph() {
+  return `<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V8"/><path d="m8.5 11.5 3.5-3.5 3.5 3.5"/><path d="M20 16.5A3.5 3.5 0 0 0 17.5 10h-1A6 6 0 1 0 6 15.5"/></svg>`;
+}
+
+function fileGlyph() {
+  return `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="m9 13 3 3 3-3"/></svg>`;
 }
 
 function bulkFieldLabel(field) {
