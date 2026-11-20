@@ -2780,7 +2780,13 @@ function buildInvoiceHtml(organisation, payment, invoiceRecord, options = {}) {
   .sign-line{margin-top:40px;border-top:1px solid #1a1a24;padding-top:4px;font-size:11.5px}
   .actions{max-width:760px;margin:0 auto 14px;text-align:right}
   button{background:#241c53;color:#fff;border:0;border-radius:8px;padding:9px 18px;font-size:13px;cursor:pointer}
-  @media print{body{background:#fff;padding:0}.sheet{border:0}.actions{display:none}}
+  /* The browser prints its own header and footer - the date, the page title
+     and the URL - into the page margin. Leaving no page margin leaves nowhere
+     to put them, which is the only way a page can turn them off; the white
+     space around the invoice comes from the body instead. Someone who wants
+     them back can still tick "Headers and footers" in the print dialog. */
+  @page{size:auto;margin:0}
+  @media print{body{background:#fff;padding:14mm 12mm}.sheet{max-width:none;border:0;border-radius:0;padding:0}.actions{display:none}}
 </style></head><body>
   ${options.forEmail ? "" : `<div class="actions"><button type="button" data-print-invoice>Download / Print PDF</button></div>`}
   <div class="sheet">
