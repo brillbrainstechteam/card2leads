@@ -2760,7 +2760,12 @@ function buildInvoiceHtml(organisation, payment, invoiceRecord, options = {}) {
   .top{display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;border-bottom:2px solid #1a1a24;padding-bottom:16px}
   h1{font-size:22px;margin:0 0 4px}
   .muted{color:#6b6b78}
-  .meta{text-align:right}
+  .meta{text-align:right;min-width:260px}
+  .meta-row{display:flex;justify-content:flex-end;gap:10px}
+  .meta-row span:first-child{min-width:96px;text-align:left}
+  /* A payment reference is a long unbroken token; left to itself it either
+     overflows the column or wraps mid-word in a way that is hard to read back. */
+  .ref{font-family:"Courier New",monospace;font-size:12px;word-break:break-all}
   .parties{display:flex;gap:24px;flex-wrap:wrap;margin:20px 0}
   .party{flex:1 1 240px}
   .party h3{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#6b6b78;margin:0 0 6px}
@@ -2797,28 +2802,27 @@ function buildInvoiceHtml(organisation, payment, invoiceRecord, options = {}) {
         <div class="muted">Card2Leads by BrillBrains</div>
       </div>
       <div class="meta">
-        <div><strong>${esc(invoiceRecord.number)}</strong></div>
-        <div class="muted">Date: ${esc(date)}</div>
-        <div class="muted">Payment: ${esc(payment.provider_payment_id || payment.id || "")}</div>
+        <div class="meta-row"><span class="muted">Invoice No.</span><strong>${esc(invoiceRecord.number)}</strong></div>
+        <div class="meta-row"><span class="muted">Invoice Date</span><span>${esc(date)}</span></div>
+        <div class="meta-row"><span class="muted">Place of Supply</span><span>${esc(placeOfSupply)}</span></div>
+        <div class="meta-row"><span class="muted">Payment Mode</span><span>Online</span></div>
+        <div class="meta-row"><span class="muted">Transaction Ref.</span><span class="ref">${esc(payment.provider_payment_id || payment.id || "")}</span></div>
       </div>
     </div>
     <div class="parties">
       <div class="party">
-        <h3>Billed by (Seller)</h3>
+        <h3>Billed By</h3>
         <strong>${esc(INVOICE_SELLER.legalName)}</strong>
         <div class="muted">${esc(INVOICE_SELLER.address)}</div>
         <div>GSTIN/UIN: ${esc(INVOICE_SELLER.gstin)}</div>
-        <div class="muted">State: ${esc(INVOICE_SELLER.stateName)}, Code: ${esc(INVOICE_SELLER.stateCode)}</div>
-        <div class="muted">Email: ${esc(INVOICE_SELLER.email)}</div>
       </div>
       <div class="party">
-        <h3>Billed to (Buyer / Consignee)</h3>
+        <h3>Billed To</h3>
         <strong>${esc(buyer.legalName || "—")}</strong>
         <div class="muted">${esc(buyer.address || "")}</div>
-        ${buyer.city ? `<div class="muted">${esc(buyer.city)}</div>` : ""}
+        ${buyer.city && !String(buyer.address || "").toLowerCase().includes(String(buyer.city).toLowerCase()) ? `<div class="muted">${esc(buyer.city)}</div>` : ""}
         ${buyer.gstin ? `<div>GSTIN/UIN: ${esc(buyer.gstin)}</div>` : `<div class="muted">GSTIN/UIN: not provided (unregistered)</div>`}
-        <div class="muted">State: ${esc(buyer.stateName || "—")}${buyer.stateCode ? `, Code: ${esc(buyer.stateCode)}` : ""}</div>
-        <div class="muted">Place of supply: ${esc(placeOfSupply)}</div>
+        ${buyer.stateName ? `<div class="muted">State: ${esc(buyer.stateName)}${buyer.stateCode ? ` (${esc(buyer.stateCode)})` : ""}</div>` : ""}
       </div>
     </div>
     <table>
