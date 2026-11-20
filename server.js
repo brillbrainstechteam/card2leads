@@ -5194,6 +5194,25 @@ async function handleAdminApi(req, res, pathname) {
   }
 
   // A client's GST invoice for one payment, downloaded by the admin.
+  // The same spreadsheet flow the client has, run on their behalf — for a
+  // client who would rather send the filled-in file over than work the screen
+  // themselves.
+  if (req.method === "GET" && pathname.startsWith("/api/admin/clients/") && pathname.endsWith("/bulk-update.xlsx")) {
+    const clientId = decodeURIComponent(pathname.split("/")[4]);
+    const db = readDb();
+    const org = db.organisations.find((o) => o.id === clientId);
+    if (!org) return error(res, 404, "Client not found.");
+    const contacts = db.contacts.filter((c) => c.organisationId === org.id && !c.deletedAt);
+    const xlsx = buildBulkUpdateWorkbook(contacts, contactChoicesFor(org));
+    const safeName = String(org.name || "client").replace(/[^A-Za-z0-9 _-]+/g, "").trim() || "client";
+    // A download should not fail because the audit write did.
+    await adminAudit(admin, { clientId, action: "BULK_UPDATE_SHEET_DOWNLOADED", newValue: { contacts: contacts.length } }).catch(() => {});
+    return send(res, 200, xlsx, {
+      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": `attachment; filename="${safeName} - update.xlsx"`
+    });
+  }
+
   if (req.method === "GET" && pathname.startsWith("/api/admin/clients/") && pathname.endsWith("/invoice")) {
     const clientId = decodeURIComponent(pathname.split("/")[4]);
     const db = readDb();
@@ -5221,6 +5240,38 @@ async function handleAdminApi(req, res, pathname) {
     const reason = String(body.reason || "").trim();
     const needsReason = ["credits", "change-plan", "custom-allowance", "export-rules", "suspend", "cancel-subscription", "initiate-deletion"].includes(action);
     if (needsReason && !reason) return error(res, 400, "A reason is required for this action.");
+
+    // Reads and writes as the client's own workspace would, with the admin
+    // recorded as the actor, so an audit entry says who changed six hundred
+    // contacts and when.
+    if (action === "bulk-update") {
+      const base64 = String(body.fileBase64 || "").split(",").pop() || "";
+      if (!base64) return error(res, 400, "Attach the filled-in update sheet.");
+      const buffer = Buffer.from(base64, "base64");
+      if (!buffer.length) return error(res, 400, "That file could not be read.");
+      if (buffer.length > 25 * 1024 * 1024) return error(res, 400, "That file is too large. Split it and upload it in parts.");
+      const actor = { id: `admin:${admin.email || admin.id}`, organisationId: org.id };
+      let plan;
+      try {
+        plan = planBulkContactUpdate(db, actor, buffer, contactChoicesFor(org));
+      } catch (err) {
+        return error(res, 400, err.message);
+      }
+      const summary = {
+        willUpdate: plan.updates.length,
+        unchanged: plan.unchanged,
+        notFound: plan.notFound.length,
+        rejected: plan.problems.length,
+        columns: plan.columns,
+        preview: plan.updates.slice(0, 50),
+        problems: [...plan.notFound, ...plan.problems].slice(0, 50)
+      };
+      if (!body.apply) return send(res, 200, { applied: false, ...summary });
+      const updated = applyBulkContactUpdate(db, actor, plan);
+      await saveDb(db);
+      await adminAudit(admin, { clientId, action: "CONTACTS_BULK_UPDATED", newValue: { updated, columns: plan.columns }, reason });
+      return send(res, 200, { applied: true, updated, ...summary });
+    }
 
     // The client's GST / billing details for their invoices. An admin can set
     // these on the client's behalf (e.g. a client who gave them over the phone).

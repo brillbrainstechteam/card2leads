@@ -523,6 +523,7 @@
           (canCancel ? '<button data-act="cancel-subscription">Schedule cancellation</button>' : "") +
           (c.customAllowance || c.currentPeriodEnd ? '<button data-act="extend-allowance">Change expiry date</button>' : "") +
           (c.customAllowance ? '<button data-act="clear-allowance">Remove custom allowance</button>' : "") +
+          '<button data-act="bulk-update">Update contacts from a spreadsheet</button>' +
           '<button data-act="disconnect-google">Disconnect Google</button>' +
           '<button data-act="initiate-deletion" class="danger">Initiate Deletion</button>' +
         '</div></div>' +
@@ -537,6 +538,7 @@
         var act = btn.getAttribute("data-act");
         if (act === "more") { if (menu) menu.hidden = !menu.hidden; return; }
         if (menu) menu.hidden = true;
+        if (act === "bulk-update") return openBulkUpdateModal(c, refresh);
         openClientActionModal(c, act, refresh);
       });
     });
@@ -694,6 +696,115 @@
     }
   }
 
+  // Running a client's spreadsheet update for them. Not built from actionSpec
+  // like the rest: that machinery is a form of typed fields, and this is a file
+  // to pick, a preview to read and then a decision — which nothing else here
+  // does.
+  function openBulkUpdateModal(c, refresh) {
+    var state = { file: null, fileName: "", summary: null };
+    var scrim = document.createElement("div");
+    scrim.className = "modal-scrim";
+    scrim.innerHTML =
+      '<div class="modal modal-wide" role="dialog" aria-modal="true">' +
+      "<h3>Update contacts from a spreadsheet</h3>" +
+      '<p class="modal-sub">' + esc(c.name || "This client") + ' — download the sheet, fill in the classification columns, send it back. Only those columns are read; names and numbers are left alone.</p>' +
+      '<div class="modal-error" hidden></div>' +
+      '<div class="modal-body">' +
+        '<a class="invoice-link" href="' + API + '/api/admin/clients/' + encodeURIComponent(c.clientId) + '/bulk-update.xlsx" target="_blank" rel="noopener">Download update sheet</a>' +
+        '<div style="height:14px"></div>' +
+        '<label>Filled-in sheet</label>' +
+        '<input type="file" data-bulk-file accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">' +
+        '<div data-bulk-preview></div>' +
+      "</div>" +
+      '<div class="modal-foot"><button class="btn" data-cancel>Close</button>' +
+      '<button class="btn btn-primary" style="width:auto" data-submit hidden>Apply</button></div>' +
+      "</div>";
+    document.body.appendChild(scrim);
+    function close() { scrim.remove(); }
+    scrim.addEventListener("click", function (e) { if (e.target === scrim) close(); });
+    scrim.querySelector("[data-cancel]").addEventListener("click", close);
+
+    var errBox = scrim.querySelector(".modal-error");
+    var previewBox = scrim.querySelector("[data-bulk-preview]");
+    var submitBtn = scrim.querySelector("[data-submit]");
+
+    function fail(message) {
+      errBox.hidden = false;
+      errBox.textContent = message;
+    }
+
+    function renderPreview(summary, applied) {
+      state.summary = summary;
+      if (applied) {
+        previewBox.innerHTML = '<div class="bulk-done"><b>' + summary.updated + " contact" + (summary.updated === 1 ? "" : "s") + " updated.</b></div>";
+        submitBtn.hidden = true;
+        return;
+      }
+      var rows = (summary.preview || []).map(function (u) {
+        var changes = Object.keys(u.changes).map(function (field) {
+          var now = Array.isArray(u.changes[field]) ? u.changes[field].join("; ") : u.changes[field];
+          var was = (u.before || {})[field];
+          return '<div class="bulk-change"><span>' + esc(field) + '</span> <s>' + esc(was || "—") + "</s> → <b>" + esc(now || "—") + "</b></div>";
+        }).join("");
+        return "<tr><td>" + esc(u.name || u.contactId) + "</td><td>" + changes + "</td></tr>";
+      }).join("");
+      previewBox.innerHTML =
+        '<div class="bulk-summary"><b>' + summary.willUpdate + " contact" + (summary.willUpdate === 1 ? "" : "s") + " would change.</b>" +
+        (summary.unchanged ? " " + summary.unchanged + " already match." : "") +
+        (summary.notFound ? " " + summary.notFound + " row" + (summary.notFound === 1 ? "" : "s") + " matched no contact." : "") +
+        (summary.rejected ? " " + summary.rejected + " row" + (summary.rejected === 1 ? "" : "s") + " could not be applied." : "") +
+        "</div>" +
+        ((summary.problems || []).length
+          ? "<details class=\"bulk-problems\"><summary>" + summary.problems.length + " row" + (summary.problems.length === 1 ? "" : "s") + " to look at</summary><ul>" +
+            summary.problems.map(function (p) { return "<li>Row " + p.row + ": " + esc(p.reason || "could not be matched") + " (" + esc(String(p.key || "")) + ")</li>"; }).join("") +
+            "</ul></details>"
+          : "") +
+        (rows ? '<div class="bulk-table-wrap"><table class="mini-table"><thead><tr><th>Contact</th><th>Changes</th></tr></thead><tbody>' + rows + "</tbody></table></div>" : "");
+      submitBtn.hidden = !summary.willUpdate;
+    }
+
+    async function send(apply) {
+      if (!state.file) return;
+      var base64 = await new Promise(function (resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function () { resolve(String(reader.result || "").split(",").pop() || ""); };
+        reader.onerror = function () { reject(new Error("That file could not be read.")); };
+        reader.readAsDataURL(state.file);
+      });
+      return api("/api/admin/clients/" + encodeURIComponent(c.clientId) + "/bulk-update", {
+        method: "POST",
+        body: { fileBase64: base64, apply: apply }
+      });
+    }
+
+    scrim.querySelector("[data-bulk-file]").addEventListener("change", async function (e) {
+      var file = e.target.files && e.target.files[0];
+      if (!file) return;
+      state.file = file;
+      state.fileName = file.name;
+      errBox.hidden = true;
+      previewBox.innerHTML = '<div class="bulk-summary">Reading the sheet…</div>';
+      try {
+        renderPreview(await send(false), false);
+      } catch (thrown) {
+        previewBox.innerHTML = "";
+        fail(thrown && thrown.message ? thrown.message : "That sheet could not be read.");
+      }
+    });
+
+    submitBtn.addEventListener("click", async function () {
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Updating…";
+      try {
+        renderPreview(await send(true), true);
+        if (refresh) refresh();
+      } catch (thrown) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Apply";
+        fail(thrown && thrown.message ? thrown.message : "Those changes could not be saved.");
+      }
+    });
+  }
   function openClientActionModal(c, act, refresh) {
     var spec = actionSpec(c, act);
     if (!spec) return;

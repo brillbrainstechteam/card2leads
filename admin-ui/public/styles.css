@@ -238,3 +238,13 @@ tbody tr:hover { background: var(--surface-2); }
 .setting-toggle.is-on { background: var(--ok); border-color: var(--ok); }
 .setting-toggle.is-on .knob { transform: translateX(20px); }
 .setting-toggle:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* Running a client's spreadsheet update from the panel. */
+.modal-wide { max-width: 720px; }
+.bulk-summary { margin: 14px 0 8px; font-size: 13px; }
+.bulk-problems { margin-bottom: 10px; font-size: 12.5px; }
+.bulk-problems ul { margin: 6px 0 0; padding-left: 18px; }
+.bulk-table-wrap { max-height: 300px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+.bulk-change { margin-bottom: 2px; font-size: 12px; }
+.bulk-change span { color: var(--muted, #6b6b78); }
+.bulk-done { margin-top: 14px; font-size: 14px; }

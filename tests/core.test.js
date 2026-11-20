@@ -1009,3 +1009,31 @@ test("the number continues the hand-written book and shows the short year", () =
   assert.equal(invoices.pay_b.number, "66/26-27");
   assert.equal(invoices.pay_c.number, "67/26-27");
 });
+
+test("an admin running a client's sheet cannot reach another client's contacts", () => {
+  // The admin acts as the client's workspace, so the tenant check is the only
+  // thing standing between one client's spreadsheet and another's records.
+  const contacts = [
+    { id: "con_a", organisationId: "org_a", name: "Kamlesh Patel", mobileNumber: "+919825011111", normalizedMobileNumber: "+919825011111", industry: "", businessType: [], customerStatus: "", customerRating: "", leadSource: "", businessSpecialisation: "", salutation: "" },
+    { id: "con_b", organisationId: "org_b", name: "Someone Else", mobileNumber: "+919820022222", normalizedMobileNumber: "+919820022222", industry: "", businessType: [], customerStatus: "", customerRating: "", leadSource: "", businessSpecialisation: "", salutation: "" }
+  ];
+  const db = { contacts };
+  // A sheet naming both — the second row belongs to a different client.
+  const grid = [
+    ["Contact ID", "Name", "Mobile Number", "Company Name", "Event", "Salutation", "Industry", "Business Type", "Business Specialisation", "Customer Status", "Customer Rating", "Lead Source"],
+    ["con_a", "Kamlesh Patel", "+919825011111", "", "", "", "Jewellery Industry", "", "", "", "", ""],
+    ["con_b", "Someone Else", "+919820022222", "", "", "", "Jewellery Industry", "", "", "", "", ""]
+  ];
+  const adminActor = { id: "admin:ops@example.com", organisationId: "org_a" };
+  const plan = planBulkContactUpdate(db, adminActor, bulkWorkbookFrom(grid), bulkChoices);
+
+  assert.equal(plan.updates.length, 1, "only the client being worked on");
+  assert.equal(plan.updates[0].contactId, "con_a");
+  assert.ok(plan.notFound.some((p) => p.key === "con_b"), "the other client's row is not found, not applied");
+
+  assert.equal(applyBulkContactUpdate(db, adminActor, plan), 1);
+  assert.equal(contacts[0].industry, "Jewellery Industry");
+  assert.equal(contacts[1].industry, "", "the other client's contact is untouched");
+  // The admin is recorded as the one who changed it.
+  assert.equal(contacts[0].updatedBy, "admin:ops@example.com");
+});
