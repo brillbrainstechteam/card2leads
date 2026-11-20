@@ -2782,7 +2782,7 @@ function buildInvoiceHtml(organisation, payment, invoiceRecord, options = {}) {
   button{background:#241c53;color:#fff;border:0;border-radius:8px;padding:9px 18px;font-size:13px;cursor:pointer}
   @media print{body{background:#fff;padding:0}.sheet{border:0}.actions{display:none}}
 </style></head><body>
-  <div class="actions"><button onclick="window.print()">Download / Print PDF</button></div>
+  ${options.forEmail ? "" : `<div class="actions"><button type="button" data-print-invoice>Download / Print PDF</button></div>`}
   <div class="sheet">
     <div class="top">
       <div>
@@ -2831,6 +2831,7 @@ function buildInvoiceHtml(organisation, payment, invoiceRecord, options = {}) {
         : `<div class="sign"><div class="muted">For ${esc(INVOICE_SELLER.legalName)}</div><div class="sign-line">Authorised Signatory</div></div>`}
     </div>
   </div>
+  ${options.forEmail ? "" : `<script src="/invoice-print.js"></script>`}
 </body></html>`;
 }
 
