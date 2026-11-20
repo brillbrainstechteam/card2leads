@@ -2543,6 +2543,21 @@ function invoiceBuyer(organisation) {
 }
 
 // Indian GST financial year (April–March), e.g. "2026-27".
+// Invoices 1-64 of 2026-27 were written by hand before this system issued any,
+// so the first one it issues continues that book instead of starting again.
+// Any year without an entry here starts at 1.
+const INVOICE_FIRST_NUMBER = Object.freeze({ "2026-27": Number(process.env.INVOICE_FIRST_NUMBER_2026_27 || 65) });
+
+function invoiceFirstNumber(fy) {
+  const configured = Number(INVOICE_FIRST_NUMBER[fy]);
+  return Number.isFinite(configured) && configured > 0 ? configured : 1;
+}
+
+// The number as it is written on the invoice: "65/26-27".
+function invoiceNumberFor(fy, seq) {
+  return `${seq}/${String(fy).slice(2)}`;
+}
+
 function invoiceFinancialYear(dateIso) {
   const d = new Date(dateIso || now());
   const year = d.getUTCFullYear();
@@ -2580,8 +2595,9 @@ function assignInvoiceNumber(db, org, payment) {
       if (inv && inv.fy === fy && Number(inv.seq) > maxSeq) maxSeq = Number(inv.seq);
     }
   }
-  const seq = maxSeq + 1;
-  org.invoices[key] = { number: `BBTech/${fy}/${String(seq).padStart(4, "0")}`, fy, seq, scans: paymentScans(payment), issuedAt: now(), paymentKey: key };
+  // Never below where the hand-written book left off.
+  const seq = Math.max(maxSeq + 1, invoiceFirstNumber(fy));
+  org.invoices[key] = { number: invoiceNumberFor(fy, seq), fy, seq, scans: paymentScans(payment), issuedAt: now(), paymentKey: key };
   return org.invoices[key];
 }
 
@@ -2622,7 +2638,7 @@ function resequenceInvoices(db, rows) {
     if (!key) continue;
     paidKeys.add(key);
     const fy = invoiceFinancialYear(p.completed_at || p.created_at);
-    const seq = (nextSeqForFy.get(fy) || 0) + 1;
+    const seq = nextSeqForFy.has(fy) ? nextSeqForFy.get(fy) + 1 : invoiceFirstNumber(fy);
     nextSeqForFy.set(fy, seq);
     org.invoices = org.invoices && typeof org.invoices === "object" && !Array.isArray(org.invoices) ? org.invoices : {};
     const existing = org.invoices[key] || {};
@@ -2631,7 +2647,7 @@ function resequenceInvoices(db, rows) {
     // about the invoice and are carried over untouched.
     org.invoices[key] = {
       ...existing,
-      number: `BBTech/${fy}/${String(seq).padStart(4, "0")}`,
+      number: invoiceNumberFor(fy, seq),
       fy,
       seq,
       scans: existing.scans == null ? paymentScans(p) : existing.scans,
@@ -2740,107 +2756,210 @@ function invoiceSignatureSrc({ absolute = false } = {}) {
   return invoiceSignatureDataUri;
 }
 
+// Plan names as the customer bought them, so the invoice line reads like the
+// thing on the website rather than an internal key.
+const PLAN_PRODUCT_NAMES = Object.freeze({
+  monthly: "Starter Pack",
+  quarterly: "Exhibition Pass",
+  annual: "Pro Annual",
+  starter: "Starter Pack",
+  topup: "Scan credits top-up",
+  custom: "Custom scan plan"
+});
+
+function invoiceProductName(payment) {
+  const plan = String(payment.plan || "").toLowerCase();
+  return PLAN_PRODUCT_NAMES[plan] || (plan ? `${plan.charAt(0).toUpperCase()}${plan.slice(1)} plan` : "Subscription");
+}
+
+// Laid out as the company's own invoice format (the Tally "INVOICE" template):
+// a header grid of particulars, an items table, the amount in words, and the
+// signature block. Everything the format has a field for but a software
+// subscription has no answer to - delivery note, dispatch details, terms of
+// delivery - is left blank rather than removed, so a printed invoice from here
+// and one written by hand sit on the same stationery.
 function buildInvoiceHtml(organisation, payment, invoiceRecord, options = {}) {
   const esc = (value) => String(value == null ? "" : value).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const inr = (value) => `₹${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const money = (value) => Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const buyer = invoiceBuyer(organisation);
   const b = gstBreakdown(payment.amount_paise, buyer.stateCode);
-  const date = new Date(payment.completed_at || payment.created_at || now()).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-  const taxFoot = b.intra
-    ? `<tr><td colspan="2">CGST @ 9%</td><td class="r">${inr(b.cgst)}</td></tr><tr><td colspan="2">SGST @ 9%</td><td class="r">${inr(b.sgst)}</td></tr>`
-    : `<tr><td colspan="2">IGST @ 18%</td><td class="r">${inr(b.igst)}</td></tr>`;
-  const placeOfSupply = buyer.stateName ? `${buyer.stateName}${buyer.stateCode ? ` (${buyer.stateCode})` : ""}` : "—";
+  const issued = new Date(payment.completed_at || payment.created_at || now());
+  // Written out rather than taken from toLocaleDateString, which gives "Sept"
+  // for September and would make one invoice's date read differently to the
+  // other eleven months.
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const date = `${String(issued.getDate()).padStart(2, "0")}-${MONTHS[issued.getMonth()]}-${issued.getFullYear()}`;
   const signatureSrc = invoiceSignatureSrc({ absolute: Boolean(options.forEmail) });
+  const scans = Number(invoiceRecord.scans || 0);
+  const product = invoiceProductName(payment);
+  const placeOfSupply = buyer.stateName || "—";
+
+  // The tax lines sit inside the items table, indented under the item, which is
+  // how this format shows them.
+  const taxRows = b.intra
+    ? [["CGST @ 9%", b.cgst], ["SGST @ 9%", b.sgst]]
+    : [["IGST @ 18%", b.igst]];
+
+  const partyLines = (lines) => lines.filter(Boolean).map((line) => `<div>${line}</div>`).join("");
+
+  const buyerBlock = partyLines([
+    `<strong>${esc(buyer.legalName || "—")}</strong>`,
+    esc(buyer.address || ""),
+    buyer.city && !String(buyer.address || "").toLowerCase().includes(String(buyer.city).toLowerCase()) ? esc(buyer.city) : "",
+    `<span class="lbl">GSTIN/UIN</span>: ${esc(buyer.gstin || "Unregistered")}`,
+    `<span class="lbl">State Name</span>: ${esc(buyer.stateName || "—")}${buyer.stateCode ? `, Code : ${esc(buyer.stateCode)}` : ""}`,
+    `<span class="lbl">Place of Supply</span>: ${esc(placeOfSupply)}`
+  ]);
+
   return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Invoice ${esc(invoiceRecord.number)}</title>
 <style>
   :root{color-scheme:light}
   *{box-sizing:border-box}
-  body{font-family:Arial,Helvetica,sans-serif;color:#1a1a24;background:#f4f4f7;margin:0;padding:24px;font-size:13px;line-height:1.5}
-  .sheet{max-width:760px;margin:0 auto;background:#fff;border:1px solid #e6e3ef;border-radius:10px;padding:32px}
-  .top{display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;border-bottom:2px solid #1a1a24;padding-bottom:16px}
-  h1{font-size:22px;margin:0 0 4px}
-  .muted{color:#6b6b78}
-  .meta{text-align:right;min-width:260px}
-  .meta-row{display:flex;justify-content:flex-end;gap:10px}
-  .meta-row span:first-child{min-width:96px;text-align:left}
-  /* A payment reference is a long unbroken token; left to itself it either
-     overflows the column or wraps mid-word in a way that is hard to read back. */
-  .ref{font-family:"Courier New",monospace;font-size:12px;word-break:break-all}
-  .parties{display:flex;gap:24px;flex-wrap:wrap;margin:20px 0}
-  .party{flex:1 1 240px}
-  .party h3{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#6b6b78;margin:0 0 6px}
-  .party strong{font-size:14px}
-  table{width:100%;border-collapse:collapse;margin-top:12px}
-  th,td{padding:9px 10px;border-bottom:1px solid #eceaf3;text-align:left}
-  th{background:#faf9fe;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#6b6b78}
-  td.r,th.r{text-align:right}
-  td.c,th.c{text-align:center}
-  tfoot td{border-bottom:none}
-  .total td{font-weight:700;font-size:15px;border-top:2px solid #1a1a24}
-  .words{margin-top:16px;font-size:12.5px}
-  .foot{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-top:18px}
-  .note{color:#6b6b78;font-size:11px;max-width:60%}
-  .sign{text-align:right;min-width:200px}
-  .sign-img{display:block;width:230px;max-width:100%;height:auto;margin:0 0 2px auto}
-  .sign-caption{font-size:11.5px;color:#6b6b78}
-  .sign-line{margin-top:40px;border-top:1px solid #1a1a24;padding-top:4px;font-size:11.5px}
-  .actions{max-width:760px;margin:0 auto 14px;text-align:right}
-  button{background:#241c53;color:#fff;border:0;border-radius:8px;padding:9px 18px;font-size:13px;cursor:pointer}
-  /* The browser prints its own header and footer - the date, the page title
-     and the URL - into the page margin. Leaving no page margin leaves nowhere
-     to put them, which is the only way a page can turn them off; the white
-     space around the invoice comes from the body instead. Someone who wants
-     them back can still tick "Headers and footers" in the print dialog. */
+  body{font-family:Arial,Helvetica,sans-serif;color:#000;background:#f4f4f7;margin:0;padding:24px;font-size:12px;line-height:1.45}
+  .sheet{max-width:820px;margin:0 auto;background:#fff;padding:26px}
+  .doc-title{text-align:center;font-size:15px;font-weight:bold;letter-spacing:.08em;margin:0 0 10px}
+  table{width:100%;border-collapse:collapse}
+  .grid, .items, .foot{border:1px solid #000}
+  .grid td{border:1px solid #000;padding:5px 7px;vertical-align:top}
+  .lbl{display:inline-block;min-width:88px}
+  .seller strong{font-size:13px}
+  .field-label{color:#000;font-size:11px}
+  .field-value{font-weight:bold;margin-top:2px;min-height:14px}
+  .items{margin-top:-1px}
+  .items th,.items td{border:1px solid #000;padding:5px 7px}
+  .items th{font-weight:bold;text-align:center;font-size:11px}
+  .items td.r{text-align:right}
+  .items td.c{text-align:center}
+  .items .item-name{font-weight:bold}
+  .items .tax-line td{border-top:0;border-bottom:0}
+  .items .tax-label{padding-left:22px}
+  .items .total td{border-top:1px solid #000;font-weight:bold}
+  .foot{margin-top:-1px}
+  .foot td{border:1px solid #000;padding:6px 7px;vertical-align:top}
+  .words{font-weight:bold}
+  .eoe{float:right;font-weight:normal}
+  .sign-cell{text-align:right;width:52%}
+  .sign-img{display:block;width:210px;max-width:100%;height:auto;margin:2px 0 0 auto}
+  .sign-for{font-weight:bold}
+  .computer{text-align:center;margin-top:10px;font-style:italic}
+  .actions{max-width:820px;margin:0 auto 12px;text-align:right}
+  .actions button{font:inherit;padding:9px 16px;border-radius:7px;border:0;background:#241c53;color:#fff;font-weight:bold;cursor:pointer}
+  /* The browser prints its own header and footer into the page margin, so
+     leaving no margin is the only way a page can keep them off. */
   @page{size:auto;margin:0}
-  @media print{body{background:#fff;padding:14mm 12mm}.sheet{max-width:none;border:0;border-radius:0;padding:0}.actions{display:none}}
+  @media print{body{background:#fff;padding:10mm}.sheet{max-width:none;padding:0}.actions{display:none}}
 </style></head><body>
   ${options.forEmail ? "" : `<div class="actions"><button type="button" data-print-invoice>Download / Print PDF</button></div>`}
   <div class="sheet">
-    <div class="top">
-      <div>
-        <h1>Tax Invoice</h1>
-        <div class="muted">Card2Leads by BrillBrains</div>
-      </div>
-      <div class="meta">
-        <div class="meta-row"><span class="muted">Invoice No.</span><strong>${esc(invoiceRecord.number)}</strong></div>
-        <div class="meta-row"><span class="muted">Invoice Date</span><span>${esc(date)}</span></div>
-        <div class="meta-row"><span class="muted">Place of Supply</span><span>${esc(placeOfSupply)}</span></div>
-        <div class="meta-row"><span class="muted">Payment Mode</span><span>Online</span></div>
-        <div class="meta-row"><span class="muted">Transaction Ref.</span><span class="ref">${esc(payment.provider_payment_id || payment.id || "")}</span></div>
-      </div>
-    </div>
-    <div class="parties">
-      <div class="party">
-        <h3>Billed By</h3>
-        <strong>${esc(INVOICE_SELLER.legalName)}</strong>
-        <div class="muted">${esc(INVOICE_SELLER.address)}</div>
-        <div>GSTIN/UIN: ${esc(INVOICE_SELLER.gstin)}</div>
-      </div>
-      <div class="party">
-        <h3>Billed To</h3>
-        <strong>${esc(buyer.legalName || "—")}</strong>
-        <div class="muted">${esc(buyer.address || "")}</div>
-        ${buyer.city && !String(buyer.address || "").toLowerCase().includes(String(buyer.city).toLowerCase()) ? `<div class="muted">${esc(buyer.city)}</div>` : ""}
-        ${buyer.gstin ? `<div>GSTIN/UIN: ${esc(buyer.gstin)}</div>` : `<div class="muted">GSTIN/UIN: not provided (unregistered)</div>`}
-        ${buyer.stateName ? `<div class="muted">State: ${esc(buyer.stateName)}${buyer.stateCode ? ` (${esc(buyer.stateCode)})` : ""}</div>` : ""}
-      </div>
-    </div>
-    <table>
-      <thead><tr><th>Description</th><th class="c">SAC</th><th class="r">Taxable value</th></tr></thead>
-      <tbody><tr><td>${esc(invoiceLineDescription(payment))}${invoiceRecord.scans ? ` — ${Number(invoiceRecord.scans).toLocaleString("en-IN")} scan credits` : ""}</td><td class="c">${esc(INVOICE_SELLER.sac)}</td><td class="r">${inr(b.taxable)}</td></tr></tbody>
-      <tfoot>
-        <tr><td colspan="2">Taxable value</td><td class="r">${inr(b.taxable)}</td></tr>
-        ${taxFoot}
-        <tr class="total"><td colspan="2">Total (incl. GST)</td><td class="r">${inr(b.total)}</td></tr>
-      </tfoot>
+    <div class="doc-title">INVOICE</div>
+    <table class="grid">
+      <tr>
+        <td rowspan="3" class="seller">
+          <strong>${esc(INVOICE_SELLER.legalName)}</strong>
+          <div>Regd Add : ${esc(INVOICE_SELLER.address)}</div>
+          <div>GSTIN/UIN: ${esc(INVOICE_SELLER.gstin)}</div>
+          <div>State Name : ${esc(INVOICE_SELLER.stateName)}, Code : ${esc(INVOICE_SELLER.stateCode)}</div>
+          <div>CIN: ${esc(INVOICE_SELLER.cin)}</div>
+          <div>E-Mail : ${esc(INVOICE_SELLER.email)}</div>
+        </td>
+        <td width="22%"><div class="field-label">Invoice No.</div><div class="field-value">${esc(invoiceRecord.number)}</div></td>
+        <td width="22%"><div class="field-label">Dated</div><div class="field-value">${esc(date)}</div></td>
+      </tr>
+      <tr>
+        <td><div class="field-label">Delivery Note</div><div class="field-value"></div></td>
+        <td><div class="field-label">Mode/Terms of Payment</div><div class="field-value">Online</div></td>
+      </tr>
+      <tr>
+        <td><div class="field-label">Reference No. &amp; Date.</div><div class="field-value">${esc(payment.provider_payment_id || payment.id || "")}</div></td>
+        <td><div class="field-label">Other References</div><div class="field-value"></div></td>
+      </tr>
+      <tr>
+        <td rowspan="3">
+          <div>Consignee (Ship to)</div>
+          ${buyerBlock}
+        </td>
+        <td><div class="field-label">Buyer&rsquo;s Order No.</div><div class="field-value"></div></td>
+        <td><div class="field-label">Dated</div><div class="field-value"></div></td>
+      </tr>
+      <tr>
+        <td><div class="field-label">Dispatch Doc No.</div><div class="field-value"></div></td>
+        <td><div class="field-label">Delivery Note Date</div><div class="field-value"></div></td>
+      </tr>
+      <tr>
+        <td><div class="field-label">Dispatched through</div><div class="field-value"></div></td>
+        <td><div class="field-label">Destination</div><div class="field-value"></div></td>
+      </tr>
+      <tr>
+        <td>
+          <div>Buyer (Bill to)</div>
+          ${buyerBlock}
+        </td>
+        <td colspan="2"><div class="field-label">Terms of Delivery</div><div class="field-value"></div></td>
+      </tr>
     </table>
-    <div class="words"><span class="muted">Amount chargeable (in words):</span> <strong>${esc(amountInWords(b.total))}</strong></div>
-    <div class="foot">
-      <div class="note">Amount is inclusive of GST at 18% (SAC ${esc(INVOICE_SELLER.sac)}). Whether tax is payable under reverse charge: No. This is a computer-generated invoice.</div>
-      ${signatureSrc
-        ? `<div class="sign"><img class="sign-img" src="${esc(signatureSrc)}" alt="For ${esc(INVOICE_SELLER.legalName)} — Director, Authorised Signatory" /><div class="sign-caption">Authorised Signatory</div></div>`
-        : `<div class="sign"><div class="muted">For ${esc(INVOICE_SELLER.legalName)}</div><div class="sign-line">Authorised Signatory</div></div>`}
-    </div>
+    <table class="items">
+      <thead>
+        <tr>
+          <th width="6%">Sl<br />No.</th>
+          <th>Particulars</th>
+          <th width="10%">HSN/SAC</th>
+          <th width="10%">Quantity</th>
+          <th width="12%">Rate</th>
+          <th width="7%">per</th>
+          <th width="15%">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="c">1</td>
+          <td>
+            <div class="item-name">Technology Consulting Services</div>
+            <div>${esc(product)}${scans ? ` &mdash; ${scans.toLocaleString("en-IN")} scan credits` : ""}</div>
+          </td>
+          <td class="c">${esc(INVOICE_SELLER.sac)}</td>
+          <td class="c">1 Nos</td>
+          <td class="r">${money(b.taxable)}</td>
+          <td class="c">Nos</td>
+          <td class="r">${money(b.taxable)}</td>
+        </tr>
+        ${taxRows.map(([label, amount]) => `
+        <tr class="tax-line">
+          <td></td>
+          <td class="tax-label">${esc(label)}</td>
+          <td></td><td></td><td></td><td></td>
+          <td class="r">${money(amount)}</td>
+        </tr>`).join("")}
+        <tr class="total">
+          <td></td>
+          <td class="r">Total</td>
+          <td></td>
+          <td class="c">1 Nos</td>
+          <td></td><td></td>
+          <td class="r">&#8377; ${money(b.total)}</td>
+        </tr>
+      </tbody>
+    </table>
+    <table class="foot">
+      <tr>
+        <td colspan="2">
+          <span class="eoe">E. &amp; O.E</span>
+          Amount Chargeable (in words)
+          <div class="words">${esc(amountInWords(b.total))}</div>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <div>Company&rsquo;s PAN &nbsp;: ${esc(INVOICE_SELLER.pan)}</div>
+          <div style="margin-top:6px">Whether tax is payable under reverse charge : No</div>
+        </td>
+        <td class="sign-cell">
+          ${signatureSrc
+            ? `<img class="sign-img" src="${esc(signatureSrc)}" alt="for ${esc(INVOICE_SELLER.legalName)} &mdash; Authorised Signatory" />`
+            : `<div class="sign-for">for ${esc(INVOICE_SELLER.legalName)}</div><div style="margin-top:34px">Authorised Signatory</div>`}
+        </td>
+      </tr>
+    </table>
+    <div class="computer">This is a Computer Generated Invoice</div>
   </div>
   ${options.forEmail ? "" : `<script src="/invoice-print.js"></script>`}
 </body></html>`;

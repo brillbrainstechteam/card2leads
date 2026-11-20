@@ -830,16 +830,16 @@ test("invoice numbers follow the payment date, oldest first", () => {
     organisations: [{
       id: "org_d",
       invoices: {
-        pay_nov19: { number: "BBTech/2026-27/0001", fy: "2026-27", seq: 1, scans: 1000, issuedAt: "2026-11-19T07:00:00.000Z", notifiedAt: "2026-11-19T07:01:00.000Z", paymentKey: "pay_nov19" }
+        pay_nov19: { number: "65/26-27", fy: "2026-27", seq: 1, scans: 1000, issuedAt: "2026-11-19T07:00:00.000Z", notifiedAt: "2026-11-19T07:01:00.000Z", paymentKey: "pay_nov19" }
       }
     }]
   };
 
   resequenceInvoices(db, dishaaRows());
   const invoices = db.organisations[0].invoices;
-  assert.equal(invoices.pay_sep.number, "BBTech/2026-27/0001");
-  assert.equal(invoices.pay_nov14.number, "BBTech/2026-27/0002");
-  assert.equal(invoices.pay_nov19.number, "BBTech/2026-27/0003");
+  assert.equal(invoices.pay_sep.number, "65/26-27");
+  assert.equal(invoices.pay_nov14.number, "66/26-27");
+  assert.equal(invoices.pay_nov19.number, "67/26-27");
 
   // Renumbering moves the number and nothing else: when it was issued, what it
   // covered and whether it has been sent are facts about that invoice.
@@ -849,8 +849,8 @@ test("invoice numbers follow the payment date, oldest first", () => {
 
   // Running it again must not shuffle anything.
   resequenceInvoices(db, dishaaRows());
-  assert.equal(db.organisations[0].invoices.pay_sep.number, "BBTech/2026-27/0001");
-  assert.equal(db.organisations[0].invoices.pay_nov19.number, "BBTech/2026-27/0003");
+  assert.equal(db.organisations[0].invoices.pay_sep.number, "65/26-27");
+  assert.equal(db.organisations[0].invoices.pay_nov19.number, "67/26-27");
 });
 
 test("the invoice series is global and splits on the financial year", () => {
@@ -862,11 +862,11 @@ test("the invoice series is global and splits on the financial year", () => {
     { id: "2", client_id: "org_b", provider_payment_id: "pay_apr", amount_paise: 89900, plan: "quarterly", status: "paid", completed_at: "2026-04-02T06:00:00.000Z", created_at: "2026-04-02T06:00:00.000Z" },
     { id: "3", client_id: "org_a", provider_payment_id: "pay_may", amount_paise: 89900, plan: "quarterly", status: "paid", completed_at: "2026-05-02T06:00:00.000Z", created_at: "2026-05-02T06:00:00.000Z" }
   ]);
-  assert.equal(db.organisations[0].invoices.pay_mar.number, "BBTech/2025-26/0001");
+  assert.equal(db.organisations[0].invoices.pay_mar.number, "1/25-26");
   // One series across all customers, so the next April payment is 0001 of the
   // new year and the one after it is 0002 even though it is another company's.
-  assert.equal(db.organisations[1].invoices.pay_apr.number, "BBTech/2026-27/0001");
-  assert.equal(db.organisations[0].invoices.pay_may.number, "BBTech/2026-27/0002");
+  assert.equal(db.organisations[1].invoices.pay_apr.number, "65/26-27");
+  assert.equal(db.organisations[0].invoices.pay_may.number, "66/26-27");
 });
 
 test("a payment that is no longer paid loses its invoice number", () => {
@@ -876,14 +876,14 @@ test("a payment that is no longer paid loses its invoice number", () => {
     organisations: [{
       id: "org_d",
       invoices: {
-        pay_refunded: { number: "BBTech/2026-27/0001", fy: "2026-27", seq: 1, paymentKey: "pay_refunded" },
-        pay_sep: { number: "BBTech/2026-27/0002", fy: "2026-27", seq: 2, paymentKey: "pay_sep" }
+        pay_refunded: { number: "65/26-27", fy: "2026-27", seq: 1, paymentKey: "pay_refunded" },
+        pay_sep: { number: "66/26-27", fy: "2026-27", seq: 2, paymentKey: "pay_sep" }
       }
     }]
   };
   resequenceInvoices(db, dishaaRows());
   assert.equal(db.organisations[0].invoices.pay_refunded, undefined);
-  assert.equal(db.organisations[0].invoices.pay_sep.number, "BBTech/2026-27/0001");
+  assert.equal(db.organisations[0].invoices.pay_sep.number, "65/26-27");
   const numbers = Object.values(db.organisations[0].invoices).map((i) => i.number);
   assert.equal(new Set(numbers).size, numbers.length, "no two invoices share a number");
 });
@@ -948,4 +948,64 @@ test("a sheet with nothing to identify a contact by is refused", () => {
     () => planBulkContactUpdate(db, user, bulkWorkbookFrom(grid), bulkChoices),
     /Mobile Number/
   );
+});
+
+const { buildInvoiceHtml } = require("../server.js");
+
+// ---- The invoice follows the company's own format ----
+// Built from the blank template the company uses for every other invoice, so
+// one issued here and one written by hand sit on the same stationery.
+test("the invoice carries the particulars the company's format calls for", () => {
+  const org = { billingProfile: { legalName: "Dishaa Gold and Platinum", gstin: "27AAMFD5405C1ZQ", address: "Kalbadevi Road, Mumbai - 400002, Maharashtra", city: "Mumbai", stateName: "Maharashtra", stateCode: "27" } };
+  const payment = { id: "pay_1", provider_payment_id: "pay_U20XGeFFMg9RH8", amount_paise: 399900, plan: "annual", status: "paid", completed_at: "2026-11-19T06:00:00.000Z", created_at: "2026-11-19T06:00:00.000Z" };
+  const html = buildInvoiceHtml(org, payment, { number: "67/26-27", fy: "2026-27", seq: 67, scans: 1500 });
+
+  for (const field of ["INVOICE", "Invoice No.", "Dated", "Delivery Note", "Mode/Terms of Payment", "Reference No. &amp; Date.", "Other References", "Consignee (Ship to)", "Buyer (Bill to)", "Terms of Delivery", "HSN/SAC", "Particulars", "Amount Chargeable (in words)", "E. &amp; O.E", "Company&rsquo;s PAN", "This is a Computer Generated Invoice"]) {
+    assert.ok(html.includes(field), `the format is missing "${field}"`);
+  }
+
+  // The line has to say what was sold, not just that something was.
+  assert.ok(html.includes("Technology Consulting Services"));
+  assert.ok(html.includes("Pro Annual"), "the product name the customer bought");
+  assert.ok(html.includes("1,500 scan credits"), "how many scans it allows");
+  assert.ok(html.includes("997331"), "the SAC code");
+
+  // Both parties, with the state code and place of supply rule 46 asks for.
+  assert.ok(html.includes("27AALCB6043Q1Z2"), "the seller's GSTIN");
+  assert.ok(html.includes("27AAMFD5405C1ZQ"), "the buyer's GSTIN");
+  assert.ok(html.includes("Place of Supply"));
+  assert.ok(html.includes("Code : 27"));
+
+  // Signed, and dated the way the rest of the book is dated.
+  assert.ok(/sign-img/.test(html), "the signature");
+  assert.ok(html.includes("19-Nov-2026"), "the date");
+
+  // Intra-state, so it splits into CGST and SGST rather than charging IGST.
+  assert.ok(html.includes("CGST @ 9%") && html.includes("SGST @ 9%"));
+  assert.ok(!html.includes("IGST"));
+  assert.ok(html.includes("3,999.00"), "the total");
+  // "INR" comes from the words helper; printing it again would double it.
+  assert.ok(!/INR INR/.test(html));
+});
+
+test("a buyer in another state is charged IGST", () => {
+  const org = { billingProfile: { legalName: "Shah Jewels", gstin: "24AAMFD5405C1ZQ", address: "12 Ratnakar Nine Square, Ahmedabad", stateName: "Gujarat", stateCode: "24" } };
+  const payment = { id: "pay_2", provider_payment_id: "pay_y", amount_paise: 89900, plan: "quarterly", status: "paid", completed_at: "2026-09-29T06:00:00.000Z", created_at: "2026-09-29T06:00:00.000Z" };
+  const html = buildInvoiceHtml(org, payment, { number: "65/26-27", fy: "2026-27", seq: 65, scans: 300 });
+  assert.ok(html.includes("IGST @ 18%"));
+  assert.ok(!html.includes("CGST"));
+  assert.ok(html.includes("Place of Supply</span>: Gujarat"));
+});
+
+test("the number continues the hand-written book and shows the short year", () => {
+  const db = { organisations: [{ id: "org_a", invoices: {} }] };
+  resequenceInvoices(db, [
+    { id: "1", client_id: "org_a", provider_payment_id: "pay_a", amount_paise: 89900, plan: "quarterly", status: "paid", completed_at: "2026-09-29T06:00:00.000Z", created_at: "2026-09-29T06:00:00.000Z" },
+    { id: "2", client_id: "org_a", provider_payment_id: "pay_b", amount_paise: 49900, plan: "topup", status: "paid", completed_at: "2026-11-14T06:00:00.000Z", created_at: "2026-11-14T06:00:00.000Z" },
+    { id: "3", client_id: "org_a", provider_payment_id: "pay_c", amount_paise: 399900, plan: "annual", status: "paid", completed_at: "2026-11-19T06:00:00.000Z", created_at: "2026-11-19T06:00:00.000Z" }
+  ]);
+  const invoices = db.organisations[0].invoices;
+  assert.equal(invoices.pay_a.number, "65/26-27");
+  assert.equal(invoices.pay_b.number, "66/26-27");
+  assert.equal(invoices.pay_c.number, "67/26-27");
 });
