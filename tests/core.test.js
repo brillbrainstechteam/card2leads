@@ -804,3 +804,82 @@ test("a bulk update sheet reports rows it cannot safely apply", () => {
     /spreadsheet/i
   );
 });
+
+// ---- Invoice numbering runs oldest first ----
+// Numbers used to be handed out when an invoice was first opened, so the order
+// they were opened in became the order of the series: a payment from November
+// ended up as 0001 with September's payments below it.
+const { resequenceInvoices } = require("../server.js");
+
+// The payments on the Dishaa Platinum account, newest last.
+function dishaaRows() {
+  return [
+    { id: "p_sep", client_id: "org_d", provider_payment_id: "pay_sep", amount_paise: 89900, plan: "quarterly", status: "paid", completed_at: "2026-09-29T06:00:00.000Z", created_at: "2026-09-29T06:00:00.000Z" },
+    { id: "p_nov14", client_id: "org_d", provider_payment_id: "pay_nov14", amount_paise: 49900, plan: "topup", status: "paid", completed_at: "2026-11-14T06:00:00.000Z", created_at: "2026-11-14T06:00:00.000Z" },
+    { id: "p_nov19", client_id: "org_d", provider_payment_id: "pay_nov19", amount_paise: 399900, plan: "annual", status: "paid", completed_at: "2026-11-19T06:00:00.000Z", created_at: "2026-11-19T06:00:00.000Z" }
+  ];
+}
+
+test("invoice numbers follow the payment date, oldest first", () => {
+  // The November payment was opened first, so it had already taken 0001.
+  const db = {
+    organisations: [{
+      id: "org_d",
+      invoices: {
+        pay_nov19: { number: "BBTech/2026-27/0001", fy: "2026-27", seq: 1, scans: 1000, issuedAt: "2026-11-19T07:00:00.000Z", notifiedAt: "2026-11-19T07:01:00.000Z", paymentKey: "pay_nov19" }
+      }
+    }]
+  };
+
+  resequenceInvoices(db, dishaaRows());
+  const invoices = db.organisations[0].invoices;
+  assert.equal(invoices.pay_sep.number, "BBTech/2026-27/0001");
+  assert.equal(invoices.pay_nov14.number, "BBTech/2026-27/0002");
+  assert.equal(invoices.pay_nov19.number, "BBTech/2026-27/0003");
+
+  // Renumbering moves the number and nothing else: when it was issued, what it
+  // covered and whether it has been sent are facts about that invoice.
+  assert.equal(invoices.pay_nov19.issuedAt, "2026-11-19T07:00:00.000Z");
+  assert.equal(invoices.pay_nov19.notifiedAt, "2026-11-19T07:01:00.000Z");
+  assert.equal(invoices.pay_nov19.scans, 1000);
+
+  // Running it again must not shuffle anything.
+  resequenceInvoices(db, dishaaRows());
+  assert.equal(db.organisations[0].invoices.pay_sep.number, "BBTech/2026-27/0001");
+  assert.equal(db.organisations[0].invoices.pay_nov19.number, "BBTech/2026-27/0003");
+});
+
+test("the invoice series is global and splits on the financial year", () => {
+  const db = { organisations: [{ id: "org_a", invoices: {} }, { id: "org_b", invoices: {} }] };
+  // Indian financial years start in April, so March and April belong to
+  // different series even though they are days apart.
+  resequenceInvoices(db, [
+    { id: "1", client_id: "org_a", provider_payment_id: "pay_mar", amount_paise: 89900, plan: "quarterly", status: "paid", completed_at: "2026-03-30T06:00:00.000Z", created_at: "2026-03-30T06:00:00.000Z" },
+    { id: "2", client_id: "org_b", provider_payment_id: "pay_apr", amount_paise: 89900, plan: "quarterly", status: "paid", completed_at: "2026-04-02T06:00:00.000Z", created_at: "2026-04-02T06:00:00.000Z" },
+    { id: "3", client_id: "org_a", provider_payment_id: "pay_may", amount_paise: 89900, plan: "quarterly", status: "paid", completed_at: "2026-05-02T06:00:00.000Z", created_at: "2026-05-02T06:00:00.000Z" }
+  ]);
+  assert.equal(db.organisations[0].invoices.pay_mar.number, "BBTech/2025-26/0001");
+  // One series across all customers, so the next April payment is 0001 of the
+  // new year and the one after it is 0002 even though it is another company's.
+  assert.equal(db.organisations[1].invoices.pay_apr.number, "BBTech/2026-27/0001");
+  assert.equal(db.organisations[0].invoices.pay_may.number, "BBTech/2026-27/0002");
+});
+
+test("a payment that is no longer paid loses its invoice number", () => {
+  // Otherwise the refunded invoice keeps a number that resequencing has since
+  // handed to a real one, and two invoices carry the same number.
+  const db = {
+    organisations: [{
+      id: "org_d",
+      invoices: {
+        pay_refunded: { number: "BBTech/2026-27/0001", fy: "2026-27", seq: 1, paymentKey: "pay_refunded" },
+        pay_sep: { number: "BBTech/2026-27/0002", fy: "2026-27", seq: 2, paymentKey: "pay_sep" }
+      }
+    }]
+  };
+  resequenceInvoices(db, dishaaRows());
+  assert.equal(db.organisations[0].invoices.pay_refunded, undefined);
+  assert.equal(db.organisations[0].invoices.pay_sep.number, "BBTech/2026-27/0001");
+  const numbers = Object.values(db.organisations[0].invoices).map((i) => i.number);
+  assert.equal(new Set(numbers).size, numbers.length, "no two invoices share a number");
+});

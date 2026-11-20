@@ -6441,7 +6441,7 @@ async function loadInvoiceList(node) {
   try {
     const { payments } = await api("/api/billing/payments");
     if (!payments || !payments.length) { listEl.innerHTML = `<p class="muted">No payments yet. Your invoices will appear here after your first payment.</p>`; return; }
-    listEl.innerHTML = `<table class="invoice-table"><thead><tr><th>Date</th><th>Plan</th><th>Amount</th><th></th></tr></thead><tbody>${payments.map((p) => `<tr><td>${escapeHtml(displayDate(p.date))}</td><td>${escapeHtml(statusLabel(p.plan || "—"))}</td><td>&#8377;${Number(p.amount).toLocaleString("en-IN")}</td><td><a class="invoice-link" href="/api/billing/invoice?payment=${encodeURIComponent(p.id)}" target="_blank" rel="noopener">⬇ Invoice</a></td></tr>`).join("")}</tbody></table>`;
+    listEl.innerHTML = `<table class="invoice-table"><thead><tr><th>Date</th><th>Plan</th><th>Amount</th><th></th></tr></thead><tbody>${payments.map((p) => `<tr><td>${escapeHtml(displayDate(p.date))}</td><td>${escapeHtml(statusLabel(p.plan || "—"))}</td><td>&#8377;${Number(p.amount).toLocaleString("en-IN")}</td><td><a class="invoice-link" href="/api/billing/invoice?payment=${encodeURIComponent(p.id)}" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Invoice</a></td></tr>`).join("")}</tbody></table>`;
   } catch {
     listEl.innerHTML = `<p class="muted">Could not load payments right now.</p>`;
   }

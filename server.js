@@ -2599,13 +2599,52 @@ async function syncInvoiceNumbers(db) {
     console.error("[invoice-seq] sync failed:", err.message);
     return;
   }
+  resequenceInvoices(db, rows);
+}
+
+// Takes the paid payments already ordered oldest first and rewrites the whole
+// series. Separated from the query above so it can be exercised without a
+// database behind it.
+function resequenceInvoices(db, rows) {
   const orgById = new Map(db.organisations.map((o) => [o.id, o]));
+  const paidKeys = new Set();
+  // Numbers are assigned by payment date, not by the order invoices happen to
+  // be opened in, and every number is rewritten each time rather than only the
+  // missing ones. Filling gaps alone leaves an invoice that was numbered early
+  // sitting at the top of the series forever, which is the problem this is
+  // here to fix.
+  const nextSeqForFy = new Map();
   for (const p of rows) {
     const org = orgById.get(p.client_id);
     if (!org) continue;
-    const existing = org.invoices && org.invoices[invoiceKey(p)];
-    if (existing) continue;
-    assignInvoiceNumber(db, org, p);
+    const key = invoiceKey(p);
+    if (!key) continue;
+    paidKeys.add(key);
+    const fy = invoiceFinancialYear(p.completed_at || p.created_at);
+    const seq = (nextSeqForFy.get(fy) || 0) + 1;
+    nextSeqForFy.set(fy, seq);
+    org.invoices = org.invoices && typeof org.invoices === "object" && !Array.isArray(org.invoices) ? org.invoices : {};
+    const existing = org.invoices[key] || {};
+    // Only the number and its place in the series move. When it was issued,
+    // how many scans it covered and whether it has already been sent are facts
+    // about the invoice and are carried over untouched.
+    org.invoices[key] = {
+      ...existing,
+      number: `BBTech/${fy}/${String(seq).padStart(4, "0")}`,
+      fy,
+      seq,
+      scans: existing.scans == null ? paymentScans(p) : existing.scans,
+      issuedAt: existing.issuedAt || now(),
+      paymentKey: key
+    };
+  }
+  // A payment that is no longer paid - refunded or voided - must not keep a
+  // number, or it would collide with the one just handed to a real invoice.
+  for (const org of db.organisations) {
+    if (!org.invoices || typeof org.invoices !== "object" || Array.isArray(org.invoices)) continue;
+    for (const key of Object.keys(org.invoices)) {
+      if (!paidKeys.has(key)) delete org.invoices[key];
+    }
   }
 }
 
@@ -10304,6 +10343,7 @@ function crc32(buffer) {
 
 module.exports = {
   EXPORT_COLUMNS,
+  resequenceInvoices,
   bulkUpdateHeaders,
   buildBulkUpdateWorkbook,
   readWorkbookRows,

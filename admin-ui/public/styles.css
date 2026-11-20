@@ -191,6 +191,7 @@ tbody tr:hover { background: var(--surface-2); }
 .overflow-menu[hidden] { display: none; }
 /* Make the GST invoice download obviously a clickable action. */
 .invoice-link { display: inline-block; padding: 4px 10px; border-radius: 6px; background: var(--brand, #241c53); color: #fff; font-weight: 600; font-size: 12px; text-decoration: none; white-space: nowrap; }
+.invoice-link svg { vertical-align: -2px; margin-right: 6px; }
 .invoice-link:hover { opacity: .9; }
 .overflow-menu button { text-align: left; background: none; border: none; padding: 9px 11px; border-radius: 7px; font-size: 13px; color: var(--text); }
 .overflow-menu button:hover { background: var(--surface-2); }

@@ -413,7 +413,7 @@
 
     var payments = (c.payments && c.payments.length) ?
       '<table class="mini-table"><thead><tr><th>Date</th><th>Amount</th><th>Plan</th><th>Status</th><th>Invoice</th></tr></thead><tbody>' +
-      c.payments.map(function (p) { return "<tr><td>" + fmtDate(p.created_at) + "</td><td>" + money(p.amount_paise, p.currency) + "</td><td>" + esc(p.plan || "—") + "</td><td>" + esc(p.status) + "</td><td>" + (p.status === "paid" ? '<a class="invoice-link" href="/api/admin/clients/' + encodeURIComponent(c.clientId) + '/invoice?payment=' + encodeURIComponent(p.id) + '" target="_blank" rel="noopener">⬇ GST invoice</a>' : "—") + "</td></tr>"; }).join("") +
+      c.payments.map(function (p) { return "<tr><td>" + fmtDate(p.created_at) + "</td><td>" + money(p.amount_paise, p.currency) + "</td><td>" + esc(p.plan || "—") + "</td><td>" + esc(p.status) + "</td><td>" + (p.status === "paid" ? '<a class="invoice-link" href="/api/admin/clients/' + encodeURIComponent(c.clientId) + '/invoice?payment=' + encodeURIComponent(p.id) + '" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>GST invoice</a>' : "—") + "</td></tr>"; }).join("") +
       "</tbody></table>" :
       '<div class="empty-mini">No payment records yet.</div>';
 
