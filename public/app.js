@@ -258,6 +258,10 @@ async function init() {
   // Arriving to pay: pull the checkout script now, in parallel with sign-in and
   // the workspace load, so it is cached by the time the payment opens.
   if (checkoutPlan || checkoutTopup || checkoutCustom) void loadRazorpay().catch(() => {});
+  // Followed the app's "update from a spreadsheet" link: open that dialog once
+  // the workspace has loaded, so the phone's browser lands on the step the
+  // person actually came for.
+  const openBulkUpdate = url.searchParams.get("bulkUpdate") === "1";
   const authNotice = url.searchParams.get("auth");
   if (authNotice === "verify_failed" || authNotice === "google_failed") state.authOpen = true;
   if (authNotice === "verified") state.authInfo = "Email verified. You are signed in. Complete the workspace setup to start scanning cards.";
@@ -288,6 +292,10 @@ async function init() {
   if (state.user && checkoutPlan) void startOneTimePlan(checkoutPlan);
   else if (state.user && checkoutTopup) void startTopup();
   else if (state.user && checkoutCustom) void startCustomPlan();
+  if (state.user && openBulkUpdate) {
+    const collection = state.overview?.activeCollection?.id || "";
+    showBulkUpdateModal(collection, false);
+  }
 }
 
 // A client on the one-per-business rule gets one row per company in every
@@ -2004,7 +2012,7 @@ function showBulkUpdateModal(collectionId, useFilters) {
   state.bulkUpdate = { stage: "choose", file: null, fileName: "", summary: null, busy: false };
   state.modal = {
     title: "Update contacts from a spreadsheet",
-    body: "Download the sheet, fill in the columns in Excel, then send the same file back. Only the classification columns are read — names and numbers are left alone.",
+    body: "Download the sheet, fill in the columns in Excel, then send the same file back. The ordinary Excel export works too, including the one downloaded in the phone app. Only the classification columns are read — names and numbers are left alone.",
     className: "wide-dialog",
     contentHtml: `<div id="bulkUpdateBody"></div>`,
     actions: [{ label: "Close" }],

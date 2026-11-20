@@ -793,11 +793,15 @@ test("a bulk update sheet reports rows it cannot safely apply", () => {
   assert.ok(plan.notFound.some((p) => p.key === "con_missing"));
   assert.equal(contacts[0].customerRating, "");
 
-  // A sheet with no key column cannot be matched at all, and says so.
-  assert.throws(
-    () => planBulkContactUpdate(db, user, bulkWorkbookFrom(grid.map((r) => r.slice(1))), bulkChoices),
-    /Contact ID/
-  );
+  // Without the contact id, the mobile number identifies the row instead, so
+  // the ordinary Excel export can be sent back as it is.
+  const withoutIds = bulkUpdateHeaders().indexOf("Contact ID") === 0
+    ? grid.map((r) => r.slice(1))
+    : grid;
+  const byNumber = planBulkContactUpdate(db, user, bulkWorkbookFrom(withoutIds), bulkChoices);
+  assert.ok(byNumber.updates.length || byNumber.problems.length, "rows were still matched by number");
+  assert.ok(!byNumber.notFound.some((p) => /No saved contact/.test(p.reason || "") && p.key.startsWith("+")),
+    "a row with a real number should not come back unmatched");
   // And something that is not a spreadsheet gets a sentence, not a stack trace.
   assert.throws(
     () => planBulkContactUpdate(db, user, Buffer.from("not a spreadsheet"), bulkChoices),
@@ -882,4 +886,66 @@ test("a payment that is no longer paid loses its invoice number", () => {
   assert.equal(db.organisations[0].invoices.pay_sep.number, "BBTech/2026-27/0001");
   const numbers = Object.values(db.organisations[0].invoices).map((i) => i.number);
   assert.equal(new Set(numbers).size, numbers.length, "no two invoices share a number");
+});
+
+// ---- The ordinary Excel export can be sent back ----
+// The app downloads /api/export.xlsx from the Contacts tab, so that is the file
+// people already have in hand. It carries no contact id, so the rows are
+// matched on the mobile number instead - and the columns it does carry have to
+// line up with the ones read back, or editing it would silently do nothing.
+const { EXPORT_COLUMNS: BULK_EXPORT_COLUMNS, exportRow: bulkExportRow } = require("../server.js");
+
+test("every column the bulk update reads exists in the ordinary export", () => {
+  for (const spec of ["Salutation", "Industry", "Business Type", "Business Specialisation", "Customer Status", "Customer Rating", "Lead Source", "Mobile Number"]) {
+    assert.ok(BULK_EXPORT_COLUMNS.includes(spec), `the export is missing "${spec}"`);
+  }
+});
+
+test("an edited copy of the ordinary export updates the right contacts", () => {
+  const contacts = [
+    { id: "con_1", organisationId: "org", name: "Kamlesh Patel", mobileNumber: "+919825011111", normalizedMobileNumber: "+919825011111", companyName: "Dishaa", salutation: "Mr.", industry: "", businessType: [], customerStatus: "", customerRating: "", leadSource: "", businessSpecialisation: "" },
+    { id: "con_2", organisationId: "org", name: "Nita Shah", mobileNumber: "+919820022222", normalizedMobileNumber: "+919820022222", companyName: "Shah", salutation: "", industry: "Jewellery Industry", businessType: ["Karigar"], customerStatus: "New Customer", customerRating: "3", leadSource: "", businessSpecialisation: "" }
+  ];
+
+  // Built with the real export writer, so this test fails if the export's
+  // columns and the reader's ever drift apart.
+  const grid = [BULK_EXPORT_COLUMNS.slice(), ...contacts.map((c) => bulkExportRow(c, 0).map((cell) => String(cell == null ? "" : cell)))];
+  const header = grid[0];
+  const at = (name) => header.indexOf(name);
+  // The export guards against spreadsheet formula injection by prefixing any
+  // cell that starts with = + - or @, so a phone number comes back as
+  // "'+9198...". Matching strips everything that is not a digit, so the row
+  // still finds its contact.
+  assert.equal(grid[1][at("Mobile Number")], "'+919825011111");
+
+  grid[1][at("Industry")] = "Jewellery Industry";
+  grid[1][at("Business Type")] = "Jewellery Retailer; Karigar";
+  grid[1][at("Customer Rating")] = "5";
+  // Typed back in another shape, the way someone would retype a number.
+  grid[2][at("Mobile Number")] = "98200 22222";
+  grid[2][at("Customer Status")] = "Existing Customer";
+  // An edit to a column this flow does not own must still be ignored.
+  grid[2][at("Name")] = "SHOULD NOT BE SAVED";
+
+  const db = { contacts };
+  const user = { id: "usr", organisationId: "org" };
+  const plan = planBulkContactUpdate(db, user, bulkWorkbookFrom(grid), bulkChoices);
+  assert.equal(plan.updates.length, 2, "both rows matched on their number");
+  assert.equal(applyBulkContactUpdate(db, user, plan), 2);
+
+  assert.deepEqual(contacts[0].businessType, ["Jewellery Retailer", "Karigar"]);
+  assert.equal(contacts[0].customerRating, "5");
+  assert.equal(contacts[1].customerStatus, "Existing Customer");
+  assert.equal(contacts[1].name, "Nita Shah");
+  assert.equal(contacts[1].mobileNumber, "+919820022222");
+});
+
+test("a sheet with nothing to identify a contact by is refused", () => {
+  const db = { contacts: [] };
+  const user = { id: "usr", organisationId: "org" };
+  const grid = [["Name", "Industry"], ["Kamlesh Patel", "Jewellery Industry"]];
+  assert.throws(
+    () => planBulkContactUpdate(db, user, bulkWorkbookFrom(grid), bulkChoices),
+    /Mobile Number/
+  );
 });

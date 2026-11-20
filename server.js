@@ -192,6 +192,7 @@ const mobileHandoffs = new Map();
 // the browser lands on THEIR account instead of whoever was last signed in
 // there. Single-use and short-lived.
 const checkoutHandoffs = new Map();
+const webHandoffs = new Map();
 // Short-lived Google OAuth state for the mobile connect flow: state -> { userId,
 // feature, createdAt }. Held in memory (like otpStore/mobileAuthCodes) rather
 // than on the session, because persisting it would rewrite the whole database
@@ -6269,6 +6270,20 @@ async function handleApi(req, res, pathname) {
       }
     }
 
+    // Consumed by the phone's browser, which has no session yet - so this has
+    // to sit above the sign-in check. The token is spent on first use, and a
+    // stale or unknown one just lands on the sign-in page rather than
+    // explaining itself to whoever followed the link.
+    if (req.method === "GET" && pathname === "/api/contacts/bulk-update-web") {
+      const token = String(new URL(req.url, `http://${req.headers.host}`).searchParams.get("token") || "");
+      const grant = webHandoffs.get(token);
+      if (grant) webHandoffs.delete(token);
+      if (!grant || grant.expiresAt < Date.now()) return redirect(res, "/#contacts");
+      const handoffUser = db.users.find((candidate) => candidate.id === grant.userId && candidate.status === "active");
+      if (!handoffUser) return redirect(res, "/#contacts");
+      return await createSession(req, res, db, handoffUser, grant.target || "/#contacts");
+    }
+
     const user = requireUser(req, res, db);
     if (!user) return;
     const session = currentSession(req, db);
@@ -7888,6 +7903,15 @@ async function handleApi(req, res, pathname) {
       audit(db, user, "contact.deleted", "contact", contact.id);
       await saveDb(db);
       return send(res, 200, { ok: true });
+    }
+
+    // The app has no file picker of its own, so this hands the phone's browser
+    // a signed-in link to the spreadsheet flow instead. The token is single-use
+    // and short-lived; the browser gets an ordinary session from it.
+    if (req.method === "POST" && pathname === "/api/contacts/bulk-update-link") {
+      const token = randomToken("bulk");
+      webHandoffs.set(token, { userId: user.id, target: "/?bulkUpdate=1#contacts", expiresAt: Date.now() + 5 * 60 * 1000 });
+      return send(res, 200, { url: `${baseUrl(req)}/api/contacts/bulk-update-web?token=${encodeURIComponent(token)}` });
     }
 
     // The same selection as the ordinary Excel export, but trimmed to the
@@ -10115,9 +10139,15 @@ function planBulkContactUpdate(db, user, buffer, choices) {
 
   const header = rows[0].map((cell) => cleanText(cell).toLowerCase());
   const columnFor = (label) => header.indexOf(label.toLowerCase());
+  // The ordinary Excel export carries every column this reads except the
+  // contact id, so the mobile number stands in as the key for it. That matters
+  // because the app downloads that export, and asking someone to fetch a
+  // different file before they can send one back would defeat the point.
   const keyIndex = columnFor(BULK_UPDATE_KEY_COLUMN);
-  if (keyIndex < 0) {
-    throw new Error(`This sheet has no "${BULK_UPDATE_KEY_COLUMN}" column. Download the update sheet again and fill that copy in.`);
+  const mobileIndex = columnFor("Mobile Number");
+  const matchIndex = keyIndex >= 0 ? keyIndex : mobileIndex;
+  if (matchIndex < 0) {
+    throw new Error(`This sheet needs a "${BULK_UPDATE_KEY_COLUMN}" or a "Mobile Number" column to tell which contact each row is. Download your contacts again and fill that copy in.`);
   }
   const present = BULK_UPDATE_FIELDS
     .map((spec) => ({ spec, index: columnFor(spec.column) }))
@@ -10154,10 +10184,10 @@ function planBulkContactUpdate(db, user, buffer, choices) {
   for (let r = 1; r < rows.length; r += 1) {
     const row = rows[r];
     if (!row || !row.some((cell) => cleanText(cell))) { plan.blankRows += 1; continue; }
-    const key = cleanText(row[keyIndex]);
+    const key = cleanText(row[matchIndex]);
     // Falling back to the mobile number means a sheet that lost its ID column
     // to a copy-paste still lands on the right contact.
-    let contact = byId.get(key) || null;
+    let contact = keyIndex >= 0 ? byId.get(key) || null : null;
     if (!contact) {
       const keys = mobileKeysFor(key);
       if (keys.some((mobileKey) => ambiguous.has(mobileKey))) {
