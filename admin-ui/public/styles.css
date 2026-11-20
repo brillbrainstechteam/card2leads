@@ -248,3 +248,12 @@ tbody tr:hover { background: var(--surface-2); }
 .bulk-change { margin-bottom: 2px; font-size: 12px; }
 .bulk-change span { color: var(--muted, #6b6b78); }
 .bulk-done { margin-top: 14px; font-size: 14px; }
+
+/* Sending issued invoices to the books. */
+.accounts-panel { display: flex; align-items: flex-start; gap: 12px; }
+.accounts-panel .flex-grow { flex: 1; }
+.accounts-note { color: var(--muted, #6b6b78); font-size: 12.5px; margin-top: 3px; }
+.accounts-result { margin-top: 8px; font-size: 13px; }
+.accounts-result:empty { display: none; }
+.accounts-list { margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; }
+.accounts-list li { margin-bottom: 2px; }

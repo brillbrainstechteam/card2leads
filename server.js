@@ -2543,10 +2543,10 @@ function invoiceBuyer(organisation) {
 }
 
 // Indian GST financial year (April–March), e.g. "2026-27".
-// Invoices 1-64 of 2026-27 were written by hand before this system issued any,
-// so the first one it issues continues that book instead of starting again.
-// Any year without an entry here starts at 1.
-const INVOICE_FIRST_NUMBER = Object.freeze({ "2026-27": Number(process.env.INVOICE_FIRST_NUMBER_2026_27 || 65) });
+// The invoices before this one were written by hand, so the first number issued
+// here continues that book instead of starting a series of its own. Any year
+// without an entry starts at 1.
+const INVOICE_FIRST_NUMBER = Object.freeze({ "2026-27": Number(process.env.INVOICE_FIRST_NUMBER_2026_27 || 75) });
 
 function invoiceFirstNumber(fy) {
   const configured = Number(INVOICE_FIRST_NUMBER[fy]);
@@ -2605,18 +2605,23 @@ function assignInvoiceNumber(db, org, payment) {
 // date order, so an older payment always carries a lower number than a newer
 // one — regardless of the order invoices are first downloaded. Run before
 // issuing any invoice. Caller persists with saveDb.
-async function syncInvoiceNumbers(db) {
-  if (!pgPool) return;
-  let rows = [];
+// Every paid payment, oldest first - the order the invoice series runs in.
+async function paidPaymentsOldestFirst() {
+  if (!pgPool) return [];
   try {
-    rows = (await pgPool.query(
+    return (await pgPool.query(
       "select id, client_id, amount_paise, plan, status, provider_payment_id, completed_at, created_at from payments where status = 'paid' order by coalesce(completed_at, created_at) asc, id asc"
     )).rows;
   } catch (err) {
-    console.error("[invoice-seq] sync failed:", err.message);
-    return;
+    console.error("[invoice-seq] could not read payments:", err.message);
+    return [];
   }
-  resequenceInvoices(db, rows);
+}
+
+async function syncInvoiceNumbers(db) {
+  if (!pgPool) return;
+  const rows = await paidPaymentsOldestFirst();
+  if (rows.length) resequenceInvoices(db, rows);
 }
 
 // Takes the paid payments already ordered oldest first and rewrites the whole
@@ -2687,26 +2692,96 @@ function orgContactPhone(db, org) {
 // Email (and, when configured, WhatsApp) the GST invoice for a paid payment,
 // once. Safe to call from several places — the notifiedAt flag dedupes, so a
 // payment's invoice is never sent twice.
+// Every invoice the system issues also goes to the books, so nobody has to
+// remember to forward them at the end of a quarter.
+const INVOICE_ACCOUNTS_EMAIL = String(process.env.INVOICE_ACCOUNTS_EMAIL || INVOICE_SELLER.email || "").trim();
+
+// Tracked separately from the customer's copy, so an invoice that already went
+// out months ago still reaches accounts the first time this runs, and one that
+// reached accounts is never sent twice.
+async function copyInvoiceToAccounts(db, org, payment, record, html) {
+  if (!INVOICE_ACCOUNTS_EMAIL || !emailDeliveryEnabled()) return false;
+  if (record.accountsNotifiedAt) return false;
+  const total = (Number(payment.amount_paise || 0) / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  await sendRawEmail({
+    to: INVOICE_ACCOUNTS_EMAIL,
+    // Everything needed to file it is in the subject, so the inbox itself
+    // reads as a register.
+    subject: `Invoice ${record.number} — ${org.name || "Client"} — ₹${total}`,
+    html,
+    replyTo: INVOICE_SELLER.email
+  });
+  record.accountsNotifiedAt = now();
+  return true;
+}
+
+// The invoices that have been issued but never copied to accounts, oldest
+// first. Split out from the sending so it can be shown as a dry run and
+// tested without a mail provider.
+function pendingAccountsCopies(db, rows) {
+  const orgById = new Map(db.organisations.map((o) => [o.id, o]));
+  const pending = [];
+  for (const payment of rows) {
+    const org = orgById.get(payment.client_id);
+    if (!org) continue;
+    const record = org.invoices && org.invoices[invoiceKey(payment)];
+    if (!record || record.accountsNotifiedAt) continue;
+    pending.push({ org, payment, record });
+  }
+  return pending;
+}
+
 async function notifyInvoiceForPayment(db, org, payment) {
   try {
     if (!org || !payment || payment.status !== "paid") return false;
     await syncInvoiceNumbers(db);
     const record = assignInvoiceNumber(db, org, payment);
-    if (record.notifiedAt) return false;
     const html = buildInvoiceHtml(org, payment, record, { forEmail: true });
-    const to = orgContactEmail(db, org);
     let sent = false;
-    if (to && emailDeliveryEnabled()) {
-      await sendRawEmail({ to, subject: `Your Card2Leads tax invoice ${record.number}`, html, replyTo: INVOICE_SELLER.email });
-      sent = true;
+    if (!record.notifiedAt) {
+      const to = orgContactEmail(db, org);
+      if (to && emailDeliveryEnabled()) {
+        await sendRawEmail({ to, subject: `Your Card2Leads tax invoice ${record.number}`, html, replyTo: INVOICE_SELLER.email });
+        sent = true;
+      }
+      const waSent = await sendWhatsAppInvoice(db, org, payment, record).catch(() => false);
+      if (sent || waSent) record.notifiedAt = now();
+      sent = sent || waSent;
     }
-    const waSent = await sendWhatsAppInvoice(db, org, payment, record).catch(() => false);
-    if (sent || waSent) record.notifiedAt = now();
-    return sent || waSent;
+    // A failure here must not lose the customer's copy, which has already gone.
+    const copied = await copyInvoiceToAccounts(db, org, payment, record, html).catch((err) => {
+      console.error("[invoice-accounts] copy failed:", err.message);
+      return false;
+    });
+    return sent || copied;
   } catch (err) {
     console.error("[invoice-notify] failed:", err.message);
     return false;
   }
+}
+
+// Sends every issued invoice that accounts has not had yet. Caller persists.
+async function sendInvoicesToAccounts(db, { apply = false } = {}) {
+  const rows = await paidPaymentsOldestFirst();
+  resequenceInvoices(db, rows);
+  const pending = pendingAccountsCopies(db, rows);
+  const listed = pending.map(({ org, payment, record }) => ({
+    number: record.number,
+    client: org.name || org.id,
+    amount: Number(payment.amount_paise || 0) / 100,
+    date: String(payment.completed_at || payment.created_at || "").slice(0, 10)
+  }));
+  if (!apply) return { applied: false, pending: listed, sent: 0, to: INVOICE_ACCOUNTS_EMAIL };
+  let sent = 0;
+  for (const item of pending) {
+    const html = buildInvoiceHtml(item.org, item.payment, item.record, { forEmail: true });
+    const ok = await copyInvoiceToAccounts(db, item.org, item.payment, item.record, html).catch((err) => {
+      console.error(`[invoice-accounts] ${item.record.number} failed:`, err.message);
+      return false;
+    });
+    if (ok) sent += 1;
+  }
+  return { applied: true, pending: listed, sent, to: INVOICE_ACCOUNTS_EMAIL };
 }
 
 // WhatsApp delivery is gated on a configured Business API. The exact payload is
@@ -5194,6 +5269,20 @@ async function handleAdminApi(req, res, pathname) {
   }
 
   // A client's GST invoice for one payment, downloaded by the admin.
+  // Sends accounts every invoice they have not had yet. Without ?apply=1 it
+  // only reports what it would send, so a first run can be looked at before
+  // anything leaves the building.
+  if (req.method === "POST" && pathname === "/api/admin/invoices/send-to-accounts") {
+    const body = await readJson(req).catch(() => ({}));
+    const db = readDb();
+    const result = await sendInvoicesToAccounts(db, { apply: Boolean(body.apply) });
+    if (body.apply) {
+      await saveDb(db);
+      await adminAudit(admin, { action: "INVOICES_SENT_TO_ACCOUNTS", newValue: { sent: result.sent, to: result.to } }).catch(() => {});
+    }
+    return send(res, 200, result);
+  }
+
   // The same spreadsheet flow the client has, run on their behalf — for a
   // client who would rather send the filled-in file over than work the screen
   // themselves.
@@ -10554,6 +10643,7 @@ function crc32(buffer) {
 
 module.exports = {
   EXPORT_COLUMNS,
+  pendingAccountsCopies,
   resequenceInvoices,
   bulkUpdateHeaders,
   buildBulkUpdateWorkbook,

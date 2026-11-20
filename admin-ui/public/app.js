@@ -245,11 +245,52 @@
       '<div class="two-col">' +
       '<div><div class="section-title">Conversion Funnel</div><div class="panel panel-pad">' + funnelRows + "</div></div>" +
       '<div><div class="section-title">Attention Required</div><div class="panel panel-pad">' + queueHtml + "</div></div>" +
+      "</div>" +
+      '<div class="section-title">Accounts</div>' +
+      '<div class="panel panel-pad accounts-panel">' +
+        '<div class="flex-grow"><b>Invoices to accounts</b>' +
+        '<div class="accounts-note">Every new invoice is emailed to accounts automatically. Use this to send any issued before that started, or any a send failed for.</div>' +
+        '<div class="accounts-result" data-accounts-result></div></div>' +
+        '<button class="btn" data-accounts-check>Check</button>' +
+        '<button class="btn btn-primary" style="width:auto" data-accounts-send hidden>Send</button>' +
       "</div>";
 
     Array.prototype.forEach.call(view.querySelectorAll(".queue-item[data-life]"), function (el) {
       el.addEventListener("click", function () { location.hash = "#/clients?lifecycle=" + el.getAttribute("data-life"); });
     });
+
+    // Checking first and sending second, so a first run can be read before
+    // a few dozen emails leave the building.
+    var accountsBox = view.querySelector("[data-accounts-result]");
+    var checkBtn = view.querySelector("[data-accounts-check]");
+    var sendBtn = view.querySelector("[data-accounts-send]");
+    async function accountsRun(apply) {
+      var btn = apply ? sendBtn : checkBtn;
+      var label = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = apply ? "Sending…" : "Checking…";
+      try {
+        var r = await api("/api/admin/invoices/send-to-accounts", { method: "POST", body: { apply: apply } });
+        if (apply) {
+          accountsBox.innerHTML = "<b>" + r.sent + " invoice" + (r.sent === 1 ? "" : "s") + " sent to " + esc(r.to) + ".</b>";
+          sendBtn.hidden = true;
+        } else if (!r.pending.length) {
+          accountsBox.innerHTML = "Accounts has every invoice issued so far.";
+          sendBtn.hidden = true;
+        } else {
+          accountsBox.innerHTML = "<b>" + r.pending.length + " invoice" + (r.pending.length === 1 ? "" : "s") + " not yet with accounts</b> (" + esc(r.to) + ")<ul class=\"accounts-list\">" +
+            r.pending.map(function (x) { return "<li>" + esc(x.number) + " · " + esc(x.client) + " · ₹" + x.amount.toLocaleString("en-IN") + " · " + esc(x.date) + "</li>"; }).join("") + "</ul>";
+          sendBtn.hidden = false;
+        }
+      } catch (err) {
+        accountsBox.textContent = err.message || "That did not work.";
+      } finally {
+        btn.disabled = false;
+        btn.textContent = label;
+      }
+    }
+    checkBtn.addEventListener("click", function () { accountsRun(false); });
+    sendBtn.addEventListener("click", function () { accountsRun(true); });
   }
 
   // ================= CLIENTS =================
