@@ -658,12 +658,16 @@ test("office numbers preserve slash-separated alternatives or extensions", () =>
 // the wrong contact, a value written to a column nobody meant to touch, or a
 // typo accepted as though it were a real value.
 const {
-  bulkUpdateHeaders,
   buildBulkUpdateWorkbook,
   readWorkbookRows,
   planBulkContactUpdate,
   applyBulkContactUpdate
 } = require("../server.js");
+
+// The sheet that goes out is the ordinary Excel export with dropdowns added,
+// so the tests build it the way the download does.
+const bulkSheetFor = (contacts) =>
+  buildBulkUpdateWorkbook([EXPORT_COLUMNS.slice(), ...contacts.map((c) => exportRow(c, 0).map((v) => String(v == null ? "" : v)))], bulkChoices);
 
 const bulkChoices = {
   salutation: ["Mr.", "Ms."],
@@ -724,17 +728,19 @@ function bulkWorkbookFrom(grid) {
   return Buffer.concat([...locals, centralBuf, end]);
 }
 
-test("the bulk update sheet round-trips through a spreadsheet unchanged", () => {
-  const rows = readWorkbookRows(buildBulkUpdateWorkbook(bulkContacts(), bulkChoices));
-  assert.deepEqual(rows[0], bulkUpdateHeaders());
-  assert.equal(rows[1][0], "con_1");
+test("the update sheet is the ordinary export, and round-trips unchanged", () => {
+  const rows = readWorkbookRows(bulkSheetFor(bulkContacts()));
+  // Every column the export carries, in the same order: this is the file
+  // people already know, not a cut-down one.
+  assert.deepEqual(rows[0], EXPORT_COLUMNS);
+  assert.equal(rows[1][rows[0].indexOf("Name")], "Kamlesh Patel");
   assert.equal(rows[2][rows[0].indexOf("Business Type")], "Karigar");
   assert.equal(rows[2][rows[0].indexOf("Customer Rating")], "3");
 });
 
 test("a filled-in sheet updates only the classification columns", () => {
   const contacts = bulkContacts();
-  const grid = readWorkbookRows(buildBulkUpdateWorkbook(contacts, bulkChoices));
+  const grid = readWorkbookRows(bulkSheetFor(contacts));
   const header = grid[0];
   const at = (name) => header.indexOf(name);
 
@@ -744,9 +750,9 @@ test("a filled-in sheet updates only the classification columns", () => {
   // A value the dropdown never offered has to be kept: every one of these
   // fields allows "Other" in the app itself.
   grid[2][at("Industry")] = "Textiles & Apparel";
-  // Editing a context column must have no effect at all.
+  // Editing a column this flow does not own must have no effect at all.
   grid[2][at("Name")] = "SHOULD NOT BE SAVED";
-  grid[2][at("Mobile Number")] = "+910000000000";
+  grid[2][at("Company Name")] = "SHOULD NOT BE SAVED EITHER";
 
   const db = { contacts };
   const user = { id: "usr", organisationId: "org" };
@@ -765,23 +771,35 @@ test("a filled-in sheet updates only the classification columns", () => {
 
   // Sending the same sheet again must do nothing.
   assert.equal(planBulkContactUpdate(db, user, bulkWorkbookFrom(grid), bulkChoices).updates.length, 0);
+
+  // Without a contact id column the mobile number is what identifies a row, so
+  // changing it in the sheet leaves that row pointing at nobody - and it is
+  // reported rather than passed over in silence.
+  const renumbered = grid.map((r) => r.slice());
+  renumbered[1][at("Mobile Number")] = "+910000000000";
+  renumbered[1][at("Customer Rating")] = "4";
+  const strayed = planBulkContactUpdate(db, user, bulkWorkbookFrom(renumbered), bulkChoices);
+  assert.equal(strayed.updates.length, 0);
+  assert.ok(strayed.notFound.some((p) => String(p.key).includes("910000000000")));
 });
 
 test("a bulk update sheet reports rows it cannot safely apply", () => {
   const contacts = bulkContacts();
-  const grid = readWorkbookRows(buildBulkUpdateWorkbook(contacts, bulkChoices));
+  const grid = readWorkbookRows(bulkSheetFor(contacts));
   const header = grid[0];
   const at = (name) => header.indexOf(name);
 
   // A rating that is not a rating must be called out, not quietly dropped.
   grid[1][at("Customer Rating")] = "ten";
+  // The mobile number is what identifies a row in this sheet, so a number
+  // nobody has cannot be matched.
   const ghost = new Array(header.length).fill("");
-  ghost[0] = "con_missing";
+  ghost[at("Mobile Number")] = "+910000009999";
   grid.push(ghost);
   // A second row for a contact already in the sheet: applying both would make
   // the outcome depend on row order.
   const repeat = new Array(header.length).fill("");
-  repeat[0] = "con_2";
+  repeat[at("Mobile Number")] = "+919820022222";
   repeat[at("Industry")] = "Other Industry";
   grid.push(repeat);
 
@@ -790,18 +808,9 @@ test("a bulk update sheet reports rows it cannot safely apply", () => {
   const plan = planBulkContactUpdate(db, user, bulkWorkbookFrom(grid), bulkChoices);
   assert.ok(plan.problems.some((p) => /rating/.test(p.reason)));
   assert.ok(plan.problems.some((p) => /already on row/.test(p.reason)));
-  assert.ok(plan.notFound.some((p) => p.key === "con_missing"));
+  assert.ok(plan.notFound.some((p) => String(p.key).includes("910000009999")));
   assert.equal(contacts[0].customerRating, "");
 
-  // Without the contact id, the mobile number identifies the row instead, so
-  // the ordinary Excel export can be sent back as it is.
-  const withoutIds = bulkUpdateHeaders().indexOf("Contact ID") === 0
-    ? grid.map((r) => r.slice(1))
-    : grid;
-  const byNumber = planBulkContactUpdate(db, user, bulkWorkbookFrom(withoutIds), bulkChoices);
-  assert.ok(byNumber.updates.length || byNumber.problems.length, "rows were still matched by number");
-  assert.ok(!byNumber.notFound.some((p) => /No saved contact/.test(p.reason || "") && p.key.startsWith("+")),
-    "a row with a real number should not come back unmatched");
   // And something that is not a spreadsheet gets a sentence, not a stack trace.
   assert.throws(
     () => planBulkContactUpdate(db, user, Buffer.from("not a spreadsheet"), bulkChoices),

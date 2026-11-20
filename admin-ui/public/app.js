@@ -748,10 +748,10 @@
     scrim.innerHTML =
       '<div class="modal modal-wide" role="dialog" aria-modal="true">' +
       "<h3>Update contacts from a spreadsheet</h3>" +
-      '<p class="modal-sub">' + esc(c.name || "This client") + ' — download the sheet, fill in the classification columns, send it back. Only those columns are read; names and numbers are left alone.</p>' +
+      '<p class="modal-sub">' + esc(c.name || "This client") + ' — download the contacts, fill in the highlighted columns, upload the same file back.</p>' +
       '<div class="modal-error" hidden></div>' +
       '<div class="modal-body">' +
-        '<a class="invoice-link" href="' + API + '/api/admin/clients/' + encodeURIComponent(c.clientId) + '/bulk-update.xlsx" target="_blank" rel="noopener">Download update sheet</a>' +
+        '<a class="invoice-link" href="' + API + '/api/admin/clients/' + encodeURIComponent(c.clientId) + '/bulk-update.xlsx" target="_blank" rel="noopener">Download contacts</a>' +
         '<div style="height:14px"></div>' +
         '<label>Filled-in sheet</label>' +
         '<input type="file" data-bulk-file accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">' +

@@ -2012,7 +2012,7 @@ function showBulkUpdateModal(collectionId, useFilters) {
   state.bulkUpdate = { stage: "choose", file: null, fileName: "", summary: null, busy: false };
   state.modal = {
     title: "Update contacts from a spreadsheet",
-    body: "Download the sheet, fill in the columns in Excel, then send the same file back. The ordinary Excel export works too, including the one downloaded in the phone app. Only the classification columns are read — names and numbers are left alone.",
+    body: "Download your contacts, fill in the highlighted columns in Excel, and upload the same file back.",
     className: "wide-dialog",
     contentHtml: `<div id="bulkUpdateBody"></div>`,
     actions: [{ label: "Close" }],
@@ -2032,7 +2032,7 @@ function renderBulkUpdateBody(node, collectionId, useFilters) {
       <div class="bulk-update-done">
         <p><b>${summary.updated} contact${summary.updated === 1 ? "" : "s"} updated.</b></p>
         ${summary.notFound ? `<p class="muted">${summary.notFound} row${summary.notFound === 1 ? "" : "s"} did not match a saved contact and ${summary.notFound === 1 ? "was" : "were"} left alone.</p>` : ""}
-        <p class="muted">You can download the sheet again at any time to carry on.</p>
+
       </div>`;
     return;
   }
@@ -2040,17 +2040,15 @@ function renderBulkUpdateBody(node, collectionId, useFilters) {
   body.innerHTML = `
     <ol class="bulk-update-steps">
       <li>
-        <b>Download the sheet</b>
-        <p class="muted">One row per saved contact. The first columns identify the contact and are ignored when you send the file back.</p>
-        <a class="button-link" href="${bulkUpdateHref(collectionId, useFilters)}"><button type="button" class="secondary">Download update sheet</button></a>
+        <b>Download</b>
+        <a class="button-link" href="${bulkUpdateHref(collectionId, useFilters)}"><button type="button" class="secondary">Download contacts</button></a>
       </li>
       <li>
-        <b>Fill it in</b>
-        <p class="muted">Every column that has a set list shows it as a dropdown, the same options as the app. You can type your own value where the app lets you, and clearing a cell clears that value. Business Type takes more than one, separated by a semicolon.</p>
+        <b>Fill in the highlighted columns</b>
+        <p class="muted">They have dropdowns. Business Type takes several, separated by a semicolon.</p>
       </li>
       <li>
-        <b>Send it back</b>
-        <p class="muted">Nothing is saved until you have seen what it would change.</p>
+        <b>Upload</b>
         <input type="file" id="bulkUpdateFile" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
         ${stateNow.fileName ? `<p class="bulk-update-filename">Read from <b>${escapeHtml(stateNow.fileName)}</b></p>` : ""}
       </li>

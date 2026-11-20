@@ -5292,7 +5292,8 @@ async function handleAdminApi(req, res, pathname) {
     const org = db.organisations.find((o) => o.id === clientId);
     if (!org) return error(res, 404, "Client not found.");
     const contacts = db.contacts.filter((c) => c.organisationId === org.id && !c.deletedAt);
-    const xlsx = buildBulkUpdateWorkbook(contacts, contactChoicesFor(org));
+    const rows = [exportColumnsFor(0), ...contacts.map((c) => exportRow(c, 0))];
+    const xlsx = buildBulkUpdateWorkbook(rows, contactChoicesFor(org));
     const safeName = String(org.name || "client").replace(/[^A-Za-z0-9 _-]+/g, "").trim() || "client";
     // A download should not fail because the audit write did.
     await adminAudit(admin, { clientId, action: "BULK_UPDATE_SHEET_DOWNLOADED", newValue: { contacts: contacts.length } }).catch(() => {});
@@ -8182,9 +8183,10 @@ async function handleApi(req, res, pathname) {
     if (req.method === "GET" && pathname === "/api/contacts/bulk-update.xlsx") {
       if (!rateLimit(req, res, "bulk-update-sheet", 60, 60 * 60 * 1000)) return;
       const url = new URL(req.url, `http://${req.headers.host}`);
-      const { collection, contacts, baseName, exportAll } = exportSelection(db, user, url);
+      const { collection, contacts, baseName, exportAll, extraPeopleCount } = exportSelection(db, user, url);
       const organisation = db.organisations.find((o) => o.id === user.organisationId);
-      const xlsx = buildBulkUpdateWorkbook(contacts, contactChoicesFor(organisation));
+      const rows = [exportColumnsFor(extraPeopleCount), ...contacts.map((c) => exportRow(c, extraPeopleCount))];
+      const xlsx = buildBulkUpdateWorkbook(rows, contactChoicesFor(organisation));
       audit(db, user, "contacts.bulk_update_sheet", "collection", collection?.id || "", { contacts: contacts.length, all: exportAll });
       await saveDb(db);
       return send(res, 200, xlsx, {
@@ -10177,22 +10179,6 @@ const BULK_UPDATE_FIELDS = [
   { column: "Lead Source", field: "leadSource", choice: "leadSource" }
 ];
 
-// Shown so the person filling the sheet in knows which contact each row is,
-// never read back.
-const BULK_UPDATE_CONTEXT = ["Name", "Mobile Number", "Company Name", "Event"];
-
-function bulkUpdateContextValue(column, contact) {
-  if (column === "Name") return contact.name || "";
-  if (column === "Mobile Number") return contact.mobileNumber || "";
-  if (column === "Company Name") return contact.companyName || "";
-  if (column === "Event") return contact.exhibitionName || "";
-  return "";
-}
-
-function bulkUpdateHeaders() {
-  return [BULK_UPDATE_KEY_COLUMN, ...BULK_UPDATE_CONTEXT, ...BULK_UPDATE_FIELDS.map((spec) => spec.column)];
-}
-
 // ---- Writing the workbook ----
 
 // A second sheet holds the option lists and the dropdowns point at it. Putting
@@ -10200,27 +10186,23 @@ function bulkUpdateHeaders() {
 // workspace adds an option containing a comma, and when a list outgrows the 255
 // characters Excel allows an inline list — both of which would otherwise
 // produce a file Excel repairs by silently dropping the dropdowns.
-function buildBulkUpdateWorkbook(contacts, choices) {
-  const headers = bulkUpdateHeaders();
-  const rows = [headers, ...contacts.map((contact) => [
-    contact.id,
-    ...BULK_UPDATE_CONTEXT.map((column) => bulkUpdateContextValue(column, contact)),
-    ...BULK_UPDATE_FIELDS.map((spec) => {
-      if (spec.multi) return toChoiceList(contact[spec.field]).join("; ");
-      return String(contact[spec.field] ?? "");
-    })
-  ])];
+// `rows` is the ordinary export, header row first — the same file the Contacts
+// tab downloads, so what comes back has every column it went out with. The only
+// thing added here is a dropdown on each column that can be sent back, and a
+// second sheet holding their options.
+function buildBulkUpdateWorkbook(rows, choices) {
+  const headers = rows[0] || [];
 
-  // One option column per field that has a list, in the order they appear in
-  // the sheet, so the dropdown for column N points at the options under the
-  // same heading.
+  // Columns are found by their heading rather than by position, so the export
+  // can gain or reorder columns without silently pointing a dropdown at the
+  // wrong one.
   const optionColumns = BULK_UPDATE_FIELDS
-    .map((spec, index) => ({ spec, index }))
-    .filter(({ spec }) => spec.choice || spec.rating)
-    .map(({ spec, index }) => ({
+    .filter((spec) => spec.choice || spec.rating)
+    .map((spec) => ({ spec, sheetColumn: headers.indexOf(spec.column) + 1 }))
+    .filter(({ sheetColumn }) => sheetColumn > 0)
+    .map(({ spec, sheetColumn }) => ({
       spec,
-      // +1 for the key column, +1 again because spreadsheet columns are 1-based.
-      sheetColumn: 1 + BULK_UPDATE_CONTEXT.length + index + 1,
+      sheetColumn,
       options: spec.rating
         ? Array.from({ length: MAX_CUSTOMER_RATING }, (_, i) => String(i + 1))
         : (choices[spec.choice] || [])
@@ -10249,28 +10231,32 @@ function buildBulkUpdateWorkbook(contacts, choices) {
     "xl/_rels/workbook.xml.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
     "xl/workbook.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Contacts" sheetId="1" r:id="rId1"/><sheet name="Options" sheetId="2" r:id="rId3"/></sheets></workbook>`,
     "xl/styles.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font><font><sz val="11"/><color rgb="FF808080"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF1EFFA"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf><xf numFmtId="0" fontId="2" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs></styleSheet>`,
-    "xl/worksheets/sheet1.xml": bulkUpdateSheetXml(rows, validations),
+    "xl/worksheets/sheet1.xml": bulkUpdateSheetXml(rows, validations, optionColumns.map((c) => c.sheetColumn).concat(
+      // The free-text ones have no dropdown but are still filled in.
+      BULK_UPDATE_FIELDS.filter((spec) => !spec.choice && !spec.rating).map((spec) => headers.indexOf(spec.column) + 1).filter((n) => n > 0)
+    )),
     "xl/worksheets/sheet2.xml": bulkOptionsSheetXml(optionRows)
   };
   return zipStore(files);
 }
 
-function bulkUpdateSheetXml(rows, validations) {
+function bulkUpdateSheetXml(rows, validations, editableColumns) {
   const width = rows[0].length;
-  // The key and the context columns are shaded and greyed: they are there to
-  // identify the row, and anything typed into them is ignored on the way back.
-  const readOnlyUpTo = 1 + BULK_UPDATE_CONTEXT.length;
+  // The columns that can be sent back are tinted, so they can be found among
+  // the forty the export carries. Everything else is there for reference and
+  // is ignored on the way back.
+  const editable = new Set(editableColumns || []);
   const body = rows.map((row, r) => {
     const cells = row.map((value, c) => {
       const ref = `${columnName(c + 1)}${r + 1}`;
-      const style = r === 0 ? ' s="1"' : (c < readOnlyUpTo ? ' s="3"' : ' s="2"');
+      const style = r === 0 ? ' s="1"' : (editable.has(c + 1) ? ' s="3"' : ' s="2"');
       return `<c r="${ref}" t="inlineStr"${style}><is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`;
     }).join("");
     return `<row r="${r + 1}">${cells}</row>`;
   }).join("");
   // The header row is frozen so the columns stay readable while scrolling
   // through a few hundred contacts.
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="1" width="26" customWidth="1"/><col min="2" max="${width}" width="24" customWidth="1"/></cols><sheetData>${body}</sheetData><autoFilter ref="A1:${columnName(width)}${Math.max(rows.length, 1)}"/><dataValidations count="${(validations.match(/<dataValidation /g) || []).length}">${validations}</dataValidations></worksheet>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols><col min="1" max="${width}" width="22" customWidth="1"/></cols><sheetData>${body}</sheetData><autoFilter ref="A1:${columnName(width)}${Math.max(rows.length, 1)}"/><dataValidations count="${(validations.match(/<dataValidation /g) || []).length}">${validations}</dataValidations></worksheet>`;
 }
 
 function bulkOptionsSheetXml(rows) {
@@ -10645,7 +10631,6 @@ module.exports = {
   EXPORT_COLUMNS,
   pendingAccountsCopies,
   resequenceInvoices,
-  bulkUpdateHeaders,
   buildBulkUpdateWorkbook,
   readWorkbookRows,
   planBulkContactUpdate,
