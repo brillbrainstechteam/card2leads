@@ -149,15 +149,16 @@ test("Saved contact name maps state from the city when the card omitted it", () 
   );
 });
 
-test("customer exports use the minimal sales-ready contact format", () => {
-  assert.deepEqual(EXPORT_COLUMNS, [
-    "Saved Contact Name", "Name", "Name (Original Script)", "Mobile Number", "Country Code",
-    "Phone Country", "WhatsApp Number", "Secondary Mobile Number", "Company Name",
-    "Company Name (Original Script)", "Designation", "Office Number", "Email Address",
-    "Secondary Email", "Website", "Address", "Address (Original Script)", "City", "State",
-    "State Code", "Postal Code", "Country", "Card Language", "Exhibition Name",
-    "Exhibition Date", "Remarks", "Voice Note", "Tags", "Created Timestamp"
-  ]);
+test("Excel, CSV and the Google Sheet all render from one column list", () => {
+  // These three used to drift: the sheet was built here, the CSV on the
+  // phone. Anything that reads a contact out now goes through EXPORT_COLUMNS
+  // and exportRow, so a column added for one appears in all three.
+  assert.equal(new Set(EXPORT_COLUMNS).size, EXPORT_COLUMNS.length, "a column name is repeated");
+  assert.ok(EXPORT_COLUMNS.includes("Event Name"), "Exhibition Name should read Event Name");
+  assert.ok(EXPORT_COLUMNS.includes("Event Date"), "Exhibition Date should read Event Date");
+  assert.ok(EXPORT_COLUMNS.includes("Scan Date"));
+  assert.ok(!EXPORT_COLUMNS.some((c) => /^Exhibition/.test(c)), "an Exhibition column is left over");
+
   const row = exportRow({
     id: "internal-only",
     name: "Riya Shah",
@@ -181,7 +182,9 @@ test("CSV and Excel export builders create valid downloadable files", () => {
   })];
   const csv = buildCsv(rows);
   assert.ok(Buffer.isBuffer(csv));
-  assert.match(csv.toString("utf8"), /Saved Contact Name,Name,Name \(Original Script\),Mobile Number/);
+  // The header is the column list itself, so this cannot fall behind it the
+  // way a copied-out list does.
+  assert.ok(csv.toString("utf8").startsWith("﻿" + EXPORT_COLUMNS.join(",")), "the CSV header is not the export column list");
   assert.match(csv.toString("utf8"), /Riya Shah/);
   assert.match(csv.toString("utf8"), /"Catalogue, pricing"/);
 

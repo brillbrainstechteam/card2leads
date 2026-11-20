@@ -5373,7 +5373,11 @@ function contactsView() {
     await syncContactsGoogleSheet(event.currentTarget, activeCollectionId, [...state.selectedContactIds]);
   });
   node.querySelector('[data-menu-action="bulk-update"]')?.addEventListener("click", () => {
-    showBulkUpdateModal(activeCollectionId, downloadFilterActive);
+    // Read the scope that is selected now, not the one that was selected when
+    // the menu was drawn: picking "All contacts" and then opening this was
+    // still working to the filtered set.
+    const chosen = node.querySelector("#exportScopeSelect")?.value;
+    showBulkUpdateModal(activeCollectionId, chosen ? chosen === "filters" : downloadFilterActive);
   });
   node.querySelector('[data-menu-action="create-sheet"]')?.addEventListener("click", async (event) => {
     await createContactsGoogleSheet(event.currentTarget, activeCollectionId);
