@@ -341,8 +341,8 @@ const CONTACT_CHOICE_DEFAULTS = Object.freeze({
   // (e.g. a named roadshow) from Settings, and "Other" is typed in like the
   // rest. Event Type is picked when an event is created; Lead Source is set per
   // contact. They share one option list on purpose.
-  eventType: ["Exhibition", "Marketing", "Field Marketing", "Office Visit", "Customer Visit", "Magazine", "Advertisement"],
-  leadSource: ["Exhibition", "Marketing", "Field Marketing", "Office Visit", "Customer Visit", "Magazine", "Advertisement"],
+  eventType: ["Exhibition", "In-Person", "Marketing", "Field Marketing", "Office Visit", "Customer Visit", "Magazine", "Advertisement"],
+  leadSource: ["Exhibition", "In-Person", "Marketing", "Field Marketing", "Office Visit", "Customer Visit", "Magazine", "Advertisement"],
   // Classifies each of a contact's additional addresses (a business with
   // several showrooms / branches). Served to the clients and manageable from
   // Settings like the rest; "Other" is typed in.
@@ -376,6 +376,12 @@ function toChoiceList(value) {
   const list = Array.isArray(value) ? value : String(value == null ? "" : value).split(";");
   return [...new Set(list.map((item) => cleanText(item)).filter(Boolean))];
 }
+
+// A contact typed in by hand rather than read off a card. The tag is what makes
+// them findable later; the event type is what they were - somebody met in
+// person rather than a card collected at a stand.
+const MANUAL_CONTACT_TAG = "Manual";
+const MANUAL_CONTACT_EVENT_TYPE = "In-Person";
 
 const MAX_CUSTOMER_RATING = 5;
 
@@ -7768,6 +7774,66 @@ async function handleApi(req, res, pathname) {
       audit(db, user, "card.deleted", "card", card.id, { originalFileName: card.originalFileName, batchId: card.batchId });
       await saveDb(db);
       return send(res, 200, { ok: true });
+    }
+
+    // A contact typed in rather than scanned: somebody met in person, or a
+    // number given over the phone. It costs no scan credit, because nothing
+    // was read off a card.
+    if (req.method === "POST" && pathname === "/api/contacts") {
+      const body = await readJson(req);
+      const fields = body.fields || {};
+      const name = cleanText(fields.name);
+      const companyName = cleanText(fields.companyName);
+      const mobileNumber = normalizeMobile(cleanText(fields.mobileNumber));
+      if (!name) return error(res, 400, "Enter the contact's name.");
+      if (!companyName) return error(res, 400, "Enter the business name.");
+      if (!mobileNumber) return error(res, 400, "Enter the mobile number.");
+
+      const normalizedMobileNumber = normalizeMobile(mobileNumber);
+      const duplicate = db.contacts.find((c) =>
+        c.organisationId === user.organisationId && !c.deletedAt && c.normalizedMobileNumber === normalizedMobileNumber);
+      if (duplicate && !body.allowDuplicate) {
+        return error(res, 409, `${duplicate.name || "A saved contact"} already has this mobile number.`, { duplicateId: duplicate.id });
+      }
+
+      const collection = collectionForUser(db, user, body.collectionId || fields.collectionId);
+      const cleaned = cleanContactFields({ ...fields, name, companyName, mobileNumber });
+      // The Manual tag is what makes these findable later, and is added rather
+      // than replacing whatever tags were typed in.
+      const tags = [...new Set([...String(cleaned.tags || "").split(",").map((t) => t.trim()).filter(Boolean), MANUAL_CONTACT_TAG])].join(", ");
+      const contact = {
+        id: id("con"),
+        organisationId: user.organisationId,
+        ownerId: user.id,
+        collectionId: collection ? collection.id : null,
+        sourceCardId: null,
+        source: "Added manually",
+        uploadedBy: user.name,
+        createdBy: user.id,
+        updatedBy: user.id,
+        createdAt: now(),
+        updatedAt: now(),
+        deletedAt: null,
+        reviewStatus: "Reviewed",
+        duplicateStatus: duplicate ? "kept_both" : "none",
+        needsReview: false,
+        reviewReasons: "",
+        googleSheetsSyncStatus: collection && collection.destinationType === "google" ? "pending" : "not_configured",
+        extractionConfidence: 0,
+        cardImageReference: "",
+        normalizedMobileNumber,
+        ...cleaned,
+        tags,
+        exhibitionName: cleaned.exhibitionName || (collection ? collection.exhibitionName || collection.name || "" : ""),
+        exhibitionDate: cleaned.exhibitionDate || (collection ? collection.exhibitionDate || "" : ""),
+        eventType: cleaned.eventType || MANUAL_CONTACT_EVENT_TYPE,
+        leadSource: cleaned.leadSource || MANUAL_CONTACT_EVENT_TYPE
+      };
+      applyDerivedContactFields(contact);
+      db.contacts.unshift(contact);
+      audit(db, user, "contact.added_manually", "contact", contact.id, { name: contact.name });
+      await saveDb(db);
+      return send(res, 201, { contact: withCardImages(db, contact) });
     }
 
     if (req.method === "GET" && pathname === "/api/contacts") {
