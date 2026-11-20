@@ -2637,7 +2637,7 @@ async function notifyInvoiceForPayment(db, org, payment) {
     await syncInvoiceNumbers(db);
     const record = assignInvoiceNumber(db, org, payment);
     if (record.notifiedAt) return false;
-    const html = buildInvoiceHtml(org, payment, record);
+    const html = buildInvoiceHtml(org, payment, record, { forEmail: true });
     const to = orgContactEmail(db, org);
     let sent = false;
     if (to && emailDeliveryEnabled()) {
@@ -2681,7 +2681,26 @@ function amountInWords(amount) {
   return `INR ${words(rupees)}${paise ? ` and ${two(paise)} Paise` : ""} Only`;
 }
 
-function buildInvoiceHtml(organisation, payment, invoiceRecord) {
+const INVOICE_SIGNATURE_FILE = path.join(PUBLIC_DIR, "invoice-signature.png");
+let invoiceSignatureDataUri = null;
+
+// Absolute URL where a public one is configured, so the image loads in an
+// emailed invoice as well as in the browser. Without one - local development -
+// it falls back to embedding the file, which a browser renders happily.
+function invoiceSignatureSrc({ absolute = false } = {}) {
+  if (!fs.existsSync(INVOICE_SIGNATURE_FILE)) return "";
+  if (!absolute) return "/invoice-signature.png";
+  if (APP_BASE_URL) return `${APP_BASE_URL.replace(/\/$/, "")}/invoice-signature.png`;
+  // No public address to point a mail client at, so the file travels with the
+  // message. Some clients drop data: images, but a missing signature beats a
+  // link to a host the reader cannot reach.
+  if (invoiceSignatureDataUri === null) {
+    invoiceSignatureDataUri = `data:image/png;base64,${fs.readFileSync(INVOICE_SIGNATURE_FILE).toString("base64")}`;
+  }
+  return invoiceSignatureDataUri;
+}
+
+function buildInvoiceHtml(organisation, payment, invoiceRecord, options = {}) {
   const esc = (value) => String(value == null ? "" : value).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const inr = (value) => `₹${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const buyer = invoiceBuyer(organisation);
@@ -2691,6 +2710,7 @@ function buildInvoiceHtml(organisation, payment, invoiceRecord) {
     ? `<tr><td colspan="2">CGST @ 9%</td><td class="r">${inr(b.cgst)}</td></tr><tr><td colspan="2">SGST @ 9%</td><td class="r">${inr(b.sgst)}</td></tr>`
     : `<tr><td colspan="2">IGST @ 18%</td><td class="r">${inr(b.igst)}</td></tr>`;
   const placeOfSupply = buyer.stateName ? `${buyer.stateName}${buyer.stateCode ? ` (${buyer.stateCode})` : ""}` : "—";
+  const signatureSrc = invoiceSignatureSrc({ absolute: Boolean(options.forEmail) });
   return `<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Invoice ${esc(invoiceRecord.number)}</title>
 <style>
   :root{color-scheme:light}
@@ -2716,6 +2736,8 @@ function buildInvoiceHtml(organisation, payment, invoiceRecord) {
   .foot{display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-top:18px}
   .note{color:#6b6b78;font-size:11px;max-width:60%}
   .sign{text-align:right;min-width:200px}
+  .sign-img{display:block;width:230px;max-width:100%;height:auto;margin:0 0 2px auto}
+  .sign-caption{font-size:11.5px;color:#6b6b78}
   .sign-line{margin-top:40px;border-top:1px solid #1a1a24;padding-top:4px;font-size:11.5px}
   .actions{max-width:760px;margin:0 auto 14px;text-align:right}
   button{background:#241c53;color:#fff;border:0;border-radius:8px;padding:9px 18px;font-size:13px;cursor:pointer}
@@ -2765,7 +2787,9 @@ function buildInvoiceHtml(organisation, payment, invoiceRecord) {
     <div class="words"><span class="muted">Amount chargeable (in words):</span> <strong>${esc(amountInWords(b.total))}</strong></div>
     <div class="foot">
       <div class="note">Amount is inclusive of GST at 18% (SAC ${esc(INVOICE_SELLER.sac)}). Whether tax is payable under reverse charge: No. This is a computer-generated invoice.</div>
-      <div class="sign"><div class="muted">For ${esc(INVOICE_SELLER.legalName)}</div><div class="sign-line">Authorised Signatory</div></div>
+      ${signatureSrc
+        ? `<div class="sign"><img class="sign-img" src="${esc(signatureSrc)}" alt="For ${esc(INVOICE_SELLER.legalName)} — Director, Authorised Signatory" /><div class="sign-caption">Authorised Signatory</div></div>`
+        : `<div class="sign"><div class="muted">For ${esc(INVOICE_SELLER.legalName)}</div><div class="sign-line">Authorised Signatory</div></div>`}
     </div>
   </div>
 </body></html>`;
