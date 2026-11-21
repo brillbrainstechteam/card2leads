@@ -174,9 +174,9 @@ const RAZORPAY_TOTAL_COUNTS = { monthly: 12, quarterly: 8, annual: 5 };
 // Public plan names (kept here so web and mobile render the same labels).
 // monthly = Starter Pack, quarterly = Exhibition Pass, annual = Pro Annual.
 const PLAN_DISPLAY_NAMES = Object.freeze({ monthly: "Starter Pack", quarterly: "Exhibition Pass", annual: "Pro Annual" });
-const PLAN_PRICES_PAISE = Object.freeze({ monthly: 49900, quarterly: 89900, annual: 399900 });
+const PLAN_PRICES_PAISE = Object.freeze({ monthly: 69900, quarterly: 129900, annual: 579900 });
 const PLAN_DURATIONS_MONTHS = Object.freeze({ monthly: 1, quarterly: 3, annual: 12 });
-const TOPUP_AMOUNT_PAISE = 49900; // ₹499
+const TOPUP_AMOUNT_PAISE = 79900; // ₹799
 const TOPUP_SCANS = 200;
 
 let dbCache = null;

@@ -668,7 +668,7 @@ function authView() {
           <div class="pricing-grid">
           <article class="price-card">
             <span class="price-label">Starter Pack</span>
-            <h3><span>&#8377;499</span> once</h3>
+            <h3><span>&#8377;699</span> once</h3>
             <p>150 card scans valid for 30 days. Pay once with no recurring charge.</p>
             <span class="plan-cancel">No auto-renewal</span>
             <button type="button" class="secondary" data-auth-mode="signup" data-plan="monthly" data-billing-mode="one_time">Buy Starter Pack</button>
@@ -676,7 +676,7 @@ function authView() {
           <article class="price-card featured">
             <span class="popular-badge">Most popular</span>
             <span class="price-label">Exhibition Pass</span>
-            <h3><span>&#8377;899</span> once</h3>
+            <h3><span>&#8377;1,299</span> once</h3>
             <p>300 card scans valid for 90 days. Ideal for exhibitions, events and regular lead capture.</p>
             <span class="plan-cancel">No auto-renewal</span>
             <button type="button" data-auth-mode="signup" data-plan="quarterly" data-billing-mode="one_time">Buy Exhibition Pass</button>
@@ -684,7 +684,7 @@ function authView() {
           <article class="price-card">
             <span class="popular-badge value-badge">Best value</span>
             <span class="price-label">Pro Annual</span>
-            <h3><span>&#8377;3,999</span> once</h3>
+            <h3><span>&#8377;5,799</span> once</h3>
             <p>1,500 card scans valid for 12 months, at the lowest included cost per scan.</p>
             <span class="plan-cancel">No auto-renewal</span>
             <button type="button" class="secondary" data-auth-mode="signup" data-plan="annual" data-billing-mode="one_time">Buy Pro Annual</button>
@@ -695,7 +695,7 @@ function authView() {
           <span class="pricing-note-icon" aria-hidden="true">+</span>
           <div class="pricing-note-copy">
             <strong>Need more scans?</strong>
-            <span>Add 200 extra card scans for <strong>&#8377;499</strong> with any active paid plan.</span>
+            <span>Add 200 extra card scans for <strong>&#8377;799</strong> with any active paid plan.</span>
           </div>
           <button type="button" class="secondary pricing-note-action" data-topup-entry>Add scan credits</button>
         </aside>
@@ -2801,7 +2801,7 @@ function showPaymentPrompt(message) {
   const billing = state.overview?.billing || {};
   const planLabel = { monthly: "Starter Pack", quarterly: "Exhibition Pass", annual: "Pro Annual" };
   const scansFor = { monthly: 150, quarterly: 300, annual: 1500 };
-  const priceFor = { monthly: 499, quarterly: 899, annual: 3999 };
+  const priceFor = { monthly: 699, quarterly: 1299, annual: 5799 };
   const oneTime = (Array.isArray(billing.oneTimePlans) && billing.oneTimePlans.length
     ? billing.oneTimePlans.map((p) => p.plan)
     : ["monthly", "quarterly", "annual"]);
@@ -6161,7 +6161,7 @@ function requestTopupPurchase() {
   }
   if (!billing.canTopup) {
     const scans = Number(billing.topupScans || 200);
-    const amount = Number(billing.topupAmount || 499).toLocaleString("en-IN");
+    const amount = Number(billing.topupAmount || 799).toLocaleString("en-IN");
     state.modal = {
       className: "plan-required-dialog",
       tone: "credit",
@@ -6194,7 +6194,7 @@ function requestTopupPurchase() {
   state.modal = {
     title: `Add ${Number(billing.topupScans || 200)} scan credits?`,
     body: `These credits are added immediately to your active plan after payment is verified.`,
-    detail: `One-time payment: ₹${Number(billing.topupAmount || 499).toLocaleString("en-IN")}. This does not start or change a subscription.`,
+    detail: `One-time payment: ₹${Number(billing.topupAmount || 799).toLocaleString("en-IN")}. This does not start or change a subscription.`,
     cancelText: "Not now",
     confirmText: "Continue to payment",
     confirmClass: "primary",
@@ -6319,9 +6319,9 @@ function accountView() {
           : `<p class="muted">You don't have an active plan yet. Choose a plan below to start scanning.</p>`}
         ${billing.configured ? `
           <div class="plan-choices">
-            <button type="button" class="secondary" data-pay-once="monthly">Starter Pack · ₹499 / 150 scans</button>
-            <button type="button" class="secondary" data-pay-once="quarterly">Exhibition Pass · ₹899 / 300 scans</button>
-            <button type="button" class="secondary" data-pay-once="annual">Pro Annual · ₹3,999 / 1,500 scans</button>
+            <button type="button" class="secondary" data-pay-once="monthly">Starter Pack · ₹699 / 150 scans</button>
+            <button type="button" class="secondary" data-pay-once="quarterly">Exhibition Pass · ₹1,299 / 300 scans</button>
+            <button type="button" class="secondary" data-pay-once="annual">Pro Annual · ₹5,799 / 1,500 scans</button>
           </div>
           <p class="muted">One-time purchase. Scans are valid for the plan period and do not renew.</p>
           <div class="actions">
