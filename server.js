@@ -10053,7 +10053,17 @@ function serveStatic(req, res, pathname) {
     ".webp": "image/webp",
     ".woff2": "font/woff2"
   }[path.extname(filePath).toLowerCase()] || "application/octet-stream";
-  send(res, 200, fs.readFileSync(filePath), { "Content-Type": contentType });
+  // The HTML names the versioned asset URLs, so a browser still holding an
+  // old copy of the page keeps asking for the old app.js however carefully the
+  // version was bumped - which is how a deployed change stays invisible on a
+  // phone. The page itself must be revalidated; what it names carries a
+  // version in the URL and can be held for good.
+  const cacheControl = /[.]html$/i.test(filePath)
+    ? "no-cache"
+    : /[.](js|css|png|jpg|jpeg|gif|svg|webp|woff2|ico)$/i.test(filePath)
+      ? "public, max-age=31536000"
+      : "no-cache";
+  send(res, 200, fs.readFileSync(filePath), { "Content-Type": contentType, "Cache-Control": cacheControl });
 }
 
 // Serve the admin UI (admin-ui/public) at /admin so the panel is reachable on the
@@ -10084,7 +10094,17 @@ function serveAdminUi(req, res, pathname) {
     ".ico": "image/x-icon",
     ".json": "application/json; charset=utf-8"
   }[path.extname(filePath)] || "application/octet-stream";
-  send(res, 200, fs.readFileSync(filePath), { "Content-Type": contentType });
+  // The HTML names the versioned asset URLs, so a browser still holding an
+  // old copy of the page keeps asking for the old app.js however carefully the
+  // version was bumped - which is how a deployed change stays invisible on a
+  // phone. The page itself must be revalidated; what it names carries a
+  // version in the URL and can be held for good.
+  const cacheControl = /[.]html$/i.test(filePath)
+    ? "no-cache"
+    : /[.](js|css|png|jpg|jpeg|gif|svg|webp|woff2|ico)$/i.test(filePath)
+      ? "public, max-age=31536000"
+      : "no-cache";
+  send(res, 200, fs.readFileSync(filePath), { "Content-Type": contentType, "Cache-Control": cacheControl });
 }
 
 function serveIllustrationFromDirectory(res, pathname, routePrefix, directory) {
