@@ -2029,11 +2029,14 @@ function renderBulkUpdateBody(node, collectionId, useFilters) {
 
   if (stateNow.stage === "done") {
     body.innerHTML = `
-      <div class="bulk-update-done">
-        <p><b>${summary.updated} contact${summary.updated === 1 ? "" : "s"} updated.</b></p>
-        ${summary.notFound ? `<p class="muted">${summary.notFound} row${summary.notFound === 1 ? "" : "s"} did not match a saved contact and ${summary.notFound === 1 ? "was" : "were"} left alone.</p>` : ""}
-
+      <div class="upload-done">
+        <span class="upload-done-tick" aria-hidden="true">${tickGlyph()}</span>
+        <h4>${summary.updated} contact${summary.updated === 1 ? "" : "s"} updated</h4>
+        <p class="muted">${escapeHtml(stateNow.fileName || "The sheet")} has been applied.</p>
+        ${summary.notFound ? `<p class="muted">${summary.notFound} row${summary.notFound === 1 ? "" : "s"} matched no saved contact and ${summary.notFound === 1 ? "was" : "were"} left alone.</p>` : ""}
+        <button type="button" class="primary" data-bulk-done>Done</button>
       </div>`;
+    body.querySelector("[data-bulk-done]")?.addEventListener("click", () => closeModal());
     return;
   }
 
@@ -2118,6 +2121,10 @@ function bulkUpdatePreviewHtml(summary) {
     </div>`;
 }
 
+function tickGlyph() {
+  return `<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/></svg>`;
+}
+
 function uploadGlyph() {
   return `<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V8"/><path d="m8.5 11.5 3.5-3.5 3.5 3.5"/><path d="M20 16.5A3.5 3.5 0 0 0 17.5 10h-1A6 6 0 1 0 6 15.5"/></svg>`;
 }
@@ -2187,8 +2194,12 @@ async function applyBulkUpdate(node, collectionId, useFilters) {
     state.bulkUpdate.summary = result;
     state.bulkUpdate.stage = "done";
     renderBulkUpdateBody(node, collectionId, useFilters);
-    // The contacts on screen are now out of date.
+    // The contacts on screen are now out of date. The toast is set directly
+    // rather than through setMessage, which would re-render and take the
+    // dialog's own confirmation down with it.
     await refreshAll();
+    state.message = { text: `${result.updated} contact${result.updated === 1 ? "" : "s"} updated from ${state.bulkUpdate.fileName || "the sheet"}.`, bad: false };
+    renderBulkUpdateBody(node, collectionId, useFilters);
   } catch (err) {
     if (button) { button.disabled = false; button.textContent = "Try again"; }
     setBulkUpdateStatus(node, err.message || "Those changes could not be saved.", true);

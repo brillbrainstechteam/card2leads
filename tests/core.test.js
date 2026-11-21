@@ -775,15 +775,16 @@ test("a filled-in sheet updates only the classification columns", () => {
   // Sending the same sheet again must do nothing.
   assert.equal(planBulkContactUpdate(db, user, bulkWorkbookFrom(grid), bulkChoices).updates.length, 0);
 
-  // Without a contact id column the mobile number is what identifies a row, so
-  // changing it in the sheet leaves that row pointing at nobody - and it is
-  // reported rather than passed over in silence.
+  // The number identifies a row, but it is not the only thing that can: a row
+  // whose number was changed - or a contact that never had one - is still
+  // found by the name and company printed beside it.
   const renumbered = grid.map((r) => r.slice());
   renumbered[1][at("Mobile Number")] = "+910000000000";
   renumbered[1][at("Customer Rating")] = "4";
-  const strayed = planBulkContactUpdate(db, user, bulkWorkbookFrom(renumbered), bulkChoices);
-  assert.equal(strayed.updates.length, 0);
-  assert.ok(strayed.notFound.some((p) => String(p.key).includes("910000000000")));
+  const byName = planBulkContactUpdate(db, user, bulkWorkbookFrom(renumbered), bulkChoices);
+  assert.equal(byName.updates.length, 1, "the row should still find its contact by name");
+  assert.equal(byName.updates[0].contactId, "con_1");
+  assert.equal(byName.updates[0].changes.customerRating, "4");
 });
 
 test("a bulk update sheet reports rows it cannot safely apply", () => {
@@ -1077,4 +1078,45 @@ test("accounts are owed every issued invoice they have not had", () => {
   assert.equal(pending[0].record.number, "75/26-27");
   // A payment whose workspace has gone is skipped rather than throwing.
   assert.ok(!pending.some((x) => x.payment.provider_payment_id === "pay_c"));
+});
+
+test("a contact with no mobile number is still reachable by name and company", () => {
+  // Real exports contain these: a stall with a company name and no number on
+  // the card. The mobile number is the key, so these rows used to match
+  // nothing and were silently left out of every bulk update.
+  const contacts = [
+    { id: "con_1", organisationId: "org", name: "Fancy Fabrics Mfg", companyName: "Fancy Fabrics Mfg", mobileNumber: "", normalizedMobileNumber: "", salutation: "", industry: "", businessType: [], businessSpecialisation: "", customerStatus: "", customerRating: "", leadSource: "" },
+    { id: "con_2", organisationId: "org", name: "Test Person One", companyName: "Example Gems", mobileNumber: "+919000000011", normalizedMobileNumber: "+919000000011", salutation: "", industry: "", businessType: [], businessSpecialisation: "", customerStatus: "", customerRating: "", leadSource: "" }
+  ];
+  const grid = readWorkbookRows(bulkSheetFor(contacts));
+  const header = grid[0];
+  const at = (name) => header.indexOf(name);
+  grid[1][at("Business Type")] = "Jewellery Retailer";
+  grid[1][at("Customer Rating")] = "5";
+  grid[2][at("Customer Rating")] = "4";
+
+  const db = { contacts };
+  const user = { id: "usr", organisationId: "org" };
+  const plan = planBulkContactUpdate(db, user, bulkWorkbookFrom(grid), bulkChoices);
+  assert.equal(plan.notFound.length, 0, "both rows should match: " + JSON.stringify(plan.notFound));
+  assert.equal(applyBulkContactUpdate(db, user, plan), 2);
+  assert.deepEqual(contacts[0].businessType, ["Jewellery Retailer"]);
+  assert.equal(contacts[0].customerRating, "5");
+  assert.equal(contacts[1].customerRating, "4");
+});
+
+test("two contacts sharing a name and company are left alone rather than guessed at", () => {
+  // The name is a weaker key than the number, so a collision must not be
+  // resolved by picking one.
+  const contacts = [
+    { id: "con_1", organisationId: "org", name: "Front Desk", companyName: "Gupta Jewellers", mobileNumber: "", normalizedMobileNumber: "", businessType: [], customerRating: "", industry: "", customerStatus: "", salutation: "", businessSpecialisation: "", leadSource: "" },
+    { id: "con_2", organisationId: "org", name: "Front Desk", companyName: "Gupta Jewellers", mobileNumber: "", normalizedMobileNumber: "", businessType: [], customerRating: "", industry: "", customerStatus: "", salutation: "", businessSpecialisation: "", leadSource: "" }
+  ];
+  const grid = readWorkbookRows(bulkSheetFor(contacts));
+  grid[1][grid[0].indexOf("Customer Rating")] = "5";
+  const db = { contacts };
+  const plan = planBulkContactUpdate(db, { id: "usr", organisationId: "org" }, bulkWorkbookFrom(grid), bulkChoices);
+  assert.equal(plan.updates.length, 0);
+  assert.ok(plan.notFound.some((p) => /more than one/i.test(p.reason)), JSON.stringify(plan.notFound));
+  assert.equal(contacts[0].customerRating, "");
 });

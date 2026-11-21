@@ -10460,6 +10460,8 @@ function planBulkContactUpdate(db, user, buffer, choices) {
   // different file before they can send one back would defeat the point.
   const keyIndex = columnFor(BULK_UPDATE_KEY_COLUMN);
   const mobileIndex = columnFor("Mobile Number");
+  const nameIndex = columnFor("Name");
+  const companyIndex = columnFor("Company Name");
   const matchIndex = keyIndex >= 0 ? keyIndex : mobileIndex;
   if (matchIndex < 0) {
     throw new Error(`This sheet needs a "${BULK_UPDATE_KEY_COLUMN}" or a "Mobile Number" column to tell which contact each row is. Download your contacts again and fill that copy in.`);
@@ -10485,6 +10487,18 @@ function planBulkContactUpdate(db, user, buffer, choices) {
     if (!digits) return [];
     return digits.length > 10 ? [digits, digits.slice(-10)] : [digits];
   };
+  // Not every contact has a number — a card with only an email, a company
+  // stall with no name on it — and those would be unreachable on the number
+  // alone. Their name and company together stand in, which is as unique as the
+  // sheet can offer; a pair shared by two contacts is treated as ambiguous and
+  // left alone rather than guessed at.
+  const byNameCompany = new Map();
+  const ambiguousNames = new Set();
+  const nameKeyFor = (name, company) => {
+    const tidy = (value) => String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+    const key = `${tidy(name)}|${tidy(company)}`;
+    return key === "|" ? "" : key;
+  };
   for (const contact of db.contacts) {
     if (contact.organisationId !== user.organisationId || contact.deletedAt) continue;
     byId.set(contact.id, contact);
@@ -10492,6 +10506,10 @@ function planBulkContactUpdate(db, user, buffer, choices) {
       if (byMobile.has(mobileKey) && byMobile.get(mobileKey) !== contact) ambiguous.add(mobileKey);
       else byMobile.set(mobileKey, contact);
     }
+    const nameKey = nameKeyFor(contact.name, contact.companyName);
+    if (!nameKey) continue;
+    if (byNameCompany.has(nameKey) && byNameCompany.get(nameKey) !== contact) ambiguousNames.add(nameKey);
+    else byNameCompany.set(nameKey, contact);
   }
 
   const plan = { updates: [], unchanged: 0, notFound: [], problems: [], blankRows: 0, columns: present.map((entry) => entry.spec.column) };
@@ -10511,8 +10529,22 @@ function planBulkContactUpdate(db, user, buffer, choices) {
       }
       contact = keys.map((mobileKey) => byMobile.get(mobileKey)).find(Boolean) || null;
     }
+    // Still nothing: the row may be one of the contacts that has no number at
+    // all, so fall back to the name and company printed beside it.
+    if (!contact && nameIndex >= 0) {
+      const nameKey = nameKeyFor(row[nameIndex], companyIndex >= 0 ? row[companyIndex] : "");
+      if (nameKey && ambiguousNames.has(nameKey)) {
+        plan.notFound.push({ row: r + 1, key: cleanText(row[nameIndex]), reason: "More than one saved contact has this name and company, so this row was left alone." });
+        continue;
+      }
+      if (nameKey) contact = byNameCompany.get(nameKey) || null;
+    }
     if (!contact) {
-      plan.notFound.push({ row: r + 1, key: key || "(blank)", reason: "No saved contact matches this row." });
+      plan.notFound.push({
+        row: r + 1,
+        key: key || cleanText(nameIndex >= 0 ? row[nameIndex] : "") || "(blank)",
+        reason: "No saved contact matches this row by number, name or company."
+      });
       continue;
     }
     // Two rows for one contact is ambiguous - a copied row, usually. Letting

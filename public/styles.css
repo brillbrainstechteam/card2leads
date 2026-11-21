@@ -8934,3 +8934,10 @@ strong {
 @media (max-width: 640px) {
   .upload-actions button { width: 100%; }
 }
+
+/* The result of an upload, stated plainly rather than left to be inferred. */
+.upload-done { display: grid; justify-items: center; gap: 6px; padding: 18px 8px 4px; text-align: center; }
+.upload-done-tick { color: #157a47; line-height: 0; }
+.upload-done h4 { margin: 6px 0 0; font-size: 17px; }
+.upload-done p { margin: 0; font-size: 13px; }
+.upload-done button { margin-top: 14px; min-width: 140px; }
