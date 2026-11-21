@@ -275,6 +275,11 @@ async function init() {
   if (!state.user && isNativeApp()) {
     state.nativeIntroStep = localStorage.getItem(nativeIntroStorageKey) === "1" ? 3 : 0;
   }
+  if (state.user && openBulkUpdate) {
+    applyRouteFromLocation(false);
+    prepareBulkUpdateModal("", false);
+    document.getElementById("app").appendChild(modalView());
+  }
   if (state.user) {
     applyRouteFromLocation(false);
     await refreshAll();
@@ -292,10 +297,6 @@ async function init() {
   if (state.user && checkoutPlan) void startOneTimePlan(checkoutPlan);
   else if (state.user && checkoutTopup) void startTopup();
   else if (state.user && checkoutCustom) void startCustomPlan();
-  if (state.user && openBulkUpdate) {
-    const collection = state.overview?.activeCollection?.id || "";
-    showBulkUpdateModal(collection, false);
-  }
 }
 
 // A client on the one-per-business rule gets one row per company in every
@@ -2009,6 +2010,11 @@ function bulkUpdateHref(collectionId, useFilters) {
 }
 
 function showBulkUpdateModal(collectionId, useFilters) {
+  prepareBulkUpdateModal(collectionId, useFilters);
+  render();
+}
+
+function prepareBulkUpdateModal(collectionId, useFilters) {
   state.bulkUpdate = { stage: "choose", file: null, fileName: "", fileSize: 0, summary: null, busy: false };
   state.modal = {
     title: "Upload contacts",
@@ -2018,7 +2024,6 @@ function showBulkUpdateModal(collectionId, useFilters) {
     actions: [{ label: "Close" }],
     onRender: (node) => renderBulkUpdateBody(node, collectionId, useFilters)
   };
-  render();
 }
 
 function renderBulkUpdateBody(node, collectionId, useFilters) {
