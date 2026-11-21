@@ -8386,6 +8386,35 @@ async function handleApi(req, res, pathname) {
       return send(res, 200, { ok: true, google: googleStatus(db, user) });
     }
 
+    // Deleting a workspace takes every contact, card image and recording with
+    // it, for everybody on it, and cannot be undone. A tap in an app is too
+    // small an action for that, so the app asks for it and a person carries it
+    // out. The destructive endpoint below is unchanged and still reachable.
+    if (req.method === "POST" && pathname === "/api/account/deletion-request") {
+      if (!rateLimit(req, res, "account-deletion-request", 5, 60 * 60 * 1000)) return;
+      const body = await readJson(req).catch(() => ({}));
+      const reason = cleanText(body.reason).slice(0, 2000);
+      const organisation = db.organisations.find((o) => o.id === user.organisationId);
+      const contacts = db.contacts.filter((c) => c.organisationId === user.organisationId && !c.deletedAt).length;
+      const requestedAt = now();
+      organisation.deletionRequest = { requestedAt, requestedBy: user.id, requestedByEmail: user.email, reason };
+      audit(db, user, "account.deletion_requested", "organisation", user.organisationId, { reason });
+      await saveDb(db);
+      if (emailDeliveryEnabled()) {
+        const esc = (value) => String(value == null ? "" : value).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+        await sendRawEmail({
+          to: SUPPORT_INBOX,
+          subject: `Account deletion requested — ${organisation?.name || user.organisationId}`,
+          html: `<p><strong>${esc(user.name)}</strong> (${esc(user.email)}) has asked for their workspace to be deleted.</p>
+            <p>Workspace: <strong>${esc(organisation?.name || "")}</strong><br />Id: ${esc(user.organisationId)}<br />Saved contacts: ${contacts}<br />Requested: ${esc(requestedAt)}</p>
+            ${reason ? `<p>Reason given:<br />${esc(reason)}</p>` : "<p>No reason given.</p>"}
+            <p>Nothing has been deleted. Confirm with them before carrying this out.</p>`,
+          replyTo: user.email
+        }).catch((err) => console.error("[account-deletion] could not notify support:", err.message));
+      }
+      return send(res, 200, { requested: true, requestedAt });
+    }
+
     if (req.method === "DELETE" && pathname === "/api/account") {
       const organisationId = user.organisationId;
       const organisationUserIds = new Set(db.users.filter((item) => item.organisationId === organisationId).map((item) => item.id));
