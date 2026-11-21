@@ -1,19 +1,29 @@
 # Card2Leads
 
-> Card2Leads is a business card scanner and contact management application from
-> BrillBrains Consultants Pvt. Ltd. It converts photographed or uploaded business
-> cards into structured contact records that can be reviewed, labelled, exported
-> as Excel, CSV or VCF, and optionally synced to Google Contacts and Google Sheets.
-> It runs as a web app and as an Android app on Google Play.
+> Card2Leads is a business card scanner (visiting card scanner) and lead
+> management application from BrillBrains Consultants Pvt. Ltd. It converts
+> photographed or uploaded business cards into structured contact records that
+> can be reviewed, classified, assigned to a team member, exported as Excel, CSV
+> or VCF, and optionally synced to Google Contacts and Google Sheets. It is built
+> for exhibitions and trade shows, where hundreds of cards are collected in a few
+> days. It runs as a web app and as an Android app on Google Play.
 
 ## What it does
 
-- Scans a business card with the phone camera, or accepts single and bulk image uploads.
-- Extracts name, phone number, email address, company and designation from each card.
+- Scans a business card with the phone camera, or accepts single and bulk image uploads of up to 200 cards at a time.
+- Reads the front and the back of the same card as one contact.
+- Extracts name, company, designation, mobile number, email address, address, city, state, pincode and country.
 - Shows every extracted field for human review and correction before the record is saved.
-- Adds labels, notes and voice notes to organise leads.
-- Exports approved contacts as Excel, CSV or VCF files.
+- Tags each contact with the event or exhibition it was collected at, and the event date.
+- Classifies contacts by salutation, industry, business type, business specialisation, customer status, customer rating and lead source, using dropdown lists each workspace can edit.
+- Assigns a contact to a team member, so a shared stand's leads can be split by owner.
+- Records a voice note against a contact and keeps the transcript with the record.
+- Opens a pre-written WhatsApp message to a contact, using workspace templates and a catalogue link. Messages are never sent automatically.
+- Adds a contact by hand when there is no card to scan.
+- Exports approved contacts as Excel, CSV or VCF files, with the same columns in every format.
 - Optionally writes selected contacts to Google Contacts, or creates and updates rows in Google Sheets.
+- Round-trips a spreadsheet: download contacts as Excel with dropdown lists in the classification columns, edit them in Excel, upload the file back, and only the rows that changed are updated.
+- Issues a GST tax invoice for every payment.
 
 ## Platforms
 
@@ -23,15 +33,24 @@
 
 ## Pricing
 
-- 499 INR - one month, 150 card scans (Starter Pack)
-- 899 INR - three months, 300 card scans (Exhibition Pass)
-- 3,999 INR - one year, 1,500 card scans (Pro Annual)
+All plans are paid once, in Indian rupees, and do not auto-renew. One credit is
+one card sent to be read; the front and back of the same card count as one.
+
+- 699 INR - Starter Pack, 150 card scans, valid 30 days
+- 1,299 INR - Exhibition Pass, 300 card scans, valid 90 days
+- 5,799 INR - Pro Annual, 1,500 card scans, valid 12 months
+- 799 INR - 200 extra scans, a one-time top-up that requires an active paid plan
+
+Larger volumes are quoted per workspace. Prices include GST, and a tax invoice is
+available for every payment.
 
 ## Data handling
 
 - Card photographs and voice recordings are deleted 90 days after the card is created.
 - Extracted contact details and voice note transcripts are kept for as long as the user keeps the record.
 - Connecting a Google account is optional and is requested only when a feature needs it.
+- Google data is never sold or used for advertising.
+- Account deletion is requested in the app or at the deletion request page, and is carried out by the operator.
 
 ## Key pages
 
@@ -39,6 +58,7 @@
 - [Privacy Policy](https://card2leads.brillbrainsconsultants.com/privacy-policy): what is collected, how it is used and retained.
 - [Terms of Use](https://card2leads.brillbrainsconsultants.com/terms): the agreement governing use of the service.
 - [Data retention](https://card2leads.brillbrainsconsultants.com/retention.html): the retention schedule in detail.
+- [Delete your account](https://card2leads.brillbrainsconsultants.com/delete-account.html): how to request deletion of an account and its data.
 - [Contact](https://card2leads.brillbrainsconsultants.com/contact): how to reach BrillBrains Consultants.
 
 ## Operator
