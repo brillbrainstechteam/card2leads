@@ -1120,3 +1120,33 @@ test("two contacts sharing a name and company are left alone rather than guessed
   assert.ok(plan.notFound.some((p) => /more than one/i.test(p.reason)), JSON.stringify(plan.notFound));
   assert.equal(contacts[0].customerRating, "");
 });
+
+// The app hands this browser a short-lived signed link so someone can work
+// through a spreadsheet without typing a password they may never have set.
+// It used to be a token held in memory, which a deploy or a second worker
+// process quietly lost - and losing it looked exactly like success.
+test("a spreadsheet handoff link survives being verified by another process", () => {
+  const { signHandoff, verifyHandoff } = require("../server.js");
+  const token = signHandoff("usr_handoff");
+  assert.equal(verifyHandoff(token), "usr_handoff");
+  // Nothing is stored, so verifying twice must still work.
+  assert.equal(verifyHandoff(token), "usr_handoff");
+  assert.match(token, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+});
+
+test("a spreadsheet handoff link cannot be forged, swapped or replayed once stale", () => {
+  const crypto = require("node:crypto");
+  const { signHandoff, verifyHandoff } = require("../server.js");
+  const [payload, signature] = signHandoff("usr_handoff").split(".");
+  assert.equal(verifyHandoff(""), "");
+  assert.equal(verifyHandoff("nonsense"), "");
+  assert.equal(verifyHandoff(payload), "");
+  assert.equal(verifyHandoff(`${payload}.AAAA`), "");
+  // Another user's payload behind a signature that was never issued for it.
+  const swapped = Buffer.from(JSON.stringify({ u: "usr_other", e: Date.now() + 60000 }), "utf8").toString("base64url");
+  assert.equal(verifyHandoff(`${swapped}.${signature}`), "");
+  // Correctly signed, but its window has closed.
+  const stale = Buffer.from(JSON.stringify({ u: "usr_handoff", e: Date.now() - 1 }), "utf8").toString("base64url");
+  const staleSig = crypto.createHmac("sha256", process.env.SESSION_SECRET || "dev-secret-change-me").update(`handoff:${stale}`).digest("base64url");
+  assert.equal(verifyHandoff(`${stale}.${staleSig}`), "");
+});

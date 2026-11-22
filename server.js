@@ -1968,6 +1968,33 @@ function parseCookies(req) {
   }));
 }
 
+// A browser handoff carries who it is for and when it stops being valid, signed
+// so the server does not have to remember having issued it. Short-lived, and it
+// grants no more than the app the person is already signed in to.
+const HANDOFF_GOOD_FOR_MS = 5 * 60 * 1000;
+
+function signHandoff(userId) {
+  const payload = Buffer.from(JSON.stringify({ u: userId, e: Date.now() + HANDOFF_GOOD_FOR_MS }), "utf8").toString("base64url");
+  const sig = crypto.createHmac("sha256", SESSION_SECRET).update(`handoff:${payload}`).digest("base64url");
+  return `${payload}.${sig}`;
+}
+
+function verifyHandoff(token) {
+  const [payload, sig] = String(token || "").split(".");
+  if (!payload || !sig) return "";
+  const expected = crypto.createHmac("sha256", SESSION_SECRET).update(`handoff:${payload}`).digest("base64url");
+  const given = Buffer.from(sig);
+  const want = Buffer.from(expected);
+  if (given.length !== want.length || !crypto.timingSafeEqual(given, want)) return "";
+  try {
+    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    if (!claims || typeof claims.u !== "string" || Number(claims.e) < Date.now()) return "";
+    return claims.u;
+  } catch {
+    return "";
+  }
+}
+
 function signSession(sessionId) {
   const sig = crypto.createHmac("sha256", SESSION_SECRET).update(sessionId).digest("hex");
   return `${sessionId}.${sig}`;
@@ -6546,12 +6573,16 @@ async function handleApi(req, res, pathname) {
     // explaining itself to whoever followed the link.
     if (req.method === "GET" && pathname === "/api/contacts/bulk-update-web") {
       const token = String(new URL(req.url, `http://${req.headers.host}`).searchParams.get("token") || "");
-      const grant = webHandoffs.get(token);
-      if (grant) webHandoffs.delete(token);
-      if (!grant || grant.expiresAt < Date.now()) return redirect(res, "/#contacts");
-      const handoffUser = db.users.find((candidate) => candidate.id === grant.userId && candidate.status === "active");
-      if (!handoffUser) return redirect(res, "/#contacts");
-      return await createSession(req, res, db, handoffUser, grant.target || "/#contacts");
+      // Links minted by an older app build are still held in memory; accept
+      // either while those builds are in use.
+      const stored = webHandoffs.get(token);
+      if (stored) webHandoffs.delete(token);
+      const userId = stored && stored.expiresAt >= Date.now() ? stored.userId : verifyHandoff(token);
+      // A dead link must not look like a successful trip to the contacts list.
+      if (!userId) return redirect(res, "/?bulkUpdate=expired#contacts");
+      const handoffUser = db.users.find((candidate) => candidate.id === userId && candidate.status === "active");
+      if (!handoffUser) return redirect(res, "/?bulkUpdate=expired#contacts");
+      return await createSession(req, res, db, handoffUser, (stored && stored.target) || "/?bulkUpdate=1#contacts");
     }
 
     const user = requireUser(req, res, db);
@@ -8239,8 +8270,11 @@ async function handleApi(req, res, pathname) {
     // a signed-in link to the spreadsheet flow instead. The token is single-use
     // and short-lived; the browser gets an ordinary session from it.
     if (req.method === "POST" && pathname === "/api/contacts/bulk-update-link") {
-      const token = randomToken("bulk");
-      webHandoffs.set(token, { userId: user.id, target: "/?bulkUpdate=1#contacts", expiresAt: Date.now() + 5 * 60 * 1000 });
+      // Signed rather than stored. The token used to live in an in-memory Map,
+      // which meant a deploy between tapping the row and the browser opening
+      // threw it away, and a second worker process never had it at all - and
+      // the only symptom was landing on the contacts list with nothing said.
+      const token = signHandoff(user.id);
       return send(res, 200, { url: `${baseUrl(req)}/api/contacts/bulk-update-web?token=${encodeURIComponent(token)}` });
     }
 
@@ -10776,6 +10810,8 @@ function crc32(buffer) {
 
 module.exports = {
   EXPORT_COLUMNS,
+  signHandoff,
+  verifyHandoff,
   pendingAccountsCopies,
   resequenceInvoices,
   buildBulkUpdateWorkbook,

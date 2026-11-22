@@ -261,7 +261,12 @@ async function init() {
   // Followed the app's "update from a spreadsheet" link: open that dialog once
   // the workspace has loaded, so the phone's browser lands on the step the
   // person actually came for.
-  const openBulkUpdate = url.searchParams.get("bulkUpdate") === "1";
+  const bulkUpdateParam = url.searchParams.get("bulkUpdate");
+  const openBulkUpdate = bulkUpdateParam === "1";
+  // The sign-in link the app hands this browser is short-lived. When it has
+  // gone stale the dialog cannot be opened on trust, so say that plainly
+  // instead of leaving someone on the contacts list wondering.
+  const bulkUpdateExpired = bulkUpdateParam === "expired";
   const authNotice = url.searchParams.get("auth");
   if (authNotice === "verify_failed" || authNotice === "google_failed") state.authOpen = true;
   if (authNotice === "verified") state.authInfo = "Email verified. You are signed in. Complete the workspace setup to start scanning cards.";
@@ -275,10 +280,15 @@ async function init() {
   if (!state.user && isNativeApp()) {
     state.nativeIntroStep = localStorage.getItem(nativeIntroStorageKey) === "1" ? 3 : 0;
   }
-  if (state.user && openBulkUpdate) {
+  if (state.user && (openBulkUpdate || bulkUpdateExpired)) {
     applyRouteFromLocation(false);
-    prepareBulkUpdateModal("", false);
-    document.getElementById("app").appendChild(modalView());
+    prepareBulkUpdateModal("", false, bulkUpdateExpired ? "That link from the app had expired, so you were signed in here instead. Choose your filled-in sheet to carry on." : "");
+    // render() below puts the dialog up from state.modal; appending it here as
+    // well only built a copy that the same render() then threw away.
+  }
+  if (bulkUpdateExpired && !state.user) {
+    state.authOpen = true;
+    state.authError = "That link from the app had expired. Sign in here, or tap Update from spreadsheet in the app again.";
   }
   if (state.user) {
     applyRouteFromLocation(false);
@@ -2014,8 +2024,8 @@ function showBulkUpdateModal(collectionId, useFilters) {
   render();
 }
 
-function prepareBulkUpdateModal(collectionId, useFilters) {
-  state.bulkUpdate = { stage: "choose", file: null, fileName: "", fileSize: 0, summary: null, busy: false };
+function prepareBulkUpdateModal(collectionId, useFilters, notice = "") {
+  state.bulkUpdate = { stage: "choose", file: null, fileName: "", fileSize: 0, summary: null, busy: false, notice };
   state.modal = {
     title: "Upload contacts",
     body: "Upload the Excel you downloaded from Contacts, with the columns you changed filled in.",
@@ -2069,7 +2079,7 @@ function renderBulkUpdateBody(node, collectionId, useFilters) {
       <p class="muted">Excel (.xlsx) downloaded from Contacts</p>
     </div>`}
     <input type="file" id="bulkUpdateFile" class="visually-hidden" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
-    <p class="bulk-update-status" id="bulkUpdateStatus" role="status" aria-live="polite"></p>
+    <p class="bulk-update-status" id="bulkUpdateStatus" role="status" aria-live="polite">${stateNow.notice ? escapeHtml(stateNow.notice) : ""}</p>
   `;
 
   const fileInput = body.querySelector("#bulkUpdateFile");
