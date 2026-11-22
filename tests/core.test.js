@@ -741,7 +741,7 @@ test("the update sheet is the ordinary export, and round-trips unchanged", () =>
   assert.equal(rows[2][rows[0].indexOf("Customer Rating")], "3");
 });
 
-test("a filled-in sheet updates only the classification columns", () => {
+test("a filled-in sheet updates every column it carries back", () => {
   const contacts = bulkContacts();
   const grid = readWorkbookRows(bulkSheetFor(contacts));
   const header = grid[0];
@@ -753,9 +753,12 @@ test("a filled-in sheet updates only the classification columns", () => {
   // A value the dropdown never offered has to be kept: every one of these
   // fields allows "Other" in the app itself.
   grid[2][at("Industry")] = "Textiles & Apparel";
-  // Editing a column this flow does not own must have no effect at all.
-  grid[2][at("Name")] = "SHOULD NOT BE SAVED";
-  grid[2][at("Company Name")] = "SHOULD NOT BE SAVED EITHER";
+  // An ordinary column comes back too: the file someone edits is the export,
+  // so a corrected designation has to land.
+  grid[2][at("Designation")] = "Karigar Lead";
+  // A column the export fills in from another field must still have no effect,
+  // or an untouched sheet would read as an edit on every row.
+  grid[2][at("WhatsApp Number")] = "919999999999";
 
   const db = { contacts };
   const user = { id: "usr", organisationId: "org" };
@@ -769,6 +772,10 @@ test("a filled-in sheet updates only the classification columns", () => {
   assert.deepEqual(contacts[0].businessType, ["Jewellery Retailer", "Karigar"]);
   assert.equal(contacts[0].customerRating, "5");
   assert.equal(contacts[1].industry, "Textiles & Apparel");
+  assert.equal(contacts[1].designation, "Karigar Lead");
+  // Not read back, so it stays as it was.
+  assert.ok(!contacts[1].whatsappNumber);
+  // The number identifies the row, so it is never written from the sheet.
   assert.equal(contacts[1].name, "Nita Shah");
   assert.equal(contacts[1].mobileNumber, "+919820022222");
 
@@ -937,8 +944,8 @@ test("an edited copy of the ordinary export updates the right contacts", () => {
   // Typed back in another shape, the way someone would retype a number.
   grid[2][at("Mobile Number")] = "98200 22222";
   grid[2][at("Customer Status")] = "Existing Customer";
-  // An edit to a column this flow does not own must still be ignored.
-  grid[2][at("Name")] = "SHOULD NOT BE SAVED";
+  // An ordinary column comes back as well, not just the classification ones.
+  grid[2][at("Designation")] = "Partner";
 
   const db = { contacts };
   const user = { id: "usr", organisationId: "org" };
@@ -949,7 +956,9 @@ test("an edited copy of the ordinary export updates the right contacts", () => {
   assert.deepEqual(contacts[0].businessType, ["Jewellery Retailer", "Karigar"]);
   assert.equal(contacts[0].customerRating, "5");
   assert.equal(contacts[1].customerStatus, "Existing Customer");
+  assert.equal(contacts[1].designation, "Partner");
   assert.equal(contacts[1].name, "Nita Shah");
+  // Retyped as "98200 22222" above, and never written back from the sheet.
   assert.equal(contacts[1].mobileNumber, "+919820022222");
 });
 
@@ -1149,4 +1158,52 @@ test("a spreadsheet handoff link cannot be forged, swapped or replayed once stal
   const stale = Buffer.from(JSON.stringify({ u: "usr_handoff", e: Date.now() - 1 }), "utf8").toString("base64url");
   const staleSig = crypto.createHmac("sha256", process.env.SESSION_SECRET || "dev-secret-change-me").update(`handoff:${stale}`).digest("base64url");
   assert.equal(verifyHandoff(`${stale}.${staleSig}`), "");
+});
+
+// The file people edit is the ordinary Excel export, so a correction made in
+// any column it carries has to come back. This only read the seven
+// classification columns, and an edited designation or city reported "nothing
+// in that sheet is different from what is already saved" and changed nothing.
+test("a spreadsheet sends back edits to ordinary contact columns, not just the classification ones", () => {
+  const { readWorkbookRows, buildBulkUpdateWorkbook, planBulkContactUpdate } = require("../server.js");
+  const contact = {
+    id: "con_bulk1", organisationId: "org_bulk", deletedAt: null,
+    name: "Kamlesh Patel", companyName: "Dishaa Brand", mobileNumber: "+919825011111",
+    normalizedMobileNumber: "+919825011111", industry: "Jewellery Industry"
+  };
+  const db = { contacts: [contact], organisations: [{ id: "org_bulk", name: "Bulk" }] };
+  const user = { id: "usr_bulk", organisationId: "org_bulk" };
+  const header = ["Name", "Mobile Number", "Company Name", "Designation", "City", "Industry"];
+  const sheet = (row) => buildBulkUpdateWorkbook([header, row], {});
+  const plan = (row) => planBulkContactUpdate(db, user, sheet(row), {});
+
+  // Untouched: the sheet as it came out must not look like an edit.
+  const untouched = plan(["Kamlesh Patel", "+919825011111", "Dishaa Brand", "", "", "Jewellery Industry"]);
+  assert.equal(untouched.updates.length, 0);
+  assert.equal(untouched.unchanged, 1);
+
+  // A designation and a city, neither of which is a classification column.
+  const edited = plan(["Kamlesh Patel", "+919825011111", "Dishaa Brand", "Managing Director", "Surat", "Jewellery Industry"]);
+  assert.equal(edited.updates.length, 1);
+  assert.deepEqual(edited.updates[0].changes, { designation: "Managing Director", city: "Surat" });
+
+  // Matched on the number in another shape, with the Excel text prefix the
+  // export writes and a local 10-digit form typed back by hand.
+  const retyped = plan(["Kamlesh Patel", "09825011111", "Dishaa Brand", "Director", "", "Jewellery Industry"]);
+  assert.equal(retyped.updates.length, 1);
+  assert.equal(retyped.updates[0].contactId, "con_bulk1");
+});
+
+// The export fills these in from other fields when the contact has none
+// stored, so reading them back would count as an edit on every row.
+test("spreadsheet columns the export derives are not read back as edits", () => {
+  const { BULK_UPDATE_FIELDS } = require("../server.js");
+  const columns = (BULK_UPDATE_FIELDS || []).map((spec) => spec.column);
+  for (const derived of ["WhatsApp Number", "State Code", "Saved Contact Name", "Remarks", "Voice Note", "Mobile Number", "Country Code", "Phone Country"]) {
+    assert.equal(columns.includes(derived), false, `${derived} must not be updatable`);
+  }
+  // The ordinary columns people actually correct must be.
+  for (const editable of ["Name", "Company Name", "Designation", "Email Address", "City", "State", "Industry", "Customer Rating"]) {
+    assert.equal(columns.includes(editable), true, `${editable} should be updatable`);
+  }
 });

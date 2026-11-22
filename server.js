@@ -10318,15 +10318,51 @@ const BULK_UPDATE_KEY_COLUMN = "Contact ID";
 // The columns that are read back and written. Everything else in the sheet is
 // context for the person filling it in and is ignored on the way back, so an
 // accidental edit to a name or a phone number cannot get in through this door.
+// Every column the sheet can carry back. This began as the seven
+// classification columns, because filling those in was the job it was written
+// for - but the file people get is the ordinary export, so correcting a
+// designation or a city in it and sending it back reported "nothing in that
+// sheet is different from what is already saved" and changed nothing. The
+// columns left out are the ones that are not a single stored value: a saved
+// contact name is built from other fields, Remarks and Voice Note are
+// composed for the export, Additional Addresses is a list, and Mobile Number
+// is how a row is matched to a contact in the first place. WhatsApp Number and
+// State Code are left out for the same reason: the export fills them in from
+// the mobile number and the city when the contact has none stored, so reading
+// them back would count as an edit on every row of an untouched sheet.
 const BULK_UPDATE_FIELDS = [
+  { column: "Name", field: "name", renames: true },
+  { column: "Name (Original Script)", field: "nameNative" },
+  { column: "Company Name", field: "companyName", renames: true },
+  { column: "Company Name (Original Script)", field: "companyNameNative" },
+  { column: "Designation", field: "designation" },
+  { column: "Office Number", field: "officeNumber" },
+  { column: "Secondary Mobile Number", field: "secondaryMobileNumber" },
+  { column: "Email Address", field: "emailAddress" },
+  { column: "Secondary Email", field: "secondaryEmail" },
+  { column: "Website", field: "website" },
+  { column: "Address", field: "address" },
+  { column: "Address (Original Script)", field: "addressNative" },
+  { column: "City", field: "city" },
+  { column: "State", field: "state" },
+  { column: "Postal Code", field: "postalCode" },
+  { column: "Country", field: "country" },
+  { column: "Card Language", field: "cardLanguage" },
   { column: "Salutation", field: "salutation", choice: "salutation" },
   { column: "Industry", field: "industry", choice: "industry" },
   { column: "Business Type", field: "businessType", choice: "businessType", multi: true },
   { column: "Business Specialisation", field: "businessSpecialisation" },
   { column: "Customer Status", field: "customerStatus", choice: "customerStatus" },
   { column: "Customer Rating", field: "customerRating", rating: true },
-  { column: "Lead Source", field: "leadSource", choice: "leadSource" }
+  { column: "Event Date", field: "exhibitionDate" },
+  { column: "Event Type", field: "eventType" },
+  { column: "Lead Source", field: "leadSource", choice: "leadSource" },
+  { column: "Tags", field: "tags" }
 ];
+
+// Changing a name or a company changes the saved contact name built from them,
+// which is what the phone's address book and the Sheets export show.
+const BULK_UPDATE_RENAME_FIELDS = BULK_UPDATE_FIELDS.filter((spec) => spec.renames).map((spec) => spec.field);
 
 // ---- Writing the workbook ----
 
@@ -10685,6 +10721,9 @@ function applyBulkContactUpdate(db, user, plan) {
     const contact = db.contacts.find((c) => c.id === update.contactId && c.organisationId === user.organisationId && !c.deletedAt);
     if (!contact) continue;
     Object.assign(contact, update.changes);
+    if (BULK_UPDATE_RENAME_FIELDS.some((field) => field in update.changes)) {
+      contact.contactDisplayName = buildContactDisplayName(contact) || contact.contactDisplayName;
+    }
     contact.updatedAt = now();
     contact.updatedBy = user.id;
     // A contact whose details moved on has to go to Sheets again.
@@ -10810,6 +10849,7 @@ function crc32(buffer) {
 
 module.exports = {
   EXPORT_COLUMNS,
+  BULK_UPDATE_FIELDS,
   signHandoff,
   verifyHandoff,
   pendingAccountsCopies,

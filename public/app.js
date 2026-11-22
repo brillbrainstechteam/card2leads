@@ -2101,7 +2101,7 @@ function renderBulkUpdateBody(node, collectionId, useFilters) {
 
 function bulkUpdatePreviewHtml(summary) {
   if (!summary.willUpdate && !summary.problems?.length) {
-    return `<div class="bulk-update-preview"><p>Nothing in that sheet is different from what is already saved.</p></div>`;
+    return `<div class="bulk-update-preview"><p>Nothing in that sheet is different from what is already saved.</p><p class="muted">Mobile Number is how each row is matched, so it cannot be changed here. Saved Contact Name, Remarks and Voice Note are built from other columns and are not read back.</p></div>`;
   }
   const rows = (summary.preview || []).map((update) => {
     const fields = Object.keys(update.changes).map((field) => {
