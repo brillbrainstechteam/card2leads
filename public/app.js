@@ -205,6 +205,28 @@ const FEATURE_ICONS = {
   export: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17.5a4 4 0 0 1-.5-7.97 5 5 0 0 1 9.79-1.4A4.5 4.5 0 0 1 17.5 17.5H7Z"/><path d="M12 11v6.5M9.5 14l2.5-2.5 2.5 2.5"/></svg>`
 };
 
+// Picking a file on a phone hands the screen to the system file picker, and
+// the browser underneath is routinely killed and reloaded while it is there.
+// The reload lands on a clean URL - the bulkUpdate flag is stripped on load -
+// so the dialog someone was halfway through simply vanished and left them on
+// the contacts list, looking exactly like an upload that silently did nothing.
+const BULK_UPDATE_OPEN_KEY = "card2leads.bulkUpdateOpen";
+
+function rememberBulkUpdateOpen(open) {
+  try {
+    if (open) sessionStorage.setItem(BULK_UPDATE_OPEN_KEY, "1");
+    else sessionStorage.removeItem(BULK_UPDATE_OPEN_KEY);
+  } catch { /* private windows and blocked storage: the URL flag still covers the first open */ }
+}
+
+function bulkUpdateWasOpen() {
+  try {
+    return sessionStorage.getItem(BULK_UPDATE_OPEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 async function api(path, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
   const headers = options.body instanceof FormData ? {} : { "Content-Type": "application/json" };
@@ -262,7 +284,7 @@ async function init() {
   // the workspace has loaded, so the phone's browser lands on the step the
   // person actually came for.
   const bulkUpdateParam = url.searchParams.get("bulkUpdate");
-  const openBulkUpdate = bulkUpdateParam === "1";
+  const openBulkUpdate = bulkUpdateParam === "1" || bulkUpdateWasOpen();
   // The sign-in link the app hands this browser is short-lived. When it has
   // gone stale the dialog cannot be opened on trust, so say that plainly
   // instead of leaving someone on the contacts list wondering.
@@ -2026,7 +2048,9 @@ function showBulkUpdateModal(collectionId, useFilters) {
 
 function prepareBulkUpdateModal(collectionId, useFilters, notice = "") {
   state.bulkUpdate = { stage: "choose", file: null, fileName: "", fileSize: 0, summary: null, busy: false, notice };
+  rememberBulkUpdateOpen(true);
   state.modal = {
+    onClose: () => rememberBulkUpdateOpen(false),
     title: "Upload contacts",
     body: "Upload the Excel you downloaded from Contacts, with the columns you changed filled in.",
     className: "wide-dialog",
@@ -2158,7 +2182,9 @@ function bulkFieldLabel(field) {
     customerRating: "Customer Rating",
     leadSource: "Lead Source"
   };
-  return labels[field] || field;
+  // Every other column the sheet can carry back already has a label the rest
+  // of the app shows, so the preview reads "City" rather than "city".
+  return labels[field] || String(fieldLabels[field] || field).replace(/ \(optional\)$/, "");
 }
 
 function readFileAsBase64(file) {
