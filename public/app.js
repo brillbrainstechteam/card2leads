@@ -6,7 +6,7 @@ const state = {
   cards: [],
   contacts: [],
   teamMembers: [],
-  contactFilters: { exhibition: "", assignee: "", city: "", state: "", messaged: "", industry: "", businessType: "", customerStatus: "", salutation: "", eventType: "", leadSource: "", country: "", businessSpecialisation: "", dateAdded: "", eventDate: "", rating: "" },
+  contactFilters: { exhibition: "", assignee: "", city: "", state: "", messaged: "", industry: "", businessType: "", customerStatus: "", salutation: "", eventType: "", leadSource: "", country: "", businessSpecialisation: "", dateAdded: "", eventDate: "", rating: "", anp: "", zone: "", gstNumber: "", grade: "", authorized: "", prospect: "" },
   contactSearchQuery: "",
   // "compact" shows the everyday columns; "extended" adds every extracted field.
   contactsTableView: localStorage.getItem("card2leads.contactsTableView") === "extended" ? "extended" : "compact",
@@ -124,6 +124,12 @@ const fieldLabels = {
   businessSpecialisation: "Business Specialisation",
   customerStatus: "Customer Status",
   customerRating: "Customer Rating",
+  anp: "ANP",
+  zone: "Zone",
+  gstNumber: "GST Number",
+  grade: "Grade",
+  authorized: "Authorized",
+  prospect: "Prospect",
   notes: "Remarks",
   tags: "Tags"
 };
@@ -144,7 +150,12 @@ const CHOICE_FIELD_FALLBACKS = {
   ],
   customerStatus: ["Existing Customer", "New Customer"],
   eventType: ["Exhibition", "Marketing", "Field Marketing", "Office Visit", "Customer Visit", "Magazine", "Advertisement"],
-  leadSource: ["Exhibition", "Marketing", "Field Marketing", "Office Visit", "Customer Visit", "Magazine", "Advertisement"]
+  leadSource: ["Exhibition", "Marketing", "Field Marketing", "Office Visit", "Customer Visit", "Magazine", "Advertisement"],
+  anp: ["Active", "Non-active"],
+  zone: ["North", "South", "East", "West", "Central"],
+  grade: ["A", "B", "C", "D"],
+  authorized: ["PGI", "Non-PGI"],
+  prospect: ["Prospect", "Not a prospect"]
 };
 
 // A jeweller is routinely two or three of these at once, so businessType holds
@@ -1454,7 +1465,12 @@ const CHOICE_SETTING_LABELS = {
   salutation: "Salutation",
   eventType: "Event Type",
   leadSource: "Lead Source",
-  addressType: "Address Type"
+  addressType: "Address Type",
+  anp: "ANP",
+  zone: "Zone",
+  grade: "Grade",
+  authorized: "Authorized",
+  prospect: "Prospect"
 };
 
 // Setting the same qualification across a stand's worth of cards. Every field
@@ -2015,19 +2031,33 @@ function contactWhatsappNumber(contact) {
   return national.length >= 8 ? national : "";
 }
 
+// The server reads each of these query params and narrows the export the same
+// way the on-screen list is narrowed, so "filter then download" hands back
+// exactly the rows the user is looking at - every field, old and new.
+const EXPORT_FILTER_PARAMS = [
+  "industry", "businessType", "customerStatus", "salutation", "eventType",
+  "leadSource", "country", "businessSpecialisation", "eventDate", "rating",
+  "anp", "zone", "gstNumber", "grade", "authorized", "prospect"
+];
+function applyExportFilterParams(params, f) {
+  if (!f) return;
+  if (f.assignee) params.set("assigneeId", f.assignee);
+  if (f.exhibition) params.set("exhibition", f.exhibition);
+  if (f.city) params.set("city", f.city);
+  if (f.state) params.set("state", f.state);
+  if (f.messaged) params.set("messaged", f.messaged);
+  // The list filters on a preset ("today"/"7d"/"30d"); the server takes a day
+  // count, so translate here and keep the two in step.
+  if (f.dateAdded) params.set("addedWithinDays", f.dateAdded === "today" ? "1" : f.dateAdded === "7d" ? "7" : f.dateAdded === "30d" ? "30" : "0");
+  EXPORT_FILTER_PARAMS.forEach((key) => { if (f[key]) params.set(key, f[key]); });
+  if (state.contactSearchQuery) params.set("q", state.contactSearchQuery);
+}
+
 function exportHref(format, collectionId, ids = [], all = false, useFilters = false) {
   const params = new URLSearchParams({ collectionId, csrf: state.csrfToken || "" });
   if (ids.length) params.set("ids", ids.join(","));
   if (all) params.set("all", "true");
-  if (useFilters) {
-    const f = state.contactFilters || {};
-    if (f.assignee) params.set("assigneeId", f.assignee);
-    if (f.exhibition) params.set("exhibition", f.exhibition);
-    if (f.city) params.set("city", f.city);
-    if (f.state) params.set("state", f.state);
-    if (f.messaged) params.set("messaged", f.messaged);
-    if (state.contactSearchQuery) params.set("q", state.contactSearchQuery);
-  }
+  if (useFilters) applyExportFilterParams(params, state.contactFilters || {});
   return `/api/export.${format}?${params.toString()}`;
 }
 
@@ -4655,7 +4685,7 @@ function blobToDataUrl(blob) {
 }
 
 function contactsView() {
-  const filters = state.contactFilters || { exhibition: "", assignee: "", city: "", state: "", messaged: "", industry: "", businessType: "", customerStatus: "", salutation: "", eventType: "", leadSource: "", country: "", businessSpecialisation: "", dateAdded: "", eventDate: "", rating: "" };
+  const filters = state.contactFilters || { exhibition: "", assignee: "", city: "", state: "", messaged: "", industry: "", businessType: "", customerStatus: "", salutation: "", eventType: "", leadSource: "", country: "", businessSpecialisation: "", dateAdded: "", eventDate: "", rating: "", anp: "", zone: "", gstNumber: "", grade: "", authorized: "", prospect: "" };
   const visibleContacts = state.contacts.filter((contact) => {
     if (filters.exhibition && (contact.exhibitionName || "") !== filters.exhibition) return false;
     if (filters.assignee === "__unassigned" && contact.assignedToId) return false;
@@ -4677,6 +4707,12 @@ function contactsView() {
     // "__none" finds the contacts still waiting to be rated.
     if (filters.rating === "__none" && contact.customerRating) return false;
     if (filters.rating && filters.rating !== "__none" && String(contact.customerRating || "") !== filters.rating) return false;
+    if (filters.anp && (contact.anp || "") !== filters.anp) return false;
+    if (filters.zone && (contact.zone || "") !== filters.zone) return false;
+    if (filters.gstNumber && (contact.gstNumber || "") !== filters.gstNumber) return false;
+    if (filters.grade && (contact.grade || "") !== filters.grade) return false;
+    if (filters.authorized && (contact.authorized || "") !== filters.authorized) return false;
+    if (filters.prospect && (contact.prospect || "") !== filters.prospect) return false;
     return true;
   });
   const exhibitionNames = [...new Set(state.contacts.map((contact) => contact.exhibitionName).filter(Boolean))].sort();
@@ -4684,7 +4720,8 @@ function contactsView() {
   const stateNames = [...new Set(state.contacts.map((contact) => contact.state).filter(Boolean))].sort();
   const countryNames = [...new Set(state.contacts.map((contact) => contact.country).filter(Boolean))].sort();
   const eventDates = [...new Set(state.contacts.map((contact) => String(contact.exhibitionDate || "").slice(0, 10)).filter(Boolean))].sort().reverse();
-  const filtersActive = Boolean(filters.exhibition || filters.assignee || filters.city || filters.state || filters.country || filters.messaged || filters.industry || filters.businessType || filters.businessSpecialisation || filters.customerStatus || filters.salutation || filters.eventType || filters.leadSource || filters.dateAdded || filters.eventDate || filters.rating);
+  const gstNumbers = [...new Set(state.contacts.map((contact) => contact.gstNumber).filter(Boolean))].sort();
+  const filtersActive = Boolean(filters.exhibition || filters.assignee || filters.city || filters.state || filters.country || filters.messaged || filters.industry || filters.businessType || filters.businessSpecialisation || filters.customerStatus || filters.salutation || filters.eventType || filters.leadSource || filters.dateAdded || filters.eventDate || filters.rating || filters.anp || filters.zone || filters.gstNumber || filters.grade || filters.authorized || filters.prospect);
   const selectedIds = visibleContacts.filter((contact) => state.selectedContactIds.has(contact.id)).map((contact) => contact.id);
   const allVisibleSelected = visibleContacts.length > 0 && selectedIds.length === visibleContacts.length;
   const activeCollectionId = state.overview.activeCollection?.id || state.overview.collections?.find((collection) => collection.status !== "deleted")?.id || "";
@@ -4943,7 +4980,12 @@ function contactsView() {
             ["customerStatus", "Customer status"],
             ["salutation", "Salutation"],
             ["eventType", "Event type"],
-            ["leadSource", "Lead source"]
+            ["leadSource", "Lead source"],
+            ["anp", "ANP"],
+            ["zone", "Zone"],
+            ["grade", "Grade"],
+            ["authorized", "Authorized"],
+            ["prospect", "Prospect"]
           ].map(([field, label]) => {
             const used = [...new Set(state.contacts.map((contact) => String(contact[field] || "").trim()).filter(Boolean))];
             const options = [...new Set([...choicesFor(field), ...used])].sort();
@@ -4957,6 +4999,13 @@ function contactsView() {
             </select>
           </label>`;
           }).join("")}
+          ${gstNumbers.length ? `<label class="filter-field">
+            <span>GST Number</span>
+            <select data-contact-filter="gstNumber">
+              <option value="">All GST numbers</option>
+              ${gstNumbers.map((gst) => `<option value="${escapeAttr(gst)}"${filters.gstNumber === gst ? " selected" : ""}>${escapeHtml(gst)}</option>`).join("")}
+            </select>
+          </label>` : ""}
           <label class="filter-field">
             <span>Rating</span>
             <select data-contact-filter="rating">
@@ -5165,7 +5214,7 @@ function contactsView() {
     render();
   });
   node.querySelector("#clearContactFilters")?.addEventListener("click", () => {
-    state.contactFilters = { exhibition: "", assignee: "", city: "", state: "", messaged: "", industry: "", businessType: "", customerStatus: "", salutation: "", eventType: "", leadSource: "", country: "", businessSpecialisation: "", dateAdded: "", eventDate: "", rating: "" };
+    state.contactFilters = { exhibition: "", assignee: "", city: "", state: "", messaged: "", industry: "", businessType: "", customerStatus: "", salutation: "", eventType: "", leadSource: "", country: "", businessSpecialisation: "", dateAdded: "", eventDate: "", rating: "", anp: "", zone: "", gstNumber: "", grade: "", authorized: "", prospect: "" };
     render();
   });
   tbody && tbody.querySelectorAll("[data-select-contact]").forEach((checkbox) => checkbox.addEventListener("change", () => {
@@ -5196,12 +5245,7 @@ function contactsView() {
     let count = state.contacts.length;
     let label = "All contacts";
     if (value === "filters") {
-      const f = state.contactFilters || {};
-      if (f.assignee) params.set("assigneeId", f.assignee);
-      if (f.exhibition) params.set("exhibition", f.exhibition);
-      if (f.city) params.set("city", f.city);
-      if (f.state) params.set("state", f.state);
-      if (state.contactSearchQuery) params.set("q", state.contactSearchQuery);
+      applyExportFilterParams(params, state.contactFilters || {});
       count = visibleContacts.length;
       label = "Current filters";
     } else if (value === "unassigned") {

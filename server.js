@@ -241,6 +241,12 @@ const EXPORT_COLUMNS = [
   "Event Type",
   "Lead Source",
   "Scan Date",
+  "ANP",
+  "Zone",
+  "GST Number",
+  "Grade",
+  "Authorized",
+  "Prospect",
   "Remarks",
   "Voice Note",
   "Tags",
@@ -312,7 +318,16 @@ const OPTIONAL_FIELDS = [
   // The date a card is treated as scanned on. Defaults to the event's scan date
   // (or the real scan time when neither is set), and can be overridden per
   // contact - so a pile of cards from last week's show can carry that date.
-  "scanDate"
+  "scanDate",
+  // Further tags, set per contact (existing and newly scanned) and filterable:
+  // ANP (Active/Non-active), zone, the contact's own GST number, grade (A-D),
+  // authorised (PGI/Non-PGI) and whether they are a prospect.
+  "anp",
+  "zone",
+  "gstNumber",
+  "grade",
+  "authorized",
+  "prospect"
 ];
 
 // The starting choices every workspace gets. A workspace can add to or replace
@@ -346,7 +361,14 @@ const CONTACT_CHOICE_DEFAULTS = Object.freeze({
   // Classifies each of a contact's additional addresses (a business with
   // several showrooms / branches). Served to the clients and manageable from
   // Settings like the rest; "Other" is typed in.
-  addressType: ["Head Office", "Branch Office", "Showroom", "Factory", "Registered Office"]
+  addressType: ["Head Office", "Branch Office", "Showroom", "Factory", "Registered Office"],
+  // Further per-contact tags. gstNumber is free text (not a choice); the rest
+  // are dropdowns a workspace can extend, with "Other" typed in as usual.
+  anp: ["Active", "Non-active"],
+  zone: ["North", "South", "East", "West", "Central"],
+  grade: ["A", "B", "C", "D"],
+  authorized: ["PGI", "Non-PGI"],
+  prospect: ["Prospect", "Not a prospect"]
 });
 
 const CONTACT_CHOICE_FIELDS = Object.keys(CONTACT_CHOICE_DEFAULTS);
@@ -8200,7 +8222,7 @@ async function handleApi(req, res, pathname) {
       if (!ids.size) return error(res, 400, "Select at least one contact.");
 
       const changes = {};
-      for (const field of ["industry", "customerStatus", "businessSpecialisation", "leadSource", "eventType"]) {
+      for (const field of ["industry", "customerStatus", "businessSpecialisation", "leadSource", "eventType", "anp", "zone", "gstNumber", "grade", "authorized", "prospect"]) {
         if (body[field] !== undefined) changes[field] = cleanText(body[field]);
       }
       if (body.businessType !== undefined) changes.businessType = toChoiceList(body.businessType);
@@ -9274,6 +9296,12 @@ function exportRow(contact, extraPeopleCount = 0) {
     contact.eventType,
     contact.leadSource,
     contact.scanDate || dateOnly(contact.createdAt),
+    contact.anp,
+    contact.zone,
+    contact.gstNumber,
+    contact.grade,
+    contact.authorized,
+    contact.prospect,
     exportRemarks(contact),
     exportVoiceNote(contact),
     contact.tags,
@@ -9512,6 +9540,41 @@ function exportSelection(db, user, url) {
     const cutoff = Date.now() - addedWithin * 24 * 60 * 60 * 1000;
     contacts = contacts.filter((c) => new Date(c.createdAt).getTime() >= cutoff);
     nameParts.push(addedWithin === 1 ? "Today" : `Last ${addedWithin} days`);
+  }
+
+  // Every per-contact classification the list filters on, old fields and the
+  // newer ANP/Zone/GST/Grade/Authorized/Prospect alike, so a filtered download
+  // carries exactly the rows the user sees on screen. businessType holds a list
+  // per contact, so it matches when the chosen value is one of them; the rest
+  // are plain equality. An absent param leaves that field unfiltered.
+  const EXPORT_EQUALITY_FILTERS = [
+    "industry", "customerStatus", "salutation", "eventType", "leadSource",
+    "country", "businessSpecialisation", "anp", "zone", "gstNumber",
+    "grade", "authorized", "prospect"
+  ];
+  for (const field of EXPORT_EQUALITY_FILTERS) {
+    const want = String(params.get(field) || "");
+    if (!want) continue;
+    contacts = contacts.filter((c) => String(c[field] || "") === want);
+    nameParts.push(want);
+  }
+  const businessType = String(params.get("businessType") || "");
+  if (businessType) {
+    contacts = contacts.filter((c) => toChoiceList(c.businessType).includes(businessType));
+    nameParts.push(businessType);
+  }
+  const eventDate = String(params.get("eventDate") || "");
+  if (eventDate) {
+    contacts = contacts.filter((c) => String(c.exhibitionDate || "").slice(0, 10) === eventDate);
+    nameParts.push(eventDate);
+  }
+  const rating = String(params.get("rating") || "");
+  if (rating === "__none") {
+    contacts = contacts.filter((c) => !c.customerRating);
+    nameParts.push("Not rated");
+  } else if (rating) {
+    contacts = contacts.filter((c) => String(c.customerRating || "") === rating);
+    nameParts.push(`${rating} star`);
   }
 
   if (search) {
@@ -9787,6 +9850,12 @@ function contactToGooglePerson(contact) {
       { key: "Exhibition Date", value: String(contact.exhibitionDate || "") },
       { key: "Event Type", value: String(contact.eventType || "") },
       { key: "Lead Source", value: String(contact.leadSource || "") },
+      { key: "ANP", value: String(contact.anp || "") },
+      { key: "Zone", value: String(contact.zone || "") },
+      { key: "GST Number", value: String(contact.gstNumber || "") },
+      { key: "Grade", value: String(contact.grade || "") },
+      { key: "Authorized", value: String(contact.authorized || "") },
+      { key: "Prospect", value: String(contact.prospect || "") },
       { key: "Card2Leads Label", value: exhibitionLabel },
       { key: "Card2Leads Contact ID", value: String(contact.id || "") },
       { key: "Contact Name", value: String(contact.name || "") },
@@ -10257,6 +10326,12 @@ function buildVcf(contacts) {
       contact.eventType ? `Event type: ${contact.eventType}` : "",
       contact.leadSource ? `Lead source: ${contact.leadSource}` : "",
       contact.scanDate ? `Scan date: ${contact.scanDate}` : "",
+      contact.anp ? `ANP: ${contact.anp}` : "",
+      contact.zone ? `Zone: ${contact.zone}` : "",
+      contact.gstNumber ? `GST: ${contact.gstNumber}` : "",
+      contact.grade ? `Grade: ${contact.grade}` : "",
+      contact.authorized ? `Authorized: ${contact.authorized}` : "",
+      contact.prospect ? `Prospect: ${contact.prospect}` : "",
       exportRemarks(contact),
       exhibitionLabel ? `Exhibition: ${exhibitionLabel}` : ""
     ].filter(Boolean);
@@ -10357,6 +10432,12 @@ const BULK_UPDATE_FIELDS = [
   { column: "Event Date", field: "exhibitionDate" },
   { column: "Event Type", field: "eventType" },
   { column: "Lead Source", field: "leadSource", choice: "leadSource" },
+  { column: "ANP", field: "anp", choice: "anp" },
+  { column: "Zone", field: "zone", choice: "zone" },
+  { column: "GST Number", field: "gstNumber" },
+  { column: "Grade", field: "grade", choice: "grade" },
+  { column: "Authorized", field: "authorized", choice: "authorized" },
+  { column: "Prospect", field: "prospect", choice: "prospect" },
   { column: "Tags", field: "tags" }
 ];
 
