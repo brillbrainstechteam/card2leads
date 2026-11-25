@@ -1509,6 +1509,11 @@ function showBulkClassifyModal(ids) {
         ${select("leadSource", "Lead Source")}
         ${select("industry", "Industry")}
         ${select("customerStatus", "Customer Status")}
+        ${select("anp", "ANP")}
+        ${select("zone", "Zone")}
+        ${select("grade", "Grade")}
+        ${select("authorized", "Authorized")}
+        ${select("prospect", "Prospect")}
         <label class="wa-field">
           <span>Business Type</span>
           <select id="bulk-businessType" multiple size="6">
@@ -1529,7 +1534,7 @@ function showBulkClassifyModal(ids) {
     onConfirm: () => {
       const status = document.querySelector("#bulkClassifyStatus");
       const payload = { ids };
-      for (const field of ["industry", "customerStatus", "leadSource"]) {
+      for (const field of ["industry", "customerStatus", "leadSource", "anp", "zone", "grade", "authorized", "prospect"]) {
         const value = document.querySelector(`#bulk-${field}`)?.value;
         if (value !== "__keep") payload[field] = value;
       }
