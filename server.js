@@ -1946,7 +1946,7 @@ function tempCookie(req, name, value, maxAgeSeconds) {
 
 function securityHeaders(req) {
   const headers = {
-    "Content-Security-Policy": "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self' https://accounts.google.com https://api.razorpay.com; img-src 'self' data: blob: https://*.razorpay.com https://*.facebook.com; media-src 'self' blob:; script-src 'self' https://checkout.razorpay.com https://connect.facebook.net; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.razorpay.com https://lumberjack.razorpay.com https://graph.facebook.com https://www.facebook.com; frame-src https://api.razorpay.com https://checkout.razorpay.com https://www.facebook.com https://web.facebook.com",
+    "Content-Security-Policy": "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self' https://accounts.google.com https://api.razorpay.com; img-src 'self' data: blob: https://*.razorpay.com https://*.facebook.com; media-src 'self' blob:; script-src 'self' https://checkout.razorpay.com https://connect.facebook.net; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.razorpay.com https://lumberjack.razorpay.com https://graph.facebook.com https://www.facebook.com https://connect.facebook.net https://web.facebook.com; frame-src https://api.razorpay.com https://checkout.razorpay.com https://www.facebook.com https://web.facebook.com https://connect.facebook.net",
     "Permissions-Policy": "camera=(self), microphone=(self), geolocation=()",
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "same-origin",
