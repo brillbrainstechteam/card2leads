@@ -110,6 +110,11 @@ const META_APP_SECRET = process.env.META_APP_SECRET || process.env.FB_APP_SECRET
 const WHATSAPP_ES_CONFIG_ID = process.env.WHATSAPP_ES_CONFIG_ID || "1085425274526695"; // Embedded Signup configuration id
 const WHATSAPP_GRAPH_VERSION = process.env.WHATSAPP_GRAPH_VERSION || WHATSAPP_API_VERSION || "v21.0";
 const WHATSAPP_WEBHOOK_VERIFY_TOKEN = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || ""; // shared secret for webhook GET verification
+// When one Meta app is shared by two products, its single webhook points at ONE
+// server. That server processes events for WABAs it onboarded and forwards the
+// rest here (the other product's /api/webhooks/whatsapp). Leave empty if this
+// server is not the shared receiver.
+const WHATSAPP_WEBHOOK_FORWARD_URL = process.env.WHATSAPP_WEBHOOK_FORWARD_URL || "";
 // Only these emails can see/use the feature (defence in depth on top of the flag).
 const WHATSAPP_FEATURE_EMAILS = String(process.env.WHATSAPP_FEATURE_EMAILS || "tech@brillbrainsconsultants.com")
   .split(",").map((entry) => entry.trim().toLowerCase()).filter(Boolean);
@@ -6335,9 +6340,16 @@ function whatsappVerifyWebhookSignature(rawBuffer, signatureHeader) {
   try { return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected)); } catch { return false; }
 }
 
+// Process only events for WABAs this server onboarded; report whether the batch
+// also contained a WABA we don't own (so the caller can relay it upstream).
+// entry.id is the WABA id for WhatsApp Business Account webhooks.
 async function whatsappHandleWebhookEvent(body) {
-  if (!pgPool) return;
+  if (!pgPool) return { foreign: false };
+  let foreign = false;
   for (const entry of (Array.isArray(body?.entry) ? body.entry : [])) {
+    const wabaId = String(entry.id || "");
+    const account = wabaId ? (await pgPool.query("select id from whatsapp_accounts where waba_id=$1", [wabaId])).rows[0] : null;
+    if (!account) { foreign = true; continue; }
     for (const change of (entry.changes || [])) {
       const value = change.value || {};
       if (change.field === "message_template_status_update") {
@@ -6345,21 +6357,36 @@ async function whatsappHandleWebhookEvent(body) {
         const language = value.message_template_language || value.language;
         const status = value.event || value.new_status;
         if (name && status) {
-          if (language) await pgPool.query("update whatsapp_templates set status=$1, updated_at=$2 where name=$3 and language=$4", [status, now(), name, language]);
-          else await pgPool.query("update whatsapp_templates set status=$1, updated_at=$2 where name=$3", [status, now(), name]);
+          if (language) await pgPool.query("update whatsapp_templates set status=$1, updated_at=$2 where account_id=$3 and name=$4 and language=$5", [status, now(), account.id, name, language]);
+          else await pgPool.query("update whatsapp_templates set status=$1, updated_at=$2 where account_id=$3 and name=$4", [status, now(), account.id, name]);
         }
       } else if (change.field === "messages") {
         for (const statusUpdate of (value.statuses || [])) {
           if (statusUpdate.id) {
             await pgPool.query(
-              "update whatsapp_messages set status=$1, error=$2, updated_at=$3 where wa_message_id=$4",
-              [statusUpdate.status || "", statusUpdate.errors?.[0]?.title || "", now(), statusUpdate.id]
+              "update whatsapp_messages set status=$1, error=$2, updated_at=$3 where wa_message_id=$4 and account_id=$5",
+              [statusUpdate.status || "", statusUpdate.errors?.[0]?.title || "", now(), statusUpdate.id, account.id]
             );
           }
         }
       }
     }
   }
+  return { foreign };
+}
+
+// Fire-and-forget relay of the raw webhook to the other product's endpoint,
+// keeping the original app-secret signature so the upstream can verify it
+// (both products share one Meta app, hence one app secret).
+async function whatsappRelayWebhook(rawBuffer, signatureHeader) {
+  if (!WHATSAPP_WEBHOOK_FORWARD_URL) return;
+  try {
+    await fetch(WHATSAPP_WEBHOOK_FORWARD_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Hub-Signature-256": String(signatureHeader || ""), "X-Forwarded-By": "card2leads" },
+      body: rawBuffer
+    });
+  } catch (err) { console.warn("[whatsapp] relay failed:", err.message); }
 }
 
 async function handleApi(req, res, pathname) {
@@ -6399,7 +6426,10 @@ async function handleApi(req, res, pathname) {
         const raw = await readRawBody(req);
         if (!whatsappVerifyWebhookSignature(raw, req.headers["x-hub-signature-256"])) return error(res, 401, "Invalid signature.");
         let payload; try { payload = JSON.parse(raw.toString("utf8")); } catch { return send(res, 200, { ok: true }); }
-        try { await whatsappHandleWebhookEvent(payload); } catch (err) { console.error("[whatsapp] webhook:", err.message); }
+        try {
+          const { foreign } = await whatsappHandleWebhookEvent(payload);
+          if (foreign) await whatsappRelayWebhook(raw, req.headers["x-hub-signature-256"]);
+        } catch (err) { console.error("[whatsapp] webhook:", err.message); }
         return send(res, 200, { ok: true });
       }
     }
