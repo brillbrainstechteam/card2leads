@@ -13,6 +13,7 @@ const state = {
   selectedFiles: [],
   processingCards: new Set(),
   selectedContactIds: new Set(),
+  whatsapp: null,
   googleContactsSyncing: false,
   googleContactsSyncStatus: null,
   uploadMode: "existing",
@@ -45,7 +46,13 @@ const state = {
 
 let messageTimer = null;
 let nativeSplashTimer = null;
-const authenticatedViews = new Set(["upload", "review", "contacts", "account"]);
+const authenticatedViews = new Set(["upload", "review", "contacts", "account", "whatsapp"]);
+// Client-side gate for the WhatsApp nav item; the server enforces the real
+// allowlist (WHATSAPP_FEATURE_EMAILS) and the feature flag on every request.
+const WHATSAPP_FEATURE_EMAILS = ["tech@brillbrainsconsultants.com"];
+function whatsappNavAllowed() {
+  return Boolean(state.user && WHATSAPP_FEATURE_EMAILS.includes(String(state.user.email || "").trim().toLowerCase()));
+}
 const nativeIntroStorageKey = "smartscan.mobileIntroSeen";
 
 function isNativeApp() {
@@ -461,6 +468,7 @@ function render() {
     // Funnel beacon: an authenticated user looking at plans/billing (best-effort).
     if (state.csrfToken) api("/api/events", { method: "POST", body: { name: "pricing_viewed" } }).catch(() => {});
   }
+  if (state.view === "whatsapp") slot.appendChild(whatsappView());
   if (state.modal) app.appendChild(modalView());
   ensureQueuePolling();
 }
@@ -1271,7 +1279,8 @@ function shell() {
     upload: "Upload Cards",
     review: "Queue & Review",
     contacts: "Contacts & Exports",
-    account: "Account"
+    account: "Account",
+    whatsapp: "WhatsApp Messaging"
   }[state.view];
   return `
     <div class="shell">
@@ -1282,6 +1291,7 @@ function shell() {
           ${navButton("review", `Review (${reviewCards().length})`)}
           ${navButton("contacts", `Contacts & Exports (${state.contacts.length})`)}
           ${navButton("account", "Account")}
+          ${whatsappNavAllowed() ? navButton("whatsapp", "WhatsApp") : ""}
         </nav>
         <small>Signed in as ${escapeHtml(state.user.name)}</small>
       </aside>
@@ -1324,8 +1334,9 @@ function topbarUpgradeButtonHtml() {
 }
 
 function navButton(view, label) {
-  const mobileLabels = { upload: "Scan", review: "Queue", contacts: "Contacts", account: "Account" };
+  const mobileLabels = { upload: "Scan", review: "Queue", contacts: "Contacts", account: "Account", whatsapp: "WA" };
   const svgIcons = {
+    whatsapp: '<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M19.05 4.91A9.82 9.82 0 0012.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 004.78 1.22h.01c5.46 0 9.9-4.45 9.9-9.91 0-2.65-1.03-5.14-2.9-7.02zM12.04 20.15h-.01a8.2 8.2 0 01-4.19-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.2 8.2 0 01-1.26-4.38c0-4.54 3.7-8.23 8.24-8.23a8.2 8.2 0 015.82 2.42 8.18 8.18 0 012.41 5.83c0 4.54-3.7 8.23-8.23 8.23zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.51.11-.11.25-.29.37-.43.12-.14.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.41-.42-.56-.42-.14-.01-.31-.01-.48-.01a.92.92 0 00-.67.31c-.23.25-.88.86-.88 2.07 0 1.22.9 2.4 1.02 2.57.12.17 1.76 2.68 4.26 3.76.6.26 1.06.41 1.42.52.6.19 1.14.16 1.57.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.11-.22-.17-.47-.29z"/></svg>',
     upload: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 3.129a.75.75 0 001.09-1.03l-4.25-4.5a.75.75 0 00-1.09 0l-4.25 4.5a.75.75 0 101.09 1.03L9.25 4.636v8.614z"/><path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"/></svg>',
     review: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/><path fill-rule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/></svg>',
     contacts: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M7 8a3 3 0 100-6 3 3 0 000 6zM14.5 9a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-5.385-1.572zM14.5 16h-.106c.07-.297.088-.611.048-.933a7.47 7.47 0 00-1.588-3.755 4.502 4.502 0 015.874 2.636.818.818 0 01-.36.98A7.465 7.465 0 0114.5 16z"/></svg>',
@@ -6350,6 +6361,271 @@ async function startTopup() {
     state.message = { text: err.message, bad: true };
     render();
   }
+}
+
+// ===========================================================================
+// WhatsApp Business messaging — Embedded Signup onboarding + bulk send.
+// Visible only to the allowlisted owner; the server enforces the real gate.
+// ===========================================================================
+function whatsappStatusChip(label, ok) {
+  return `<span class="wa-chip ${ok ? "ok" : "warn"}">${escapeHtml(label)}</span>`;
+}
+
+function whatsappView() {
+  const node = el(`<div class="whatsapp-view"></div>`);
+  if (!whatsappNavAllowed()) {
+    node.innerHTML = `<div class="account-block"><h3>WhatsApp messaging</h3><p class="muted">This feature isn't available for your account.</p></div>`;
+    return node;
+  }
+  if (!state.whatsapp) {
+    node.innerHTML = `<div class="account-block"><h3>WhatsApp messaging</h3><p class="muted">Loading…</p></div>`;
+    loadWhatsAppOverview();
+    return node;
+  }
+  const wa = state.whatsapp;
+  const styles = `<style>
+    .whatsapp-view .wa-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px}
+    .whatsapp-view .wa-table th,.whatsapp-view .wa-table td{text-align:left;padding:6px 8px;border-bottom:1px solid #eceff3}
+    .whatsapp-view .wa-toggle{display:flex;align-items:center;gap:8px;margin-top:10px;font-weight:600}
+    .whatsapp-view label{display:block;margin-top:8px}
+    .whatsapp-view .account-block{margin-bottom:14px}
+    .whatsapp-view .wa-chip{display:inline-block;padding:3px 9px;border-radius:999px;font-size:12px;margin:2px 4px 2px 0}
+    .whatsapp-view .wa-chip.ok{background:#e7f6ec;color:#1a7f37}
+    .whatsapp-view .wa-chip.warn{background:#fdecec;color:#b42318}
+    .whatsapp-view .bad{color:#b42318}
+  </style>`;
+  const parts = [];
+
+  parts.push(`
+    <div class="account-block">
+      <h3>WhatsApp Business messaging</h3>
+      <p class="muted">Connect a client's WhatsApp number through Meta Embedded Signup and send approved template messages in bulk. Each message is billed by Meta directly to the connected number's own payment method — never to Card2Leads.</p>
+      <label class="wa-toggle"><input type="checkbox" id="waFeatureToggle" ${wa.enabled ? "checked" : ""}/> <span>Feature ${wa.enabled ? "enabled" : "disabled"}</span></label>
+    </div>`);
+
+  if (wa.error) parts.push(`<div class="account-block"><p class="bad">${escapeHtml(wa.error)}</p></div>`);
+
+  if (!wa.enabled) {
+    node.innerHTML = styles + parts.join("");
+    wireWhatsApp(node);
+    return node;
+  }
+
+  if (wa.config && !wa.config.configured) {
+    parts.push(`<div class="account-block"><p class="bad">Server is missing Meta app credentials (META_APP_ID / META_APP_SECRET). Add them and restart the server before connecting.</p></div>`);
+  }
+
+  const account = wa.account;
+  if (!account || account.status !== "connected") {
+    parts.push(`
+      <div class="account-block">
+        <h3>Connect a WhatsApp number</h3>
+        <p class="muted">Opens Meta's secure Embedded Signup. Use the existing WhatsApp Business app number (Coexistence) or a new one. Finish by adding a payment method on the WABA in WhatsApp Manager so Meta can bill per message.</p>
+        <div class="actions"><button type="button" id="waConnectBtn" ${wa.config && wa.config.configured ? "" : "disabled"}>Connect WhatsApp</button></div>
+      </div>`);
+    node.innerHTML = styles + parts.join("");
+    wireWhatsApp(node);
+    return node;
+  }
+
+  parts.push(`
+    <div class="account-block">
+      <h3>Connected number</h3>
+      <p><strong>${escapeHtml(account.displayPhoneNumber || "—")}</strong> ${account.verifiedName ? "· " + escapeHtml(account.verifiedName) : ""}</p>
+      <div>
+        ${whatsappStatusChip(account.webhookSubscribed ? "Webhooks on" : "Webhooks off", account.webhookSubscribed)}
+        ${whatsappStatusChip(account.numberRegistered ? "Registered" : "Not registered", account.numberRegistered)}
+        ${account.reviewStatus ? whatsappStatusChip("Review: " + account.reviewStatus, /approved/i.test(account.reviewStatus)) : ""}
+        ${account.qualityRating ? whatsappStatusChip("Quality: " + account.qualityRating, /green/i.test(account.qualityRating)) : ""}
+        ${account.tokenExpiresAt ? whatsappStatusChip("Token expires " + new Date(account.tokenExpiresAt).toLocaleDateString(), false) : whatsappStatusChip("Token: no expiry", true)}
+      </div>
+      <div class="actions"><button type="button" class="secondary" id="waDisconnectBtn">Disconnect</button></div>
+    </div>`);
+
+  const templates = wa.templates || [];
+  parts.push(`
+    <div class="account-block">
+      <h3>Message templates</h3>
+      <div class="actions"><button type="button" class="secondary" id="waRefreshTemplates">Refresh from Meta</button> <button type="button" class="secondary" id="waNewTemplate">Create template</button></div>
+      ${templates.length ? `<table class="wa-table"><thead><tr><th>Name</th><th>Lang</th><th>Category</th><th>Status</th></tr></thead><tbody>${templates.map((t) => `<tr><td>${escapeHtml(t.name)}</td><td>${escapeHtml(t.language)}</td><td>${escapeHtml(t.category || "")}</td><td>${escapeHtml(t.status || "")}</td></tr>`).join("")}</tbody></table>` : `<p class="muted">No templates yet. Create one and wait for Meta approval before sending.</p>`}
+      <div id="waTemplateForm" style="display:none;margin-top:10px">
+        <label>Template name (lowercase, underscores)<input id="waTplName" placeholder="festive_offer"/></label>
+        <label>Language<input id="waTplLang" value="en_US"/></label>
+        <label>Category<select id="waTplCategory"><option value="MARKETING">Marketing</option><option value="UTILITY">Utility</option></select></label>
+        <label>Body text<textarea id="waTplBody" rows="3" placeholder="Hi {{1}}, our new collection is live!"></textarea></label>
+        <label>Example values for {{1}}, {{2}}… (comma separated, optional)<input id="waTplExample" placeholder="Ravi, 20%"/></label>
+        <div class="actions"><button type="button" id="waSubmitTemplate">Submit for approval</button></div>
+      </div>
+    </div>`);
+
+  const approved = templates.filter((t) => /approved/i.test(t.status || ""));
+  const selectedCount = state.selectedContactIds.size;
+  parts.push(`
+    <div class="account-block">
+      <h3>Send a bulk message</h3>
+      ${approved.length ? `
+        <label>Approved template<select id="waSendTemplate">${approved.map((t) => `<option value="${escapeAttr(t.name + "|" + t.language)}">${escapeHtml(t.name)} (${escapeHtml(t.language)})</option>`).join("")}</select></label>
+        <label>Recipients<select id="waSendScope"><option value="selected">Selected contacts (${selectedCount})</option><option value="all">All my contacts (${state.contacts.length})</option></select></label>
+        <p class="muted">Pick contacts on the Contacts screen first to use "Selected". Only contacts with a WhatsApp number are messaged. Make sure they have opted in.</p>
+        <div class="actions"><button type="button" id="waSendBtn">Send now</button></div>
+        <p id="waSendStatus" class="muted" role="status" aria-live="polite"></p>
+      ` : `<p class="muted">You need at least one <strong>approved</strong> template before you can send.</p>`}
+    </div>`);
+
+  const campaigns = wa.campaigns || [];
+  if (campaigns.length) {
+    parts.push(`
+      <div class="account-block">
+        <h3>Recent campaigns</h3>
+        <table class="wa-table"><thead><tr><th>Template</th><th>Status</th><th>Sent</th><th>Failed</th><th>Total</th><th>When</th></tr></thead><tbody>
+        ${campaigns.map((c) => `<tr><td>${escapeHtml(c.template_name || "")}</td><td>${escapeHtml(c.status || "")}</td><td>${c.sent_count || 0}</td><td>${c.failed_count || 0}</td><td>${c.total_recipients || 0}</td><td>${new Date(c.created_at).toLocaleString()}</td></tr>`).join("")}
+        </tbody></table>
+      </div>`);
+  }
+
+  node.innerHTML = styles + parts.join("");
+  wireWhatsApp(node);
+  return node;
+}
+
+async function loadWhatsAppOverview() {
+  if (state._whatsappLoading) return;
+  state._whatsappLoading = true;
+  try {
+    state.whatsapp = await api("/api/whatsapp/overview");
+  } catch (err) {
+    state.whatsapp = { allowed: true, enabled: false, error: err.message };
+  } finally {
+    state._whatsappLoading = false;
+    render();
+  }
+}
+
+function wireWhatsApp(node) {
+  const toggle = node.querySelector("#waFeatureToggle");
+  if (toggle) toggle.addEventListener("change", async () => {
+    try {
+      const result = await api("/api/whatsapp/feature", { method: "POST", body: { enabled: toggle.checked } });
+      setMessage(`WhatsApp feature ${result.enabled ? "enabled" : "disabled"}.`);
+      await loadWhatsAppOverview();
+    } catch (err) { setMessage(err.message, true); toggle.checked = !toggle.checked; }
+  });
+
+  node.querySelector("#waConnectBtn")?.addEventListener("click", () => launchWhatsAppSignup());
+
+  node.querySelector("#waDisconnectBtn")?.addEventListener("click", async () => {
+    if (!window.confirm("Disconnect this WhatsApp number? You can reconnect later.")) return;
+    try { await api("/api/whatsapp/disconnect", { method: "POST", body: {} }); setMessage("WhatsApp disconnected."); await loadWhatsAppOverview(); }
+    catch (err) { setMessage(err.message, true); }
+  });
+
+  node.querySelector("#waRefreshTemplates")?.addEventListener("click", async () => {
+    try { const r = await api("/api/whatsapp/templates"); if (state.whatsapp) state.whatsapp.templates = r.templates; render(); setMessage("Templates refreshed."); }
+    catch (err) { setMessage(err.message, true); }
+  });
+
+  const tplForm = node.querySelector("#waTemplateForm");
+  node.querySelector("#waNewTemplate")?.addEventListener("click", () => {
+    if (tplForm) tplForm.style.display = tplForm.style.display === "none" ? "block" : "none";
+  });
+
+  const submitTpl = node.querySelector("#waSubmitTemplate");
+  if (submitTpl) submitTpl.addEventListener("click", async () => {
+    const name = node.querySelector("#waTplName")?.value.trim();
+    const language = node.querySelector("#waTplLang")?.value.trim() || "en_US";
+    const category = node.querySelector("#waTplCategory")?.value || "MARKETING";
+    const bodyText = node.querySelector("#waTplBody")?.value.trim();
+    const exampleRaw = node.querySelector("#waTplExample")?.value.trim();
+    if (!name || !bodyText) { setMessage("Template name and body are required.", true); return; }
+    const example = exampleRaw ? exampleRaw.split(",").map((value) => value.trim()).filter(Boolean) : null;
+    submitTpl.disabled = true;
+    try { await api("/api/whatsapp/templates", { method: "POST", body: { name, language, category, bodyText, example } }); setMessage("Template submitted for approval."); await loadWhatsAppOverview(); }
+    catch (err) { setMessage(err.message, true); submitTpl.disabled = false; }
+  });
+
+  const sendBtn = node.querySelector("#waSendBtn");
+  if (sendBtn) sendBtn.addEventListener("click", async () => {
+    const pick = node.querySelector("#waSendTemplate")?.value || "";
+    const [templateName, language] = pick.split("|");
+    const scope = node.querySelector("#waSendScope")?.value || "selected";
+    const statusEl = node.querySelector("#waSendStatus");
+    if (!templateName) { setMessage("Choose a template.", true); return; }
+    if (scope === "selected" && !state.selectedContactIds.size) { setMessage("Select contacts on the Contacts screen first.", true); return; }
+    const body = { templateName, language: language || "en_US" };
+    if (scope === "all") body.all = true; else body.contactIds = [...state.selectedContactIds];
+    sendBtn.disabled = true;
+    if (statusEl) statusEl.textContent = "Sending…";
+    try {
+      const result = await api("/api/whatsapp/send", { method: "POST", body });
+      if (statusEl) statusEl.textContent = `Done — ${result.sent} sent, ${result.failed} failed of ${result.total}.`;
+      setMessage(`WhatsApp: ${result.sent} sent, ${result.failed} failed.`);
+      await loadWhatsAppOverview();
+    } catch (err) { if (statusEl) statusEl.textContent = ""; setMessage(err.message, true); sendBtn.disabled = false; }
+  });
+}
+
+function loadFacebookSdk(appId, graphVersion) {
+  return new Promise((resolve, reject) => {
+    if (window.FB) return resolve(window.FB);
+    window.fbAsyncInit = function () {
+      window.FB.init({ appId, autoLogAppEvents: true, xfbml: false, version: graphVersion || "v21.0" });
+      resolve(window.FB);
+    };
+    const existing = document.getElementById("facebook-jssdk");
+    if (existing) { existing.addEventListener("load", () => resolve(window.FB)); return; }
+    const script = document.createElement("script");
+    script.id = "facebook-jssdk";
+    script.src = "https://connect.facebook.net/en_US/sdk.js";
+    script.async = true; script.defer = true; script.crossOrigin = "anonymous";
+    script.onerror = () => reject(new Error("Could not load the Facebook SDK. Check your network or ad-blocker."));
+    document.head.appendChild(script);
+  });
+}
+
+async function launchWhatsAppSignup() {
+  const cfg = state.whatsapp?.config;
+  if (!cfg?.appId || !cfg?.configId) { setMessage("Server is missing the Meta app configuration.", true); return; }
+  let sessionInfo = null;
+  const onMessage = (event) => {
+    let host = "";
+    try { host = new URL(event.origin).hostname; } catch { return; }
+    if (!/(^|\.)facebook\.com$/.test(host)) return;
+    try {
+      const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+      if (data && data.type === "WA_EMBEDDED_SIGNUP") sessionInfo = data.data || null;
+    } catch {}
+  };
+  window.addEventListener("message", onMessage);
+  try {
+    const FB = await loadFacebookSdk(cfg.appId, cfg.graphVersion);
+    FB.login((response) => {
+      window.removeEventListener("message", onMessage);
+      const code = response?.authResponse?.code;
+      if (!code) { setMessage("WhatsApp connection was cancelled.", true); return; }
+      completeWhatsAppConnect(code, sessionInfo);
+    }, {
+      config_id: cfg.configId,
+      response_type: "code",
+      override_default_response_type: true,
+      extras: { setup: {}, featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3" }
+    });
+  } catch (err) {
+    window.removeEventListener("message", onMessage);
+    setMessage(err.message, true);
+  }
+}
+
+async function completeWhatsAppConnect(code, sessionInfo) {
+  setMessage("Connecting your WhatsApp account…");
+  try {
+    await api("/api/whatsapp/connect", { method: "POST", body: {
+      code,
+      wabaId: sessionInfo?.waba_id || sessionInfo?.wabaId || "",
+      phoneNumberId: sessionInfo?.phone_number_id || sessionInfo?.phoneNumberId || ""
+    }});
+    setMessage("WhatsApp connected. Finish by adding a payment method on the WABA in WhatsApp Manager so Meta can bill per message.");
+    await loadWhatsAppOverview();
+  } catch (err) { setMessage(err.message, true); }
 }
 
 function supportBlockHtml() {

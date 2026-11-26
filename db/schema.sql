@@ -416,3 +416,101 @@ create index if not exists payments_created_idx on payments (created_at desc);
 create index if not exists subscriptions_client_idx on subscriptions (client_id, created_at desc);
 create unique index if not exists subscriptions_provider_ref_idx on subscriptions (provider, provider_reference) where provider_reference is not null;
 create index if not exists users_phone_idx on users (phone);
+
+-- ---------------------------------------------------------------------------
+-- WhatsApp Business Platform — multi-tenant Embedded Signup + bulk messaging.
+-- INDEPENDENT of the customer app's document persistence (persistPostgresDb
+-- never touches these), read/written via direct SQL. The feature is gated by a
+-- flag in app_settings plus an email allowlist (server.js WHATSAPP_* code).
+-- Each customer organisation connects its OWN WhatsApp Business Account (one
+-- WABA per business) and attaches its OWN payment method, so Meta bills the
+-- client directly per message — we never front message costs.
+-- ---------------------------------------------------------------------------
+
+-- Generic server-wide key/value for feature flags and small config.
+create table if not exists app_settings (
+  key text primary key,
+  value jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now(),
+  updated_by text
+);
+
+-- One connected WABA per customer organisation.
+create table if not exists whatsapp_accounts (
+  id text primary key,
+  organisation_id text not null,
+  waba_id text not null,
+  phone_number_id text not null,
+  display_phone_number text,
+  verified_name text,
+  business_id text,
+  access_token_encrypted text,            -- encryptSecret() of the system-user token
+  token_expires_at timestamptz,           -- null = never expires
+  webhook_subscribed boolean not null default false,
+  number_registered boolean not null default false,
+  review_status text,                     -- APPROVED | PENDING | ...
+  messaging_limit_tier text,              -- TIER_250 | TIER_1K | ...
+  quality_rating text,                    -- GREEN | YELLOW | RED
+  status text not null default 'connected',
+  connected_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  data jsonb not null default '{}'::jsonb
+);
+create unique index if not exists whatsapp_accounts_org_idx on whatsapp_accounts (organisation_id);
+create index if not exists whatsapp_accounts_phone_idx on whatsapp_accounts (phone_number_id);
+
+-- Message templates synced from / created on the WABA.
+create table if not exists whatsapp_templates (
+  id text primary key,
+  account_id text not null,
+  organisation_id text not null,
+  template_id text,                        -- Meta's template id
+  name text not null,
+  language text not null default 'en_US',
+  category text,                           -- MARKETING | UTILITY | AUTHENTICATION
+  status text not null default 'PENDING',  -- APPROVED | PENDING | REJECTED | ...
+  components jsonb not null default '[]'::jsonb,
+  rejected_reason text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create unique index if not exists whatsapp_templates_unique_idx on whatsapp_templates (account_id, name, language);
+
+-- A bulk send run.
+create table if not exists whatsapp_campaigns (
+  id text primary key,
+  organisation_id text not null,
+  account_id text not null,
+  name text,
+  template_name text not null,
+  template_language text not null default 'en_US',
+  status text not null default 'sending',  -- sending | completed | failed
+  total_recipients integer not null default 0,
+  sent_count integer not null default 0,
+  failed_count integer not null default 0,
+  created_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  metadata jsonb not null default '{}'::jsonb
+);
+create index if not exists whatsapp_campaigns_org_idx on whatsapp_campaigns (organisation_id, created_at desc);
+
+-- Per-recipient send log (also updated by webhook delivery statuses).
+create table if not exists whatsapp_messages (
+  id text primary key,
+  campaign_id text,
+  account_id text not null,
+  organisation_id text not null,
+  contact_id text,
+  to_number text not null,
+  template_name text,
+  wa_message_id text,                      -- id Meta returns; keyed by webhook status
+  status text not null default 'queued',   -- queued | sent | delivered | read | failed
+  error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists whatsapp_messages_campaign_idx on whatsapp_messages (campaign_id);
+create index if not exists whatsapp_messages_waid_idx on whatsapp_messages (wa_message_id);
+create index if not exists whatsapp_messages_org_idx on whatsapp_messages (organisation_id, created_at desc);
