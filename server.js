@@ -6091,6 +6091,15 @@ async function handleAdminApi(req, res, pathname) {
 
 const WHATSAPP_GRAPH_BASE = "https://graph.facebook.com";
 
+// Short-lived state tokens that let the mobile app start Embedded Signup in a
+// browser without a cookie: the app (authenticated) mints one, opens the connect
+// page with it, and /api/whatsapp/connect-complete resolves the user by state.
+const whatsappConnectStates = new Map();
+function whatsappSweepConnectStates() {
+  const nowMs = Date.now();
+  for (const [key, grant] of whatsappConnectStates) if (grant.expiresAt < nowMs) whatsappConnectStates.delete(key);
+}
+
 function whatsappEmailAllowed(user) {
   if (!user || !WHATSAPP_FEATURE_EMAILS.length) return false;
   return WHATSAPP_FEATURE_EMAILS.includes(String(user.email || "").trim().toLowerCase());
@@ -6432,6 +6441,26 @@ async function handleApi(req, res, pathname) {
         } catch (err) { console.error("[whatsapp] webhook:", err.message); }
         return send(res, 200, { ok: true });
       }
+    }
+
+    // Completes a mobile-initiated Embedded Signup. PUBLIC (the connect page runs
+    // in a browser with no app cookie) but authorised by the one-time state token
+    // minted by /api/whatsapp/connect-url for a specific user.
+    if (pathname === "/api/whatsapp/connect-complete" && req.method === "POST") {
+      const body = await readJson(req);
+      const state = String(body.state || "");
+      const grant = whatsappConnectStates.get(state);
+      if (!grant || grant.expiresAt < Date.now()) { whatsappConnectStates.delete(state); return error(res, 400, "This connection link has expired. Please start again from the app."); }
+      if (!pgPool) return error(res, 503, "WhatsApp messaging requires the database.");
+      if (!(await whatsappFeatureEnabled())) return error(res, 403, "The WhatsApp feature is turned off.");
+      const connectUser = db.users.find((candidate) => candidate.id === grant.userId && candidate.status === "active");
+      if (!connectUser || !whatsappEmailAllowed(connectUser)) { whatsappConnectStates.delete(state); return error(res, 403, "This feature is not available for your account."); }
+      try {
+        const account = await whatsappConnect(connectUser, { code: String(body.code || ""), wabaId: String(body.wabaId || ""), phoneNumberId: String(body.phoneNumberId || "") });
+        try { await whatsappSyncTemplates(account); } catch (err) { console.warn("[whatsapp] template sync after mobile connect:", err.message); }
+        whatsappConnectStates.delete(state);
+        return send(res, 200, { ok: true });
+      } catch (err) { return error(res, 400, err.message || "Could not connect WhatsApp."); }
     }
 
     if (req.method === "POST" && pathname === "/api/webhooks/razorpay") {
@@ -7155,6 +7184,16 @@ async function handleApi(req, res, pathname) {
       if (pathname === "/api/whatsapp/disconnect" && req.method === "POST") {
         await pgPool.query("update whatsapp_accounts set status='disconnected', updated_at=$2 where organisation_id=$1", [user.organisationId, now()]);
         return send(res, 200, { ok: true });
+      }
+
+      // Mobile-initiated connect: mint a short-lived state token and hand back
+      // the browser URL. The app opens it; the page runs Embedded Signup and
+      // posts the code to /api/whatsapp/connect-complete (resolved by state).
+      if (pathname === "/api/whatsapp/connect-url" && req.method === "POST") {
+        whatsappSweepConnectStates();
+        const state = randomToken("wacs");
+        whatsappConnectStates.set(state, { userId: user.id, expiresAt: Date.now() + 10 * 60 * 1000 });
+        return send(res, 200, { url: buildLink(req, `/whatsapp/connect?state=${encodeURIComponent(state)}`) });
       }
 
       const account = await whatsappAccountForOrg(user.organisationId);
@@ -10718,6 +10757,40 @@ function slug(value) {
   return String(value || "contacts").replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "") || "contacts";
 }
 
+// Browser page for mobile-initiated Embedded Signup. Config is injected as
+// data-* attributes (CSP blocks inline scripts); the logic lives in the static
+// /whatsapp-connect.js. The ?state= in the URL authorises the connect.
+function serveWhatsappConnectPage(req, res) {
+  if (!META_APP_ID || !WHATSAPP_ES_CONFIG_ID) {
+    res.writeHead(503, { "Content-Type": "text/plain" });
+    res.end("WhatsApp signup is not configured on this server.");
+    return;
+  }
+  const esc = (value) => String(value || "").replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect WhatsApp · Card2Leads</title>
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:24px;background:#f6f7fb;color:#1a1f36}
+  .card{max-width:440px;margin:32px auto;background:#fff;border:1px solid #e6e9f0;border-radius:16px;padding:24px}
+  h1{font-size:20px;margin:0 0 8px}
+  p{color:#52607a;line-height:1.55;font-size:14px}
+  button{font:inherit;font-weight:700;border:0;border-radius:10px;padding:13px 18px;background:#1a7f37;color:#fff;cursor:pointer;width:100%;margin-top:10px}
+  #wa-return{display:none;background:#0b5ed7}
+  #wa-status{margin-top:14px;font-weight:600;font-size:14px}
+  #wa-status.bad{color:#b42318}
+</style></head><body>
+<div class="card">
+  <h1>Connect WhatsApp</h1>
+  <p>This links your WhatsApp Business number to Card2Leads through Meta. Use your existing WhatsApp Business app number (Coexistence) or a new one. Afterwards, add a payment method on the WABA so Meta can bill per message.</p>
+  <div id="wa-cfg" data-app-id="${esc(META_APP_ID)}" data-config-id="${esc(WHATSAPP_ES_CONFIG_ID)}" data-graph="${esc(WHATSAPP_GRAPH_VERSION)}" data-complete-url="/api/whatsapp/connect-complete"></div>
+  <button id="wa-start" type="button">Start WhatsApp signup</button>
+  <button id="wa-return" type="button">Return to the app</button>
+  <p id="wa-status" aria-live="polite"></p>
+</div>
+<script src="/whatsapp-connect.js?v=1"></script>
+</body></html>`;
+  send(res, 200, html, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" });
+}
+
 function serveStatic(req, res, pathname) {
   const safePath = pathname === "/" ? "/index.html" : pathname;
   const filePath = path.normalize(path.join(PUBLIC_DIR, safePath));
@@ -10911,6 +10984,7 @@ const server = http.createServer((req, res) => {
   if (url.pathname.startsWith("/api/admin/")) return handleAdminApi(req, res, url.pathname);
   if (url.pathname.startsWith("/api/")) return handleApi(req, res, url.pathname);
   if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) return serveAdminUi(req, res, url.pathname);
+  if (url.pathname === "/whatsapp/connect") return serveWhatsappConnectPage(req, res);
   if (url.pathname.startsWith("/illustrations-final/")) return serveFinalIllustration(req, res, url.pathname);
   if (url.pathname.startsWith("/illustrations/")) return serveIllustration(req, res, url.pathname);
   // Clean, crawlable URLs for the public legal/contact pages. These return the
