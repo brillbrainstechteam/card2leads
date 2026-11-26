@@ -6384,7 +6384,8 @@ async function handleApi(req, res, pathname) {
   try {
     // WhatsApp webhook — PUBLIC (Meta calls it, no cookie). GET verifies the
     // subscription; POST delivers events and is validated by app-secret signature.
-    if (pathname === "/api/whatsapp/webhook") {
+    // Path matches the existing /api/webhooks/<provider> convention.
+    if (pathname === "/api/webhooks/whatsapp") {
       if (req.method === "GET") {
         const params = new URL(req.url, "http://localhost").searchParams;
         if (params.get("hub.mode") === "subscribe" && WHATSAPP_WEBHOOK_VERIFY_TOKEN && params.get("hub.verify_token") === WHATSAPP_WEBHOOK_VERIFY_TOKEN) {
