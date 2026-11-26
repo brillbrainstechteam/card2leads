@@ -6580,8 +6580,8 @@ function loadFacebookSdk(appId, graphVersion) {
     const script = document.createElement("script");
     script.id = "facebook-jssdk";
     script.src = "https://connect.facebook.net/en_US/sdk.js";
-    script.async = true; script.defer = true; script.crossOrigin = "anonymous";
-    script.onerror = () => reject(new Error("Could not load the Facebook SDK. Check your network or ad-blocker."));
+    script.async = true; script.defer = true;
+    script.onerror = () => reject(new Error("Could not load the Facebook SDK — it is being blocked. Turn off any ad-blocker, private DNS or tracking protection (or use a normal browser tab) and try again."));
     document.head.appendChild(script);
   });
 }

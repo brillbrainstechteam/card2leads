@@ -10786,7 +10786,7 @@ function serveWhatsappConnectPage(req, res) {
   <button id="wa-return" type="button">Return to the app</button>
   <p id="wa-status" aria-live="polite"></p>
 </div>
-<script src="/whatsapp-connect.js?v=1"></script>
+<script src="/whatsapp-connect.js?v=2"></script>
 </body></html>`;
   send(res, 200, html, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" });
 }
