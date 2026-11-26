@@ -6386,7 +6386,11 @@ function whatsappView() {
   const styles = `<style>
     .whatsapp-view .wa-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px}
     .whatsapp-view .wa-table th,.whatsapp-view .wa-table td{text-align:left;padding:6px 8px;border-bottom:1px solid #eceff3}
-    .whatsapp-view .wa-toggle{display:flex;align-items:center;gap:8px;margin-top:10px;font-weight:600}
+    .whatsapp-view .wa-toggle{display:flex;align-items:center;justify-content:flex-start;gap:10px;margin-top:10px;font-weight:600}
+    .whatsapp-view .wa-toggle input{width:20px;height:20px;flex:0 0 auto;margin:0}
+    .whatsapp-view .account-block{max-width:100%;overflow-wrap:anywhere}
+    .whatsapp-view .actions{display:flex;flex-wrap:wrap;gap:8px}
+    .whatsapp-view .actions button{flex:1 1 auto;min-width:140px}
     .whatsapp-view label{display:block;margin-top:8px}
     .whatsapp-view .account-block{margin-bottom:14px}
     .whatsapp-view .wa-chip{display:inline-block;padding:3px 9px;border-radius:999px;font-size:12px;margin:2px 4px 2px 0}
