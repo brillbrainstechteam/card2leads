@@ -127,6 +127,7 @@ const fieldLabels = {
   anp: "ANP",
   zone: "Zone",
   gstNumber: "GST Number",
+  businessCode: "Business Code",
   grade: "Grade",
   authorized: "Authorized",
   prospect: "Prospect",
@@ -146,7 +147,12 @@ const CHOICE_FIELD_FALLBACKS = {
     "Jewellery Retailer",
     "Jewellery Tools & Equipment Supplier",
     "Karigar",
-    "Factory"
+    "Factory",
+    "Team",
+    "Ex-Team",
+    "Family",
+    "Friend",
+    "Social"
   ],
   customerStatus: ["Existing Customer", "New Customer"],
   eventType: ["Exhibition", "Marketing", "Field Marketing", "Office Visit", "Customer Visit", "Magazine", "Advertisement"],
@@ -4029,6 +4035,11 @@ function inputField(field, value, multiline = false, confidence = undefined) {
         </select>
         <input name="${field}" class="choice-other ${isOther ? "" : "hidden"}" value="${escapeAttr(current)}" placeholder="Type your own" />
       </span>`;
+  } else if (field === "businessCode") {
+    // Assigned by the server from the GST number and business type and kept as a
+    // stable tracking ID, so it is shown but never typed into. Empty until the
+    // contact has a business type and its first save has run.
+    input = `<input value="${escapeAttr(value)}" readonly placeholder="Assigned automatically" title="Generated from GST number and business type" />`;
   } else if (multiline) {
     input = `<textarea name="${field}" rows="3">${escapeHtml(value)}</textarea>`;
   } else {

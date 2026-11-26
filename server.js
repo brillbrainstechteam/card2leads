@@ -244,6 +244,7 @@ const EXPORT_COLUMNS = [
   "ANP",
   "Zone",
   "GST Number",
+  "Business Code",
   "Grade",
   "Authorized",
   "Prospect",
@@ -348,7 +349,12 @@ const CONTACT_CHOICE_DEFAULTS = Object.freeze({
     "Jewellery Retailer",
     "Jewellery Tools & Equipment Supplier",
     "Karigar",
-    "Factory"
+    "Factory",
+    "Team",
+    "Ex-Team",
+    "Family",
+    "Friend",
+    "Social"
   ],
   customerStatus: ["Existing Customer", "New Customer"],
   // An event is no longer only an exhibition. These are the kinds of event /
@@ -397,6 +403,107 @@ function contactChoicesFor(organisation) {
 function toChoiceList(value) {
   const list = Array.isArray(value) ? value : String(value == null ? "" : value).split(";");
   return [...new Set(list.map((item) => cleanText(item)).filter(Boolean))];
+}
+
+// ---- Business Code: an auto-assigned tracking ID per contact ----
+// The client wanted a short identifier on every contact of the shape
+// {GST state code}{business-type code}{running number}, e.g. 27MFG01 - a
+// Maharashtra manufacturer, the first one logged. The letters come from the
+// business type, the two digits from the GST number (dropped when the contact
+// has no GST, so a type-only contact reads MFG01), and the number from a
+// per-workspace counter kept for each type so the client can count how many of
+// each they hold. The (letters, number) pair is frozen on first assignment -
+// it is an identity, like a customer number, so editing other fields or even
+// the business type later never renumbers anyone. Only the GST prefix is
+// re-derived on each save, so adding a GST number later simply prefixes the
+// code the contact already had.
+const BUSINESS_TYPE_CODE_RULES = [
+  [/ex[\s.-]*team/i, "EX-TM"],
+  [/\bteam\b/i, "TM"],
+  [/retail/i, "RTL"],
+  [/wholesal/i, "WHL"],
+  [/manufactur/i, "MFG"],
+  [/kari?gar|katigar/i, "KRG"],
+  [/family/i, "FAM"],
+  [/friend/i, "FRD"],
+  [/social/i, "SCL"],
+  [/other/i, "OTH"]
+];
+
+// The letters for a contact: the first of its business types to match a rule,
+// and "OTH" (Other) for a contact that has a business type matching none of
+// them. A contact with no business type at all gets no code.
+function businessCodeLettersFor(businessType) {
+  const list = toChoiceList(businessType);
+  if (!list.length) return "";
+  for (const value of list) {
+    for (const [pattern, code] of BUSINESS_TYPE_CODE_RULES) {
+      if (pattern.test(value)) return code;
+    }
+  }
+  return "OTH";
+}
+
+function gstStatePrefix(gstNumber) {
+  const match = String(gstNumber || "").trim().match(/^(\d{2})/);
+  return match ? match[1] : "";
+}
+
+function formatBusinessCode(prefix, letters, number) {
+  if (!letters) return "";
+  return `${prefix}${letters}${String(number).padStart(2, "0")}`;
+}
+
+// Assigns and refreshes the Business Code for every contact in the workspace.
+// Idempotent: a contact that already carries a code keeps its frozen letters
+// and number and only has its GST prefix refreshed, so running this on every
+// save (and once at start-up to backfill the back-catalogue) costs nothing
+// once the codes are settled. New codes are handed out oldest-first so the
+// running number follows the order contacts were added.
+function syncBusinessCodes(db) {
+  if (!Array.isArray(db.contacts) || !Array.isArray(db.organisations)) return false;
+  let changed = false;
+  const orgById = new Map(db.organisations.map((org) => [org.id, org]));
+  const byOrg = new Map();
+  for (const contact of db.contacts) {
+    if (!contact || contact.deletedAt) continue;
+    if (!byOrg.has(contact.organisationId)) byOrg.set(contact.organisationId, []);
+    byOrg.get(contact.organisationId).push(contact);
+  }
+  for (const [orgId, list] of byOrg) {
+    const org = orgById.get(orgId);
+    if (!org) continue;
+    const seq = org.businessCodeSeq && typeof org.businessCodeSeq === "object" ? { ...org.businessCodeSeq } : {};
+    // Never hand out a number already frozen onto a contact, even if the stored
+    // counter was lost: raise each counter to the highest number in use first.
+    for (const contact of list) {
+      const key = contact.businessCodeKey;
+      const num = Number(contact.businessCodeNumber);
+      if (key && num > 0 && !(Number(seq[key]) >= num)) seq[key] = num;
+    }
+    // Hand a frozen (letters, number) to every uncoded contact that has a
+    // business type, oldest first.
+    const uncoded = list.filter((contact) => !contact.businessCodeKey && businessCodeLettersFor(contact.businessType));
+    if (uncoded.length) {
+      uncoded.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+      for (const contact of uncoded) {
+        const letters = businessCodeLettersFor(contact.businessType);
+        seq[letters] = (Number(seq[letters]) || 0) + 1;
+        contact.businessCodeKey = letters;
+        contact.businessCodeNumber = seq[letters];
+        changed = true;
+      }
+    }
+    // Refresh the visible code string for every coded contact; the GST prefix
+    // follows the contact's current GST number, the rest stays frozen.
+    for (const contact of list) {
+      if (!contact.businessCodeKey) continue;
+      const next = formatBusinessCode(gstStatePrefix(contact.gstNumber), contact.businessCodeKey, contact.businessCodeNumber);
+      if ((contact.businessCode || "") !== next) { contact.businessCode = next; changed = true; }
+    }
+    org.businessCodeSeq = seq;
+  }
+  return changed;
 }
 
 // A contact typed in by hand rather than read off a card. The tag is what makes
@@ -706,7 +813,8 @@ async function ensureStorage() {
       const extractionFallbacksChanged = repairStoredCardExtractionFallbacks(dbCache);
       const displayNamesChanged = repairStoredContactDisplayNames(dbCache);
       const classificationChanged = migrateContactClassification(dbCache);
-      if (retentionChanged || exhibitionAssignmentsChanged || locationsChanged || extractionFallbacksChanged || displayNamesChanged || classificationChanged) await saveDb(dbCache);
+      const businessCodesChanged = syncBusinessCodes(dbCache);
+      if (retentionChanged || exhibitionAssignmentsChanged || locationsChanged || extractionFallbacksChanged || displayNamesChanged || classificationChanged || businessCodesChanged) await saveDb(dbCache);
       console.log("Storage: PostgreSQL");
       return;
     } catch (err) {
@@ -728,7 +836,8 @@ async function ensureStorage() {
   const extractionFallbacksChanged = repairStoredCardExtractionFallbacks(dbCache);
   const displayNamesChanged = repairStoredContactDisplayNames(dbCache);
   const classificationChanged = migrateContactClassification(dbCache);
-  if (retentionChanged || exhibitionAssignmentsChanged || locationsChanged || extractionFallbacksChanged || displayNamesChanged || classificationChanged) await saveDb(dbCache);
+  const businessCodesChanged = syncBusinessCodes(dbCache);
+  if (retentionChanged || exhibitionAssignmentsChanged || locationsChanged || extractionFallbacksChanged || displayNamesChanged || classificationChanged || businessCodesChanged) await saveDb(dbCache);
   console.log("Storage: local JSON fallback");
 }
 
@@ -738,6 +847,10 @@ function readDb() {
 
 async function saveDb(db) {
   dbCache = normalizeDb(db);
+  // Keep every contact's Business Code current on the way to disk, so the code
+  // is right no matter which path saved the contact (manual add, card save,
+  // bulk edit, spreadsheet upload) without a hook at each one.
+  syncBusinessCodes(dbCache);
   validateTenantIntegrity(dbCache);
   if (pgPool) {
     await persistPostgresDb(dbCache);
@@ -9299,6 +9412,7 @@ function exportRow(contact, extraPeopleCount = 0) {
     contact.anp,
     contact.zone,
     contact.gstNumber,
+    contact.businessCode,
     contact.grade,
     contact.authorized,
     contact.prospect,
@@ -9853,6 +9967,7 @@ function contactToGooglePerson(contact) {
       { key: "ANP", value: String(contact.anp || "") },
       { key: "Zone", value: String(contact.zone || "") },
       { key: "GST Number", value: String(contact.gstNumber || "") },
+      { key: "Business Code", value: String(contact.businessCode || "") },
       { key: "Grade", value: String(contact.grade || "") },
       { key: "Authorized", value: String(contact.authorized || "") },
       { key: "Prospect", value: String(contact.prospect || "") },
@@ -10329,6 +10444,7 @@ function buildVcf(contacts) {
       contact.anp ? `ANP: ${contact.anp}` : "",
       contact.zone ? `Zone: ${contact.zone}` : "",
       contact.gstNumber ? `GST: ${contact.gstNumber}` : "",
+      contact.businessCode ? `Business code: ${contact.businessCode}` : "",
       contact.grade ? `Grade: ${contact.grade}` : "",
       contact.authorized ? `Authorized: ${contact.authorized}` : "",
       contact.prospect ? `Prospect: ${contact.prospect}` : "",
