@@ -6611,7 +6611,7 @@ async function launchWhatsAppSignup() {
       config_id: cfg.configId,
       response_type: "code",
       override_default_response_type: true,
-      extras: { setup: {}, featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3" }
+      extras: { setup: {}, version: "v4", featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3" }
     });
   } catch (err) {
     window.removeEventListener("message", onMessage);
