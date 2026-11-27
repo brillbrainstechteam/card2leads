@@ -5925,14 +5925,21 @@ async function assignContact(contactId, memberId) {
   }
 }
 
+let editingTeamMemberId = "";
 function teamMemberListHtml() {
   if (!state.teamMembers.length) {
     return `<p class="team-empty">No team members yet. Add names below to start assigning contacts.</p>`;
   }
-  return `<ul class="team-member-list">${state.teamMembers.map((member) => `
-    <li>
-      <span>${escapeHtml(member.name)}</span>
-      <button type="button" class="link-danger" data-remove-member="${member.id}" data-member-name="${escapeAttr(member.name)}">Remove</button>
+  return `<ul class="team-member-list">${state.teamMembers.map((member) => editingTeamMemberId === member.id
+    ? `<li style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+        <input type="text" class="editMemberName" value="${escapeAttr(member.name)}" maxlength="80" style="flex:1 1 120px" />
+        <input type="text" class="editMemberRole" value="${escapeAttr(member.role || "")}" placeholder="Role" maxlength="60" style="flex:1 1 100px" />
+        <button type="button" class="link-button" data-save-member="${member.id}">Save</button>
+        <button type="button" class="link-button" data-cancel-member>Cancel</button>
+      </li>`
+    : `<li>
+      <span>${escapeHtml(member.name)}${member.role ? ` &middot; <span class="muted">${escapeHtml(member.role)}</span>` : ""}</span>
+      <span><button type="button" class="link-button" data-edit-member="${member.id}">Edit</button> <button type="button" class="link-danger" data-remove-member="${member.id}" data-member-name="${escapeAttr(member.name)}">Remove</button></span>
     </li>`).join("")}</ul>`;
 }
 
@@ -5942,6 +5949,7 @@ function showManageTeamModal() {
       <div id="teamMemberList">${teamMemberListHtml()}</div>
       <form id="addTeamMemberForm" class="team-add-form" autocomplete="off">
         <input type="text" id="teamMemberName" name="name" placeholder="Full name, e.g. Priya Shah" maxlength="80" />
+        <input type="text" id="teamMemberRole" name="role" placeholder="Role, e.g. Sales" maxlength="60" />
         <button type="submit">Add a team member</button>
       </form>
       <p class="team-manager-hint">Team members are the people who follow up with contacts. Their names appear in the Assigned to menu on every contact. Removing a member unassigns their contacts.</p>
@@ -5957,26 +5965,49 @@ function showManageTeamModal() {
     onRender: (node) => {
       const form = node.querySelector("#addTeamMemberForm");
       const input = node.querySelector("#teamMemberName");
-      input?.focus();
+      const roleInput = node.querySelector("#teamMemberRole");
+      if (!editingTeamMemberId) input?.focus();
       form?.addEventListener("submit", async (event) => {
         event.preventDefault();
         const name = (input.value || "").trim();
         if (!name) return;
-        await addTeamMember(name);
+        await addTeamMember(name, (roleInput?.value || "").trim());
       });
       node.querySelectorAll("[data-remove-member]").forEach((btn) => btn.addEventListener("click", () => {
         removeTeamMember(btn.dataset.removeMember, btn.dataset.memberName || "this member");
+      }));
+      node.querySelectorAll("[data-edit-member]").forEach((btn) => btn.addEventListener("click", () => { editingTeamMemberId = btn.dataset.editMember; showManageTeamModal(); }));
+      node.querySelector("[data-cancel-member]")?.addEventListener("click", () => { editingTeamMemberId = ""; showManageTeamModal(); });
+      node.querySelectorAll("[data-save-member]").forEach((btn) => btn.addEventListener("click", () => {
+        const li = btn.closest("li");
+        const name = (li.querySelector(".editMemberName")?.value || "").trim();
+        const role = (li.querySelector(".editMemberRole")?.value || "").trim();
+        if (!name) return;
+        updateTeamMember(btn.dataset.saveMember, { name, role });
       }));
     }
   };
   render();
 }
 
-async function addTeamMember(name) {
+async function addTeamMember(name, role = "") {
   try {
-    const result = await api("/api/team", { method: "POST", body: { name } });
+    const result = await api("/api/team", { method: "POST", body: { name, role } });
     state.teamMembers = result.members || state.teamMembers;
     state.message = { text: `${name} added to the team.`, bad: false };
+    showManageTeamModal();
+  } catch (err) {
+    state.message = { text: err.message, bad: true };
+    showManageTeamModal();
+  }
+}
+
+async function updateTeamMember(memberId, fields) {
+  try {
+    const result = await api(`/api/team/${memberId}`, { method: "PATCH", body: fields });
+    state.teamMembers = result.members || state.teamMembers;
+    editingTeamMemberId = "";
+    state.message = { text: "Team member updated.", bad: false };
     showManageTeamModal();
   } catch (err) {
     state.message = { text: err.message, bad: true };

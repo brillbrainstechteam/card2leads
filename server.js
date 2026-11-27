@@ -8892,14 +8892,40 @@ async function handleApi(req, res, pathname) {
       if (members.some((m) => m.name.toLowerCase() === name.toLowerCase())) {
         return error(res, 409, "A team member with this name already exists.");
       }
-      const member = { id: id("tm"), name, createdAt: now() };
+      const member = { id: id("tm"), name, role: String(body.role || "").trim().slice(0, 60), createdAt: now() };
       members.push(member);
       members.sort((a, b) => a.name.localeCompare(b.name));
       organisation.teamMembers = members;
       organisation.updatedAt = now();
-      audit(db, user, "team.member_added", "team_member", member.id, { name });
+      audit(db, user, "team.member_added", "team_member", member.id, { name, role: member.role });
       await saveDb(db);
       return send(res, 201, { member, members });
+    }
+
+    // Edit a team member's name and/or role (role is defined by the client).
+    if (req.method === "PATCH" && pathname.startsWith("/api/team/")) {
+      const organisation = db.organisations.find((o) => o.id === user.organisationId);
+      if (!organisation) return error(res, 404, "Workspace not found.");
+      const memberId = pathname.split("/").pop();
+      const members = teamMembers(organisation);
+      const member = members.find((m) => m.id === memberId);
+      if (!member) return error(res, 404, "Team member not found.");
+      const body = await readJson(req);
+      if (body.name !== undefined) {
+        const name = String(body.name || "").trim().replace(/\s+/g, " ");
+        if (!name) return error(res, 400, "Enter the team member's full name.");
+        if (name.length > 80) return error(res, 400, "Team member name is too long.");
+        if (members.some((m) => m.id !== memberId && m.name.toLowerCase() === name.toLowerCase())) return error(res, 409, "A team member with this name already exists.");
+        if (member.name !== name) db.contacts.forEach((contact) => { if (contact.organisationId === user.organisationId && contact.assignedToId === memberId) { contact.assignedToName = name; contact.updatedAt = now(); } });
+        member.name = name;
+      }
+      if (body.role !== undefined) member.role = String(body.role || "").trim().slice(0, 60);
+      members.sort((a, b) => a.name.localeCompare(b.name));
+      organisation.teamMembers = members;
+      organisation.updatedAt = now();
+      audit(db, user, "team.member_updated", "team_member", memberId, { name: member.name, role: member.role });
+      await saveDb(db);
+      return send(res, 200, { member, members: organisation.teamMembers });
     }
 
     if (req.method === "DELETE" && pathname.startsWith("/api/team/")) {
