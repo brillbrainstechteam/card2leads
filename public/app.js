@@ -5055,7 +5055,6 @@ function contactsView() {
             <button class="secondary compact-action" id="bulkVoiceContacts"><span class="button-mic-icon" aria-hidden="true"></span>Voice note</button>
             ${activeCollectionId ? `<a href="${exportHref("xlsx", activeCollectionId, selectedIds)}"><button type="button" class="secondary compact-action">Excel</button></a><a href="${exportHref("csv", activeCollectionId, selectedIds)}"><button type="button" class="secondary compact-action">CSV</button></a><a href="${exportHref("vcf", activeCollectionId, selectedIds)}"><button type="button" class="secondary compact-action">VCF</button></a>` : ""}
             <button class="secondary compact-action" id="bulkClassifyContacts">Classify</button>
-            <button class="danger compact-action" id="bulkDeleteContacts">Delete</button>
           </div>
           <div class="view-toggle" role="group" aria-label="Table columns">
             <button type="button" class="view-toggle-btn ${extendedView ? "" : "active"}" data-table-view="compact">Compact</button>
