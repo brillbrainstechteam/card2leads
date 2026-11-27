@@ -5441,6 +5441,7 @@ async function handleAdminApi(req, res, pathname) {
     await adminAudit(admin, { clientId, action: "CLIENT_VIEWED" }); // D10-lite: log PII access
     return send(res, 200, {
       ...summary,
+      whatsappEnabled: await whatsappEnabledForOrg(db, org.id),
       users,
       googleIntegration: google
         ? { status: google.status, email: google.googleEmail || null, connectedAt: google.createdAt, lastSyncAt: google.updatedAt || null }
@@ -5663,6 +5664,16 @@ async function handleAdminApi(req, res, pathname) {
       await saveDb(db);
       await adminAudit(admin, { clientId, action: onePerBusiness ? "EXPORT_RULE_ENABLED" : "EXPORT_RULE_DISABLED", previousValue: prev, newValue: { exportOnePerBusiness: onePerBusiness }, reason });
       return send(res, 200, { ok: true, exportOnePerBusiness: onePerBusiness });
+    }
+
+    // Per-client WhatsApp Campaigns enablement. Off for every account unless
+    // switched on here, so existing clients never see the feature.
+    if (action === "whatsapp-feature") {
+      const enabled = body.enabled === true || body.enabled === "true";
+      const prev = { whatsappEnabled: await whatsappEnabledForOrg(db, clientId) };
+      await whatsappSetOrgEnabled(clientId, enabled);
+      await adminAudit(admin, { clientId, action: enabled ? "WHATSAPP_ENABLED" : "WHATSAPP_DISABLED", previousValue: prev, newValue: { whatsappEnabled: enabled } });
+      return send(res, 200, { ok: true, whatsappEnabled: enabled });
     }
 
     if (action === "custom-allowance") {
@@ -6262,25 +6273,137 @@ async function whatsappSyncTemplates(account) {
   return rows.rows;
 }
 
-async function whatsappCreateTemplate(account, { name, language = "en_US", category = "MARKETING", bodyText, headerText, footerText, buttons, example }) {
+// Per-ORGANISATION enablement, controlled from the admin panel. An org whose
+// owner email is in WHATSAPP_FEATURE_EMAILS is enabled by default (seeds the
+// tech account); the admin panel adds/removes other org IDs in app_settings.
+async function whatsappEnabledForOrg(db, organisationId) {
+  if (!organisationId) return false;
+  const list = (await getAppSetting("whatsapp_enabled_orgs", [])) || [];
+  if (Array.isArray(list) && list.includes(organisationId)) return true;
+  if (WHATSAPP_FEATURE_EMAILS.length && db && Array.isArray(db.users)) {
+    const seeded = db.users.some((candidate) => candidate.organisationId === organisationId
+      && WHATSAPP_FEATURE_EMAILS.includes(String(candidate.email || "").trim().toLowerCase()));
+    if (seeded) return true;
+  }
+  return false;
+}
+
+async function whatsappSetOrgEnabled(organisationId, enabled) {
+  const list = (await getAppSetting("whatsapp_enabled_orgs", [])) || [];
+  const set = new Set(Array.isArray(list) ? list : []);
+  if (enabled) set.add(organisationId); else set.delete(organisationId);
+  await setAppSetting("whatsapp_enabled_orgs", [...set]);
+  return enabled;
+}
+
+// Upload a sample media file to get a header handle (required by Meta when a
+// template HEADER is IMAGE/VIDEO/DOCUMENT). Uses the resumable upload API.
+async function whatsappUploadSample(sampleUrl, mediaFormat) {
+  if (!META_APP_ID || !META_APP_SECRET) throw new Error("Meta app credentials are not configured.");
+  const appToken = `${META_APP_ID}|${META_APP_SECRET}`;
+  const fileResp = await fetch(sampleUrl);
+  if (!fileResp.ok) throw new Error("Could not fetch the sample media URL.");
+  const buffer = Buffer.from(await fileResp.arrayBuffer());
+  const contentType = fileResp.headers.get("content-type") || (mediaFormat === "IMAGE" ? "image/jpeg" : mediaFormat === "VIDEO" ? "video/mp4" : "application/pdf");
+  const startQuery = new URLSearchParams({ file_name: "sample", file_length: String(buffer.length), file_type: contentType, access_token: appToken }).toString();
+  const start = await graphApi(`${META_APP_ID}/uploads?${startQuery}`, { method: "POST" });
+  const sessionId = start.id;
+  if (!sessionId) throw new Error("Could not start the media upload session.");
+  const upResp = await fetch(`${WHATSAPP_GRAPH_BASE}/${WHATSAPP_GRAPH_VERSION}/${sessionId}`, {
+    method: "POST",
+    headers: { Authorization: `OAuth ${appToken}`, file_offset: "0", "Content-Type": "application/octet-stream" },
+    body: buffer
+  });
+  const upText = await upResp.text();
+  let upJson; try { upJson = upText ? JSON.parse(upText) : {}; } catch { upJson = {}; }
+  if (!upResp.ok || !upJson.h) throw new Error(upJson?.error?.message || "Sample media upload failed.");
+  return upJson.h;
+}
+
+// Create a template with the full set of WhatsApp options: header (text or
+// image/video/document), body with example variables, footer, and buttons
+// (quick reply, URL, phone number, copy code).
+async function whatsappCreateTemplate(account, spec) {
   const token = whatsappAccountToken(account);
+  const { name, language = "en_US", category = "MARKETING", header = null, bodyText, bodyExample, footerText, buttons } = spec;
   const components = [];
-  if (headerText) components.push({ type: "HEADER", format: "TEXT", text: headerText });
+
+  if (header && header.format && header.format !== "NONE") {
+    const format = String(header.format).toUpperCase();
+    if (format === "TEXT" && header.text) {
+      const headerComponent = { type: "HEADER", format: "TEXT", text: header.text };
+      if (header.example) headerComponent.example = { header_text: [].concat(header.example) };
+      components.push(headerComponent);
+    } else if (["IMAGE", "VIDEO", "DOCUMENT"].includes(format) && header.mediaUrl) {
+      const handle = await whatsappUploadSample(header.mediaUrl, format);
+      components.push({ type: "HEADER", format, example: { header_handle: [handle] } });
+    }
+  }
+
   const bodyComponent = { type: "BODY", text: bodyText };
-  // Meta requires an example set of values when the body has {{1}} placeholders.
-  if (example && (Array.isArray(example) ? example.length : String(example).trim().length)) {
-    bodyComponent.example = { body_text: [[].concat(example)] };
+  if (bodyExample && (Array.isArray(bodyExample) ? bodyExample.length : String(bodyExample).trim().length)) {
+    bodyComponent.example = { body_text: [[].concat(bodyExample)] };
   }
   components.push(bodyComponent);
+
   if (footerText) components.push({ type: "FOOTER", text: footerText });
-  if (Array.isArray(buttons) && buttons.length) components.push({ type: "BUTTONS", buttons });
+
+  if (Array.isArray(buttons) && buttons.length) {
+    const mapped = buttons.map((button) => {
+      const type = String(button.type || "").toUpperCase();
+      if (type === "QUICK_REPLY") return { type: "QUICK_REPLY", text: button.text };
+      if (type === "PHONE_NUMBER") return { type: "PHONE_NUMBER", text: button.text, phone_number: button.phoneNumber || button.phone_number };
+      if (type === "URL") {
+        const out = { type: "URL", text: button.text, url: button.url };
+        if (button.example) out.example = [].concat(button.example);
+        return out;
+      }
+      if (type === "COPY_CODE") return { type: "COPY_CODE", example: button.example || "CODE" };
+      return null;
+    }).filter(Boolean);
+    if (mapped.length) components.push({ type: "BUTTONS", buttons: mapped });
+  }
+
   return graphApi(`${account.waba_id}/message_templates`, {
     method: "POST", token,
     body: { name: String(name).toLowerCase().replace(/[^a-z0-9_]/g, "_"), language, category: String(category).toUpperCase(), components }
   });
 }
 
-// Resolve recipients from the selected contacts (or the whole org) to E.164 digits.
+// Resolve a {{n}} mapping entry against a contact. source "text" is a literal;
+// source "field" reads a contact field (with a firstName convenience).
+function whatsappContactValue(contact, fieldKey) {
+  if (!contact || !fieldKey) return "";
+  if (fieldKey === "firstName") return String(contact.name || "").split(/\s+/)[0] || "";
+  const value = contact[fieldKey];
+  return value == null ? "" : String(value);
+}
+function whatsappResolveMapped(contact, mapping) {
+  if (!mapping) return "";
+  if (mapping.source === "text") return String(mapping.value || "");
+  return whatsappContactValue(contact, mapping.value);
+}
+// Build the per-recipient template message components from a variable mapping.
+function whatsappBuildMessageComponents(contact, { variableMapping = {}, header = null } = {}) {
+  const components = [];
+  if (header && header.format) {
+    const format = String(header.format).toUpperCase();
+    if (format === "TEXT" && header.text) {
+      components.push({ type: "header", parameters: [{ type: "text", text: whatsappResolveMapped(contact, header.text) }] });
+    } else if (["IMAGE", "VIDEO", "DOCUMENT"].includes(format) && header.mediaUrl) {
+      const key = format.toLowerCase();
+      components.push({ type: "header", parameters: [{ type: key, [key]: { link: header.mediaUrl } }] });
+    }
+  }
+  const indices = Object.keys(variableMapping || {}).map(Number).filter((n) => n > 0).sort((a, b) => a - b);
+  if (indices.length) {
+    components.push({ type: "body", parameters: indices.map((i) => ({ type: "text", text: whatsappResolveMapped(contact, variableMapping[String(i)]) })) });
+  }
+  return components;
+}
+
+// Resolve recipients from the selected contacts (or the whole org), keeping the
+// contact record so per-recipient template variables can be filled in.
 function whatsappResolveRecipients(db, user, body) {
   const orgContacts = db.contacts.filter((contact) => contact.organisationId === user.organisationId && !contact.deletedAt);
   let chosen = [];
@@ -6291,20 +6414,20 @@ function whatsappResolveRecipients(db, user, body) {
     chosen = orgContacts;
   }
   return chosen
-    .map((contact) => ({ contactId: contact.id, to: whatsappDigits(contact.whatsappNumber || contact.mobileNumber, contact.country) }))
+    .map((contact) => ({ contactId: contact.id, to: whatsappDigits(contact.whatsappNumber || contact.mobileNumber, contact.country), contact }))
     .filter((recipient) => recipient.to);
 }
 
-// Send an approved template to many recipients. Billed by Meta to the client's
-// own payment method. Sequential sends keep us comfortably under rate limits
-// for test volumes; a dedicated queue is the next step for large campaigns.
-async function whatsappSendBulk(user, account, { templateName, language, recipients, components = [] }) {
+// Send an approved template to many recipients, filling each one's variables.
+// Billed by Meta to the client's own payment method. Sequential sends stay under
+// rate limits for test volumes; a queue is the next step for large campaigns.
+async function whatsappSendBulk(user, account, { templateName, language, recipients, variableMapping = {}, header = null, campaignName = "" }) {
   const token = whatsappAccountToken(account);
   const campaignId = id("wac");
   await pgPool.query(
-    `insert into whatsapp_campaigns (id, organisation_id, account_id, name, template_name, template_language, status, total_recipients, created_by, created_at, updated_at)
-     values ($1,$2,$3,$4,$5,$6,'sending',$7,$8,$9,$9)`,
-    [campaignId, user.organisationId, account.id, templateName, templateName, language, recipients.length, user.id, now()]
+    `insert into whatsapp_campaigns (id, organisation_id, account_id, name, template_name, template_language, status, total_recipients, created_by, created_at, updated_at, metadata)
+     values ($1,$2,$3,$4,$5,$6,'sending',$7,$8,$9,$9,$10::jsonb)`,
+    [campaignId, user.organisationId, account.id, campaignName || templateName, templateName, language, recipients.length, user.id, now(), JSON.stringify({ variableMapping, header })]
   );
   let sent = 0, failed = 0;
   for (const recipient of recipients) {
@@ -6320,6 +6443,7 @@ async function whatsappSendBulk(user, account, { templateName, language, recipie
       continue;
     }
     try {
+      const components = whatsappBuildMessageComponents(recipient.contact, { variableMapping, header });
       const payload = { messaging_product: "whatsapp", to, type: "template", template: { name: templateName, language: { code: language }, ...(components.length ? { components } : {}) } };
       const resp = await graphApi(`${account.phone_number_id}/messages`, { method: "POST", token, body: payload });
       sent++;
@@ -6339,6 +6463,20 @@ async function whatsappSendBulk(user, account, { templateName, language, recipie
   }
   await pgPool.query("update whatsapp_campaigns set sent_count=$2, failed_count=$3, status='completed', updated_at=$4 where id=$1", [campaignId, sent, failed, now()]);
   return { campaignId, sent, failed, total: recipients.length };
+}
+
+// Aggregate a campaign's per-recipient statuses into counts + rates.
+async function whatsappCampaignStats(campaignId) {
+  const rows = (await pgPool.query("select status, count(*)::int as n from whatsapp_messages where campaign_id=$1 group by status", [campaignId])).rows;
+  const by = {};
+  for (const row of rows) by[row.status] = row.n;
+  const total = Object.values(by).reduce((sum, n) => sum + n, 0);
+  const sent = (by.sent || 0) + (by.delivered || 0) + (by.read || 0);
+  const delivered = (by.delivered || 0) + (by.read || 0);
+  const read = by.read || 0;
+  const failed = by.failed || 0;
+  const rate = (n) => (total ? Math.round((n / total) * 1000) / 10 : 0);
+  return { total, sent, delivered, read, failed, deliveryRate: rate(delivered), readRate: rate(read), failureRate: rate(failed) };
 }
 
 function whatsappVerifyWebhookSignature(rawBuffer, signatureHeader) {
@@ -6452,9 +6590,8 @@ async function handleApi(req, res, pathname) {
       const grant = whatsappConnectStates.get(state);
       if (!grant || grant.expiresAt < Date.now()) { whatsappConnectStates.delete(state); return error(res, 400, "This connection link has expired. Please start again from the app."); }
       if (!pgPool) return error(res, 503, "WhatsApp messaging requires the database.");
-      if (!(await whatsappFeatureEnabled())) return error(res, 403, "The WhatsApp feature is turned off.");
       const connectUser = db.users.find((candidate) => candidate.id === grant.userId && candidate.status === "active");
-      if (!connectUser || !whatsappEmailAllowed(connectUser)) { whatsappConnectStates.delete(state); return error(res, 403, "This feature is not available for your account."); }
+      if (!connectUser || !(await whatsappEnabledForOrg(db, connectUser.organisationId))) { whatsappConnectStates.delete(state); return error(res, 403, "WhatsApp campaigns are not enabled for your account."); }
       try {
         const account = await whatsappConnect(connectUser, { code: String(body.code || ""), wabaId: String(body.wabaId || ""), phoneNumberId: String(body.phoneNumberId || "") });
         try { await whatsappSyncTemplates(account); } catch (err) { console.warn("[whatsapp] template sync after mobile connect:", err.message); }
@@ -7136,37 +7273,29 @@ async function handleApi(req, res, pathname) {
       return send(res, 200, { ok: true });
     }
 
-    // --- WhatsApp Business Platform (Embedded Signup + bulk messaging) ---
+    // --- WhatsApp Campaigns (Embedded Signup + templates + bulk + analytics) ---
+    // Gated per-account by the admin panel; existing clients see nothing.
     if (pathname === "/api/whatsapp/overview" && req.method === "GET") {
-      const allowed = whatsappEmailAllowed(user);
-      const enabled = await whatsappFeatureEnabled();
-      if (!allowed) return send(res, 200, { allowed: false, enabled: false, canToggle: false });
+      const enabled = await whatsappEnabledForOrg(db, user.organisationId);
+      if (!enabled) return send(res, 200, { enabled: false });
       const account = await whatsappAccountForOrg(user.organisationId);
       let templates = [];
       let campaigns = [];
       if (account) {
-        templates = (await pgPool.query("select id,name,language,category,status,rejected_reason,updated_at from whatsapp_templates where account_id=$1 order by updated_at desc", [account.id])).rows;
-        campaigns = (await pgPool.query("select id,name,template_name,status,total_recipients,sent_count,failed_count,created_at from whatsapp_campaigns where organisation_id=$1 order by created_at desc limit 20", [user.organisationId])).rows;
+        templates = (await pgPool.query("select id,name,language,category,status,components,rejected_reason,updated_at from whatsapp_templates where account_id=$1 order by updated_at desc", [account.id])).rows;
+        const campaignRows = (await pgPool.query("select id,name,template_name,status,total_recipients,sent_count,failed_count,created_at from whatsapp_campaigns where organisation_id=$1 order by created_at desc limit 20", [user.organisationId])).rows;
+        campaigns = await Promise.all(campaignRows.map(async (row) => ({ ...row, stats: await whatsappCampaignStats(row.id) })));
       }
       return send(res, 200, {
-        allowed: true, enabled, canToggle: true,
+        enabled: true,
         config: { appId: META_APP_ID, configId: WHATSAPP_ES_CONFIG_ID, graphVersion: WHATSAPP_GRAPH_VERSION, configured: Boolean(META_APP_ID && META_APP_SECRET) },
         account: whatsappAccountPublic(account), templates, campaigns
       });
     }
 
-    if (pathname === "/api/whatsapp/feature" && req.method === "POST") {
-      if (!whatsappEmailAllowed(user)) return error(res, 403, "This feature is not available for your account.");
-      if (!pgPool) return error(res, 503, "This feature requires the PostgreSQL database.");
-      const body = await readJson(req);
-      await setAppSetting("whatsapp_enabled", { enabled: Boolean(body.enabled) }, user.email);
-      return send(res, 200, { ok: true, enabled: Boolean(body.enabled) });
-    }
-
     if (pathname.startsWith("/api/whatsapp/")) {
-      if (!whatsappEmailAllowed(user)) return error(res, 403, "This feature is not available for your account.");
-      if (!pgPool) return error(res, 503, "WhatsApp messaging requires the PostgreSQL database.");
-      if (!(await whatsappFeatureEnabled())) return error(res, 403, "The WhatsApp feature is turned off.");
+      if (!pgPool) return error(res, 503, "WhatsApp campaigns require the PostgreSQL database.");
+      if (!(await whatsappEnabledForOrg(db, user.organisationId))) return error(res, 403, "WhatsApp campaigns are not enabled for your account.");
 
       if (pathname === "/api/whatsapp/connect" && req.method === "POST") {
         const body = await readJson(req);
@@ -7217,9 +7346,29 @@ async function handleApi(req, res, pathname) {
         const recipients = whatsappResolveRecipients(db, user, body);
         if (!recipients.length) return error(res, 400, "No recipients with a WhatsApp number matched your selection.");
         try {
-          const result = await whatsappSendBulk(user, account, { templateName, language, recipients, components: Array.isArray(body.components) ? body.components : [] });
+          const result = await whatsappSendBulk(user, account, {
+            templateName, language, recipients,
+            variableMapping: (body.variableMapping && typeof body.variableMapping === "object") ? body.variableMapping : {},
+            header: body.header || null,
+            campaignName: String(body.campaignName || "")
+          });
           return send(res, 200, { ok: true, ...result });
         } catch (err) { return error(res, 400, err.message); }
+      }
+
+      // Campaign analytics: list with aggregated counts, or one campaign's detail.
+      if (pathname === "/api/whatsapp/campaigns" && req.method === "GET") {
+        const rows = (await pgPool.query("select id,name,template_name,template_language,status,total_recipients,sent_count,failed_count,created_at from whatsapp_campaigns where organisation_id=$1 order by created_at desc limit 100", [user.organisationId])).rows;
+        const campaigns = await Promise.all(rows.map(async (row) => ({ ...row, stats: await whatsappCampaignStats(row.id) })));
+        return send(res, 200, { campaigns });
+      }
+      if (pathname.startsWith("/api/whatsapp/campaigns/") && req.method === "GET") {
+        const campaignId = decodeURIComponent(pathname.split("/")[4] || "");
+        const campaign = (await pgPool.query("select * from whatsapp_campaigns where id=$1 and organisation_id=$2", [campaignId, user.organisationId])).rows[0];
+        if (!campaign) return error(res, 404, "Campaign not found.");
+        const stats = await whatsappCampaignStats(campaignId);
+        const messages = (await pgPool.query("select to_number, status, error, updated_at from whatsapp_messages where campaign_id=$1 order by created_at limit 1000", [campaignId])).rows;
+        return send(res, 200, { campaign, stats, messages });
       }
       return error(res, 404, "Unknown WhatsApp endpoint.");
     }

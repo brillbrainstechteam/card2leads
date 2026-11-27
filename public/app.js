@@ -14,6 +14,7 @@ const state = {
   processingCards: new Set(),
   selectedContactIds: new Set(),
   whatsapp: null,
+  campaignsTab: "templates",
   googleContactsSyncing: false,
   googleContactsSyncStatus: null,
   uploadMode: "existing",
@@ -47,11 +48,11 @@ const state = {
 let messageTimer = null;
 let nativeSplashTimer = null;
 const authenticatedViews = new Set(["upload", "review", "contacts", "account", "whatsapp"]);
-// Client-side gate for the WhatsApp nav item; the server enforces the real
-// allowlist (WHATSAPP_FEATURE_EMAILS) and the feature flag on every request.
-const WHATSAPP_FEATURE_EMAILS = ["tech@brillbrainsconsultants.com"];
+// The Campaigns nav item appears only when the server has enabled WhatsApp for
+// this account (admin-controlled per-organisation); the server re-checks on
+// every request, so existing clients never see it.
 function whatsappNavAllowed() {
-  return Boolean(state.user && WHATSAPP_FEATURE_EMAILS.includes(String(state.user.email || "").trim().toLowerCase()));
+  return Boolean(state.whatsapp && state.whatsapp.enabled);
 }
 const nativeIntroStorageKey = "smartscan.mobileIntroSeen";
 
@@ -430,6 +431,9 @@ async function refreshAll() {
   // Start with nothing selected — bulk actions are opt-in, safer than pre-selecting all.
   const availableIds = new Set(state.contacts.map((contact) => contact.id));
   state.selectedContactIds = new Set([...state.selectedContactIds].filter((id) => availableIds.has(id)));
+  // Learn whether this account has WhatsApp Campaigns enabled (server-driven,
+  // off for everyone by default). Fire-and-forget; the nav appears once known.
+  loadWhatsAppOverview();
 }
 
 function render() {
@@ -1280,7 +1284,7 @@ function shell() {
     review: "Queue & Review",
     contacts: "Contacts & Exports",
     account: "Account",
-    whatsapp: "WhatsApp Messaging"
+    whatsapp: "Campaigns"
   }[state.view];
   return `
     <div class="shell">
@@ -1291,7 +1295,7 @@ function shell() {
           ${navButton("review", `Review (${reviewCards().length})`)}
           ${navButton("contacts", `Contacts & Exports (${state.contacts.length})`)}
           ${navButton("account", "Account")}
-          ${whatsappNavAllowed() ? navButton("whatsapp", "WhatsApp") : ""}
+          ${whatsappNavAllowed() ? navButton("whatsapp", "Campaigns") : ""}
         </nav>
         <small>Signed in as ${escapeHtml(state.user.name)}</small>
       </aside>
@@ -1334,7 +1338,7 @@ function topbarUpgradeButtonHtml() {
 }
 
 function navButton(view, label) {
-  const mobileLabels = { upload: "Scan", review: "Queue", contacts: "Contacts", account: "Account", whatsapp: "WA" };
+  const mobileLabels = { upload: "Scan", review: "Queue", contacts: "Contacts", account: "Account", whatsapp: "Campaigns" };
   const svgIcons = {
     whatsapp: '<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M19.05 4.91A9.82 9.82 0 0012.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 004.78 1.22h.01c5.46 0 9.9-4.45 9.9-9.91 0-2.65-1.03-5.14-2.9-7.02zM12.04 20.15h-.01a8.2 8.2 0 01-4.19-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.2 8.2 0 01-1.26-4.38c0-4.54 3.7-8.23 8.24-8.23a8.2 8.2 0 015.82 2.42 8.18 8.18 0 012.41 5.83c0 4.54-3.7 8.23-8.23 8.23zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.51.11-.11.25-.29.37-.43.12-.14.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.41-.42-.56-.42-.14-.01-.31-.01-.48-.01a.92.92 0 00-.67.31c-.23.25-.88.86-.88 2.07 0 1.22.9 2.4 1.02 2.57.12.17 1.76 2.68 4.26 3.76.6.26 1.06.41 1.42.52.6.19 1.14.16 1.57.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.11-.22-.17-.47-.29z"/></svg>',
     upload: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 3.129a.75.75 0 001.09-1.03l-4.25-4.5a.75.75 0 00-1.09 0l-4.25 4.5a.75.75 0 101.09 1.03L9.25 4.636v8.614z"/><path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"/></svg>',
@@ -6371,14 +6375,23 @@ function whatsappStatusChip(label, ok) {
   return `<span class="wa-chip ${ok ? "ok" : "warn"}">${escapeHtml(label)}</span>`;
 }
 
+const WA_CONTACT_FIELDS = [["name", "Full name"], ["firstName", "First name"], ["companyName", "Company"], ["city", "City"], ["state", "State"], ["mobileNumber", "Mobile number"], ["designation", "Designation"]];
+function waFieldOptions(selected) {
+  return [["", "— choose field —"]].concat(WA_CONTACT_FIELDS).map(([v, l]) => `<option value="${escapeAttr(v)}" ${selected === v ? "selected" : ""}>${escapeHtml(l)}</option>`).join("");
+}
+// Highest {{n}} placeholder in a template's BODY component.
+function waBodyVarCount(template) {
+  const body = (template.components || []).find((c) => String(c.type).toUpperCase() === "BODY");
+  if (!body || !body.text) return 0;
+  let max = 0;
+  String(body.text).replace(/\{\{\s*(\d+)\s*\}\}/g, (_, n) => { max = Math.max(max, Number(n)); return _; });
+  return max;
+}
+
 function whatsappView() {
   const node = el(`<div class="whatsapp-view"></div>`);
-  if (!whatsappNavAllowed()) {
-    node.innerHTML = `<div class="account-block"><h3>WhatsApp messaging</h3><p class="muted">This feature isn't available for your account.</p></div>`;
-    return node;
-  }
   if (!state.whatsapp) {
-    node.innerHTML = `<div class="account-block"><h3>WhatsApp messaging</h3><p class="muted">Loading…</p></div>`;
+    node.innerHTML = `<div class="account-block"><h3>Campaigns</h3><p class="muted">Loading…</p></div>`;
     loadWhatsAppOverview();
     return node;
   }
@@ -6386,108 +6399,114 @@ function whatsappView() {
   const styles = `<style>
     .whatsapp-view .wa-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px}
     .whatsapp-view .wa-table th,.whatsapp-view .wa-table td{text-align:left;padding:6px 8px;border-bottom:1px solid #eceff3}
-    .whatsapp-view .wa-toggle{display:flex;align-items:center;justify-content:flex-start;gap:10px;margin-top:10px;font-weight:600}
-    .whatsapp-view .wa-toggle input{width:20px;height:20px;flex:0 0 auto;margin:0}
-    .whatsapp-view .account-block{max-width:100%;overflow-wrap:anywhere}
-    .whatsapp-view .actions{display:flex;flex-wrap:wrap;gap:8px}
-    .whatsapp-view .actions button{flex:1 1 auto;min-width:140px}
-    .whatsapp-view label{display:block;margin-top:8px}
-    .whatsapp-view .account-block{margin-bottom:14px}
+    .whatsapp-view .account-block{max-width:100%;overflow-wrap:anywhere;margin-bottom:14px}
+    .whatsapp-view .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+    .whatsapp-view .actions button{flex:0 1 auto}
+    .whatsapp-view label{display:block;margin-top:10px;font-weight:600;font-size:13px}
+    .whatsapp-view label input,.whatsapp-view label select,.whatsapp-view label textarea{font-weight:400}
     .whatsapp-view .wa-chip{display:inline-block;padding:3px 9px;border-radius:999px;font-size:12px;margin:2px 4px 2px 0}
     .whatsapp-view .wa-chip.ok{background:#e7f6ec;color:#1a7f37}
     .whatsapp-view .wa-chip.warn{background:#fdecec;color:#b42318}
     .whatsapp-view .bad{color:#b42318}
+    .whatsapp-view .wa-tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+    .whatsapp-view .wa-tab{border:1px solid #d7dce5;background:#fff;border-radius:999px;padding:7px 16px;font-weight:600;cursor:pointer}
+    .whatsapp-view .wa-tab.active{background:#1a7f37;color:#fff;border-color:#1a7f37}
+    .whatsapp-view .wa-var-row{display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap}
+    .whatsapp-view .wa-stat{display:inline-block;min-width:92px;padding:8px 10px;border:1px solid #eceff3;border-radius:10px;margin:4px 6px 4px 0}
+    .whatsapp-view .wa-stat b{display:block;font-size:18px}
+    .whatsapp-view .wa-btn-slot{border:1px dashed #d7dce5;border-radius:8px;padding:8px;margin-top:8px}
   </style>`;
-  const parts = [];
-
-  parts.push(`
-    <div class="account-block">
-      <h3>WhatsApp Business messaging</h3>
-      <p class="muted">Connect a client's WhatsApp number through Meta Embedded Signup and send approved template messages in bulk. Each message is billed by Meta directly to the connected number's own payment method — never to Card2Leads.</p>
-      <label class="wa-toggle"><input type="checkbox" id="waFeatureToggle" ${wa.enabled ? "checked" : ""}/> <span>Feature ${wa.enabled ? "enabled" : "disabled"}</span></label>
-    </div>`);
-
-  if (wa.error) parts.push(`<div class="account-block"><p class="bad">${escapeHtml(wa.error)}</p></div>`);
-
-  if (!wa.enabled) {
-    node.innerHTML = styles + parts.join("");
-    wireWhatsApp(node);
-    return node;
-  }
 
   if (wa.config && !wa.config.configured) {
-    parts.push(`<div class="account-block"><p class="bad">Server is missing Meta app credentials (META_APP_ID / META_APP_SECRET). Add them and restart the server before connecting.</p></div>`);
+    node.innerHTML = styles + `<div class="account-block"><p class="bad">Server is missing Meta app credentials (META_APP_ID / META_APP_SECRET). Add them and restart before connecting.</p></div>`;
+    return node;
   }
 
   const account = wa.account;
   if (!account || account.status !== "connected") {
-    parts.push(`
+    node.innerHTML = styles + `
       <div class="account-block">
         <h3>Connect a WhatsApp number</h3>
         <p class="muted">Opens Meta's secure Embedded Signup. Use the existing WhatsApp Business app number (Coexistence) or a new one. Finish by adding a payment method on the WABA in WhatsApp Manager so Meta can bill per message.</p>
-        <div class="actions"><button type="button" id="waConnectBtn" ${wa.config && wa.config.configured ? "" : "disabled"}>Connect WhatsApp</button></div>
-      </div>`);
-    node.innerHTML = styles + parts.join("");
+        <div class="actions"><button type="button" id="waConnectBtn">Connect WhatsApp</button></div>
+      </div>`;
     wireWhatsApp(node);
     return node;
   }
 
-  parts.push(`
-    <div class="account-block">
-      <h3>Connected number</h3>
-      <p><strong>${escapeHtml(account.displayPhoneNumber || "—")}</strong> ${account.verifiedName ? "· " + escapeHtml(account.verifiedName) : ""}</p>
-      <div>
-        ${whatsappStatusChip(account.webhookSubscribed ? "Webhooks on" : "Webhooks off", account.webhookSubscribed)}
-        ${whatsappStatusChip(account.numberRegistered ? "Registered" : "Not registered", account.numberRegistered)}
-        ${account.reviewStatus ? whatsappStatusChip("Review: " + account.reviewStatus, /approved/i.test(account.reviewStatus)) : ""}
-        ${account.qualityRating ? whatsappStatusChip("Quality: " + account.qualityRating, /green/i.test(account.qualityRating)) : ""}
-        ${account.tokenExpiresAt ? whatsappStatusChip("Token expires " + new Date(account.tokenExpiresAt).toLocaleDateString(), false) : whatsappStatusChip("Token: no expiry", true)}
-      </div>
-      <div class="actions"><button type="button" class="secondary" id="waDisconnectBtn">Disconnect</button></div>
-    </div>`);
-
+  const tab = state.campaignsTab || "templates";
   const templates = wa.templates || [];
-  parts.push(`
-    <div class="account-block">
-      <h3>Message templates</h3>
-      <div class="actions"><button type="button" class="secondary" id="waRefreshTemplates">Refresh from Meta</button> <button type="button" class="secondary" id="waNewTemplate">Create template</button></div>
-      ${templates.length ? `<table class="wa-table"><thead><tr><th>Name</th><th>Lang</th><th>Category</th><th>Status</th></tr></thead><tbody>${templates.map((t) => `<tr><td>${escapeHtml(t.name)}</td><td>${escapeHtml(t.language)}</td><td>${escapeHtml(t.category || "")}</td><td>${escapeHtml(t.status || "")}</td></tr>`).join("")}</tbody></table>` : `<p class="muted">No templates yet. Create one and wait for Meta approval before sending.</p>`}
-      <div id="waTemplateForm" style="display:none;margin-top:10px">
+  const approved = templates.filter((t) => /approved/i.test(t.status || ""));
+
+  let tabHtml = "";
+  if (tab === "templates") {
+    tabHtml = `
+      <div class="account-block">
+        <div class="actions"><button type="button" class="secondary" id="waRefreshTemplates">Refresh from Meta</button></div>
+        ${templates.length ? `<table class="wa-table"><thead><tr><th>Name</th><th>Lang</th><th>Category</th><th>Status</th></tr></thead><tbody>${templates.map((t) => `<tr><td>${escapeHtml(t.name)}</td><td>${escapeHtml(t.language)}</td><td>${escapeHtml(t.category || "")}</td><td>${escapeHtml(t.status || "")}${t.rejected_reason ? ` <span class="muted">(${escapeHtml(t.rejected_reason)})</span>` : ""}</td></tr>`).join("")}</tbody></table>` : `<p class="muted">No templates yet. Create one below and wait for Meta approval before sending.</p>`}
+      </div>
+      <div class="account-block">
+        <h3>Create a template</h3>
         <label>Template name (lowercase, underscores)<input id="waTplName" placeholder="festive_offer"/></label>
         <label>Language<input id="waTplLang" value="en_US"/></label>
-        <label>Category<select id="waTplCategory"><option value="MARKETING">Marketing</option><option value="UTILITY">Utility</option></select></label>
+        <label>Category<select id="waTplCategory"><option value="MARKETING">Marketing</option><option value="UTILITY">Utility</option><option value="AUTHENTICATION">Authentication</option></select></label>
+        <label>Header<select id="waTplHeaderType"><option value="NONE">None</option><option value="TEXT">Text</option><option value="IMAGE">Image</option><option value="VIDEO">Video</option><option value="DOCUMENT">Document</option></select></label>
+        <label id="waTplHeaderTextWrap" style="display:none">Header text<input id="waTplHeaderText" placeholder="Festive offer"/></label>
+        <label id="waTplHeaderMediaWrap" style="display:none">Sample media URL (public)<input id="waTplHeaderMedia" placeholder="https://…/sample.jpg"/></label>
         <label>Body text<textarea id="waTplBody" rows="3" placeholder="Hi {{1}}, our new collection is live!"></textarea></label>
-        <label>Example values for {{1}}, {{2}}… (comma separated, optional)<input id="waTplExample" placeholder="Ravi, 20%"/></label>
+        <label>Example values for {{1}}, {{2}}… (comma separated)<input id="waTplExample" placeholder="Ravi, 20%"/></label>
+        <label>Footer (optional)<input id="waTplFooter" placeholder="Reply STOP to opt out"/></label>
+        <h3 style="margin-top:14px">Buttons (optional)</h3>
+        ${[0, 1, 2].map((i) => `
+          <div class="wa-btn-slot">
+            <label>Button ${i + 1} type<select class="waBtnType" data-i="${i}"><option value="">None</option><option value="QUICK_REPLY">Quick reply</option><option value="URL">URL</option><option value="PHONE_NUMBER">Call phone</option><option value="COPY_CODE">Copy code</option></select></label>
+            <label class="waBtnText" data-i="${i}" style="display:none">Button text<input class="waBtnTextInput" data-i="${i}"/></label>
+            <label class="waBtnUrl" data-i="${i}" style="display:none">URL<input class="waBtnUrlInput" data-i="${i}" placeholder="https://…"/></label>
+            <label class="waBtnPhone" data-i="${i}" style="display:none">Phone number<input class="waBtnPhoneInput" data-i="${i}" placeholder="+9190…"/></label>
+            <label class="waBtnCode" data-i="${i}" style="display:none">Example code<input class="waBtnCodeInput" data-i="${i}" placeholder="SAVE20"/></label>
+          </div>`).join("")}
         <div class="actions"><button type="button" id="waSubmitTemplate">Submit for approval</button></div>
-      </div>
-    </div>`);
-
-  const approved = templates.filter((t) => /approved/i.test(t.status || ""));
-  const selectedCount = state.selectedContactIds.size;
-  parts.push(`
-    <div class="account-block">
-      <h3>Send a bulk message</h3>
-      ${approved.length ? `
-        <label>Approved template<select id="waSendTemplate">${approved.map((t) => `<option value="${escapeAttr(t.name + "|" + t.language)}">${escapeHtml(t.name)} (${escapeHtml(t.language)})</option>`).join("")}</select></label>
-        <label>Recipients<select id="waSendScope"><option value="selected">Selected contacts (${selectedCount})</option><option value="all">All my contacts (${state.contacts.length})</option></select></label>
-        <p class="muted">Pick contacts on the Contacts screen first to use "Selected". Only contacts with a WhatsApp number are messaged. Make sure they have opted in.</p>
-        <div class="actions"><button type="button" id="waSendBtn">Send now</button></div>
-        <p id="waSendStatus" class="muted" role="status" aria-live="polite"></p>
-      ` : `<p class="muted">You need at least one <strong>approved</strong> template before you can send.</p>`}
-    </div>`);
-
-  const campaigns = wa.campaigns || [];
-  if (campaigns.length) {
-    parts.push(`
+      </div>`;
+  } else if (tab === "send") {
+    const selectedCount = state.selectedContactIds.size;
+    tabHtml = `
       <div class="account-block">
-        <h3>Recent campaigns</h3>
-        <table class="wa-table"><thead><tr><th>Template</th><th>Status</th><th>Sent</th><th>Failed</th><th>Total</th><th>When</th></tr></thead><tbody>
-        ${campaigns.map((c) => `<tr><td>${escapeHtml(c.template_name || "")}</td><td>${escapeHtml(c.status || "")}</td><td>${c.sent_count || 0}</td><td>${c.failed_count || 0}</td><td>${c.total_recipients || 0}</td><td>${new Date(c.created_at).toLocaleString()}</td></tr>`).join("")}
-        </tbody></table>
-      </div>`);
+        <h3>Send a campaign</h3>
+        ${approved.length ? `
+          <label>Campaign name (internal)<input id="waCampName" placeholder="Diwali offer"/></label>
+          <label>Approved template<select id="waSendTemplate">${approved.map((t) => `<option value="${escapeAttr(t.name + "|" + t.language)}">${escapeHtml(t.name)} (${escapeHtml(t.language)})</option>`).join("")}</select></label>
+          <label>Recipients<select id="waSendScope"><option value="selected">Selected contacts (${selectedCount})</option><option value="all">All my contacts (${state.contacts.length})</option></select></label>
+          <div id="waVarMap"></div>
+          <p class="muted">Variables map to each contact's field (or a fixed value). Only contacts with a WhatsApp number are messaged; make sure they opted in.</p>
+          <div class="actions"><button type="button" id="waSendBtn">Send campaign</button></div>
+          <p id="waSendStatus" class="muted" role="status" aria-live="polite"></p>
+        ` : `<p class="muted">You need at least one <strong>approved</strong> template before you can send. Create one in the Templates tab.</p>`}
+      </div>`;
+  } else {
+    const campaigns = wa.campaigns || [];
+    tabHtml = `
+      <div class="account-block">
+        <h3>Campaign analytics</h3>
+        ${campaigns.length ? `<table class="wa-table"><thead><tr><th>Campaign</th><th>Template</th><th>Total</th><th>Delivered</th><th>Read</th><th>Failed</th><th>When</th></tr></thead><tbody>
+          ${campaigns.map((c) => { const s = c.stats || {}; return `<tr><td>${escapeHtml(c.name || "")}</td><td>${escapeHtml(c.template_name || "")}</td><td>${c.total_recipients || 0}</td><td>${s.delivered || 0} (${s.deliveryRate || 0}%)</td><td>${s.read || 0} (${s.readRate || 0}%)</td><td>${s.failed || 0} (${s.failureRate || 0}%)</td><td>${new Date(c.created_at).toLocaleString()}</td></tr>`; }).join("")}
+        </tbody></table><p class="muted">Delivery and read update as Meta sends webhooks. Refresh to pull the latest.</p><div class="actions"><button type="button" class="secondary" id="waRefreshAnalytics">Refresh</button></div>` : `<p class="muted">No campaigns sent yet.</p>`}
+      </div>`;
   }
 
-  node.innerHTML = styles + parts.join("");
+  node.innerHTML = styles + `
+    <div class="account-block">
+      <p><strong>${escapeHtml(account.displayPhoneNumber || "—")}</strong> ${account.verifiedName ? "· " + escapeHtml(account.verifiedName) : ""}
+      ${whatsappStatusChip(account.webhookSubscribed ? "Webhooks on" : "Webhooks off", account.webhookSubscribed)}
+      ${account.qualityRating ? whatsappStatusChip("Quality: " + account.qualityRating, /green/i.test(account.qualityRating)) : ""}
+      ${account.tokenExpiresAt ? whatsappStatusChip("Token expires " + new Date(account.tokenExpiresAt).toLocaleDateString(), false) : whatsappStatusChip("Token: no expiry", true)}
+      <button type="button" class="secondary slim" id="waDisconnectBtn" style="float:right">Disconnect</button></p>
+    </div>
+    <div class="wa-tabs">
+      <button type="button" class="wa-tab ${tab === "templates" ? "active" : ""}" data-watab="templates">Templates</button>
+      <button type="button" class="wa-tab ${tab === "send" ? "active" : ""}" data-watab="send">Send campaign</button>
+      <button type="button" class="wa-tab ${tab === "analytics" ? "active" : ""}" data-watab="analytics">Analytics</button>
+    </div>
+    ${tabHtml}`;
   wireWhatsApp(node);
   return node;
 }
@@ -6498,22 +6517,41 @@ async function loadWhatsAppOverview() {
   try {
     state.whatsapp = await api("/api/whatsapp/overview");
   } catch (err) {
-    state.whatsapp = { allowed: true, enabled: false, error: err.message };
+    state.whatsapp = { enabled: false, error: err.message };
   } finally {
     state._whatsappLoading = false;
     render();
   }
 }
 
-function wireWhatsApp(node) {
-  const toggle = node.querySelector("#waFeatureToggle");
-  if (toggle) toggle.addEventListener("change", async () => {
-    try {
-      const result = await api("/api/whatsapp/feature", { method: "POST", body: { enabled: toggle.checked } });
-      setMessage(`WhatsApp feature ${result.enabled ? "enabled" : "disabled"}.`);
-      await loadWhatsAppOverview();
-    } catch (err) { setMessage(err.message, true); toggle.checked = !toggle.checked; }
+function waRenderVarMap(node) {
+  const mapWrap = node.querySelector("#waVarMap");
+  const picker = node.querySelector("#waSendTemplate");
+  if (!mapWrap || !picker) return;
+  const [name, language] = (picker.value || "").split("|");
+  const template = (state.whatsapp.templates || []).find((t) => t.name === name && t.language === language);
+  const count = template ? waBodyVarCount(template) : 0;
+  if (!count) { mapWrap.innerHTML = `<p class="muted" style="margin-top:8px">This template has no variables.</p>`; return; }
+  mapWrap.innerHTML = `<label style="margin-top:12px">Fill template variables</label>` + Array.from({ length: count }, (_, k) => {
+    const i = k + 1;
+    return `<div class="wa-var-row" data-var="${i}">
+      <span>{{${i}}}</span>
+      <select class="wa-var-source"><option value="field">Contact field</option><option value="text">Fixed text</option></select>
+      <select class="wa-var-field">${waFieldOptions(k === 0 ? "name" : "")}</select>
+      <input class="wa-var-text" placeholder="Fixed value" style="display:none"/>
+    </div>`;
+  }).join("");
+  mapWrap.querySelectorAll(".wa-var-row").forEach((row) => {
+    const source = row.querySelector(".wa-var-source");
+    source.addEventListener("change", () => {
+      row.querySelector(".wa-var-field").style.display = source.value === "text" ? "none" : "";
+      row.querySelector(".wa-var-text").style.display = source.value === "text" ? "" : "none";
+    });
   });
+}
+
+function wireWhatsApp(node) {
+  node.querySelectorAll("[data-watab]").forEach((btn) => btn.addEventListener("click", () => { state.campaignsTab = btn.dataset.watab; render(); }));
 
   node.querySelector("#waConnectBtn")?.addEventListener("click", () => launchWhatsAppSignup());
 
@@ -6528,24 +6566,59 @@ function wireWhatsApp(node) {
     catch (err) { setMessage(err.message, true); }
   });
 
-  const tplForm = node.querySelector("#waTemplateForm");
-  node.querySelector("#waNewTemplate")?.addEventListener("click", () => {
-    if (tplForm) tplForm.style.display = tplForm.style.display === "none" ? "block" : "none";
+  node.querySelector("#waRefreshAnalytics")?.addEventListener("click", () => loadWhatsAppOverview());
+
+  // Template builder: show/hide header + button fields.
+  const headerType = node.querySelector("#waTplHeaderType");
+  if (headerType) headerType.addEventListener("change", () => {
+    node.querySelector("#waTplHeaderTextWrap").style.display = headerType.value === "TEXT" ? "" : "none";
+    node.querySelector("#waTplHeaderMediaWrap").style.display = ["IMAGE", "VIDEO", "DOCUMENT"].includes(headerType.value) ? "" : "none";
   });
+  node.querySelectorAll(".waBtnType").forEach((sel) => sel.addEventListener("change", () => {
+    const i = sel.dataset.i;
+    const t = sel.value;
+    node.querySelector(`.waBtnText[data-i="${i}"]`).style.display = t && t !== "COPY_CODE" ? "" : "none";
+    node.querySelector(`.waBtnUrl[data-i="${i}"]`).style.display = t === "URL" ? "" : "none";
+    node.querySelector(`.waBtnPhone[data-i="${i}"]`).style.display = t === "PHONE_NUMBER" ? "" : "none";
+    node.querySelector(`.waBtnCode[data-i="${i}"]`).style.display = t === "COPY_CODE" ? "" : "none";
+  }));
 
   const submitTpl = node.querySelector("#waSubmitTemplate");
   if (submitTpl) submitTpl.addEventListener("click", async () => {
-    const name = node.querySelector("#waTplName")?.value.trim();
-    const language = node.querySelector("#waTplLang")?.value.trim() || "en_US";
-    const category = node.querySelector("#waTplCategory")?.value || "MARKETING";
-    const bodyText = node.querySelector("#waTplBody")?.value.trim();
-    const exampleRaw = node.querySelector("#waTplExample")?.value.trim();
+    const val = (sel) => (node.querySelector(sel)?.value || "").trim();
+    const name = val("#waTplName");
+    const bodyText = val("#waTplBody");
     if (!name || !bodyText) { setMessage("Template name and body are required.", true); return; }
-    const example = exampleRaw ? exampleRaw.split(",").map((value) => value.trim()).filter(Boolean) : null;
+    const hType = node.querySelector("#waTplHeaderType")?.value || "NONE";
+    let header = null;
+    if (hType === "TEXT" && val("#waTplHeaderText")) header = { format: "TEXT", text: val("#waTplHeaderText") };
+    else if (["IMAGE", "VIDEO", "DOCUMENT"].includes(hType) && val("#waTplHeaderMedia")) header = { format: hType, mediaUrl: val("#waTplHeaderMedia") };
+    const exampleRaw = val("#waTplExample");
+    const buttons = [];
+    node.querySelectorAll(".waBtnType").forEach((sel) => {
+      const i = sel.dataset.i;
+      const t = sel.value;
+      if (!t) return;
+      const text = (node.querySelector(`.waBtnTextInput[data-i="${i}"]`)?.value || "").trim();
+      if (t === "QUICK_REPLY" && text) buttons.push({ type: "QUICK_REPLY", text });
+      else if (t === "URL" && text) buttons.push({ type: "URL", text, url: (node.querySelector(`.waBtnUrlInput[data-i="${i}"]`)?.value || "").trim() });
+      else if (t === "PHONE_NUMBER" && text) buttons.push({ type: "PHONE_NUMBER", text, phoneNumber: (node.querySelector(`.waBtnPhoneInput[data-i="${i}"]`)?.value || "").trim() });
+      else if (t === "COPY_CODE") buttons.push({ type: "COPY_CODE", example: (node.querySelector(`.waBtnCodeInput[data-i="${i}"]`)?.value || "").trim() || "CODE" });
+    });
+    const body = {
+      name, language: val("#waTplLang") || "en_US", category: node.querySelector("#waTplCategory")?.value || "MARKETING",
+      bodyText, footerText: val("#waTplFooter") || undefined, header,
+      bodyExample: exampleRaw ? exampleRaw.split(",").map((v) => v.trim()).filter(Boolean) : null,
+      buttons
+    };
     submitTpl.disabled = true;
-    try { await api("/api/whatsapp/templates", { method: "POST", body: { name, language, category, bodyText, example } }); setMessage("Template submitted for approval."); await loadWhatsAppOverview(); }
+    try { await api("/api/whatsapp/templates", { method: "POST", body }); setMessage("Template submitted for approval."); state.campaignsTab = "templates"; await loadWhatsAppOverview(); }
     catch (err) { setMessage(err.message, true); submitTpl.disabled = false; }
   });
+
+  // Send tab: variable mapping follows the chosen template.
+  const picker = node.querySelector("#waSendTemplate");
+  if (picker) { waRenderVarMap(node); picker.addEventListener("change", () => waRenderVarMap(node)); }
 
   const sendBtn = node.querySelector("#waSendBtn");
   if (sendBtn) sendBtn.addEventListener("click", async () => {
@@ -6555,14 +6628,22 @@ function wireWhatsApp(node) {
     const statusEl = node.querySelector("#waSendStatus");
     if (!templateName) { setMessage("Choose a template.", true); return; }
     if (scope === "selected" && !state.selectedContactIds.size) { setMessage("Select contacts on the Contacts screen first.", true); return; }
-    const body = { templateName, language: language || "en_US" };
+    const variableMapping = {};
+    node.querySelectorAll(".wa-var-row").forEach((row) => {
+      const i = row.dataset.var;
+      const source = row.querySelector(".wa-var-source").value;
+      const value = source === "text" ? row.querySelector(".wa-var-text").value : row.querySelector(".wa-var-field").value;
+      variableMapping[i] = { source, value };
+    });
+    const body = { templateName, language: language || "en_US", variableMapping, campaignName: (node.querySelector("#waCampName")?.value || "").trim() };
     if (scope === "all") body.all = true; else body.contactIds = [...state.selectedContactIds];
     sendBtn.disabled = true;
     if (statusEl) statusEl.textContent = "Sending…";
     try {
       const result = await api("/api/whatsapp/send", { method: "POST", body });
       if (statusEl) statusEl.textContent = `Done — ${result.sent} sent, ${result.failed} failed of ${result.total}.`;
-      setMessage(`WhatsApp: ${result.sent} sent, ${result.failed} failed.`);
+      setMessage(`Campaign: ${result.sent} sent, ${result.failed} failed.`);
+      state.campaignsTab = "analytics";
       await loadWhatsAppOverview();
     } catch (err) { if (statusEl) statusEl.textContent = ""; setMessage(err.message, true); sendBtn.disabled = false; }
   });

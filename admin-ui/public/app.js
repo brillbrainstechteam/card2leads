@@ -519,6 +519,20 @@
       "</div>" +
       "</div></div>" +
 
+      '<div class="dcard"><h3>WhatsApp Campaigns</h3><div class="body">' +
+      '<div class="setting-row">' +
+        '<div class="setting-text">' +
+          '<div class="setting-name">Bulk WhatsApp messaging' +
+            '<span class="setting-state ' + (c.whatsappEnabled ? "on" : "off") + '">' + (c.whatsappEnabled ? "ENABLED" : "OFF") + "</span>" +
+          "</div>" +
+          '<div class="setting-help">' + (c.whatsappEnabled
+            ? "This client can connect a WhatsApp number, build templates, send bulk campaigns and see delivery analytics. The Campaigns tab shows in their app and web."
+            : "Off — this client sees nothing. Turn on to give them the Campaigns module (connect a number, templates, bulk sending, analytics). No other client is affected.") + "</div>" +
+        "</div>" +
+        '<button class="setting-toggle' + (c.whatsappEnabled ? " is-on" : "") + '" data-act="whatsapp-feature" role="switch" aria-checked="' + (c.whatsappEnabled ? "true" : "false") + '" aria-label="WhatsApp Campaigns for this client"><span class="knob"></span></button>' +
+      "</div>" +
+      "</div></div>" +
+
       '<div class="dcard"><h3>Payments</h3><div class="body">' + payments + "</div></div>" +
 
       '<div class="dcard"><h3>Subscription history</h3><div class="body">' + subscriptions + "</div></div>" +
@@ -692,6 +706,20 @@
             : "ON — in Excel and CSV, everyone met at the same company shares one row. The most complete contact fills the usual columns and the others follow in Additional Contact Name and Mobile columns, with the number alone where a contact has no name. Nobody is left out, and their Contacts list is unchanged." },
           payload: { onePerBusiness: !sharing },
           fields: [{ key: "reason", type: "text", label: "Reason", required: true, placeholder: sharing ? "Why go back to a row each?" : "Why does this client want one row per business?" }]
+        };
+      }
+      case "whatsapp-feature": {
+        var waOn = !!c.whatsappEnabled;
+        return {
+          endpoint: "whatsapp-feature",
+          title: waOn ? "Turn Off: WhatsApp Campaigns" : "Turn On: WhatsApp Campaigns",
+          submitLabel: waOn ? "Turn off" : "Turn on", brand: !waOn, warn: waOn,
+          sub: "This client only — no other account is affected.",
+          note: { kind: "info", text: waOn
+            ? "OFF — the Campaigns tab/section disappears for this client and all WhatsApp endpoints are blocked for them. Their connected number and data are kept."
+            : "ON — this client gets the WhatsApp Campaigns module: connect a number, create templates, send bulk campaigns and see delivery/read/failure analytics." },
+          payload: { enabled: !waOn },
+          fields: []
         };
       }
       case "clear-allowance": return {
