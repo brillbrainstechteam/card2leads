@@ -6516,6 +6516,29 @@ async function whatsappCampaignStats(campaignId) {
   return { total, sent, delivered, read, failed, deliveryRate: rate(delivered), readRate: rate(read), failureRate: rate(failed) };
 }
 
+// Stats for many campaigns in ONE query (the per-campaign version above costs a
+// query each, which added up on every overview load). Returns { campaignId: stats }.
+async function whatsappCampaignStatsBatch(organisationId, campaignIds) {
+  if (!campaignIds.length) return {};
+  const rows = (await pgPool.query(
+    "select campaign_id, status, count(*)::int as n from whatsapp_messages where organisation_id=$1 and campaign_id = any($2) group by campaign_id, status",
+    [organisationId, campaignIds]
+  )).rows;
+  const byCampaign = {};
+  for (const row of rows) { (byCampaign[row.campaign_id] = byCampaign[row.campaign_id] || {})[row.status] = row.n; }
+  const result = {};
+  for (const campaignId of campaignIds) {
+    const by = byCampaign[campaignId] || {};
+    const total = Object.values(by).reduce((sum, n) => sum + n, 0);
+    const delivered = (by.delivered || 0) + (by.read || 0);
+    const read = by.read || 0;
+    const failed = by.failed || 0;
+    const rate = (n) => (total ? Math.round((n / total) * 1000) / 10 : 0);
+    result[campaignId] = { total, sent: (by.sent || 0) + delivered, delivered, read, failed, deliveryRate: rate(delivered), readRate: rate(read), failureRate: rate(failed) };
+  }
+  return result;
+}
+
 function whatsappVerifyWebhookSignature(rawBuffer, signatureHeader) {
   if (!META_APP_SECRET) return false;
   const signature = String(signatureHeader || "");
@@ -7321,7 +7344,8 @@ async function handleApi(req, res, pathname) {
       if (account) {
         templates = (await pgPool.query("select id,name,language,category,status,components,rejected_reason,updated_at from whatsapp_templates where account_id=$1 order by updated_at desc", [account.id])).rows;
         const campaignRows = (await pgPool.query("select id,name,template_name,status,total_recipients,sent_count,failed_count,created_at from whatsapp_campaigns where organisation_id=$1 order by created_at desc limit 20", [user.organisationId])).rows;
-        campaigns = await Promise.all(campaignRows.map(async (row) => ({ ...row, stats: await whatsappCampaignStats(row.id) })));
+        const statsMap = await whatsappCampaignStatsBatch(user.organisationId, campaignRows.map((r) => r.id));
+        campaigns = campaignRows.map((row) => ({ ...row, stats: statsMap[row.id] }));
       }
       return send(res, 200, {
         enabled: true,
@@ -7396,7 +7420,8 @@ async function handleApi(req, res, pathname) {
       // Campaign analytics: list with aggregated counts, or one campaign's detail.
       if (pathname === "/api/whatsapp/campaigns" && req.method === "GET") {
         const rows = (await pgPool.query("select id,name,template_name,template_language,status,total_recipients,sent_count,failed_count,created_at from whatsapp_campaigns where organisation_id=$1 order by created_at desc limit 100", [user.organisationId])).rows;
-        const campaigns = await Promise.all(rows.map(async (row) => ({ ...row, stats: await whatsappCampaignStats(row.id) })));
+        const statsMap = await whatsappCampaignStatsBatch(user.organisationId, rows.map((r) => r.id));
+        const campaigns = rows.map((row) => ({ ...row, stats: statsMap[row.id] }));
         return send(res, 200, { campaigns });
       }
       if (pathname.startsWith("/api/whatsapp/campaigns/") && req.method === "GET") {

@@ -438,8 +438,9 @@ async function refreshAll() {
   const availableIds = new Set(state.contacts.map((contact) => contact.id));
   state.selectedContactIds = new Set([...state.selectedContactIds].filter((id) => availableIds.has(id)));
   // Learn whether this account has WhatsApp Campaigns enabled (server-driven,
-  // off for everyone by default). Fire-and-forget; the nav appears once known.
-  loadWhatsAppOverview();
+  // off for everyone by default). Fetch once — not after every mutation — so it
+  // never adds latency to contact/team/card saves.
+  if (!state.whatsapp) loadWhatsAppOverview();
 }
 
 function render() {
