@@ -54,6 +54,12 @@ const authenticatedViews = new Set(["upload", "review", "contacts", "account", "
 function whatsappNavAllowed() {
   return Boolean(state.whatsapp && state.whatsapp.enabled);
 }
+
+// City / State / Business type filters can hold several comma-joined values; a
+// contact matches any of them. These helpers add/remove a value in that string.
+function csvFilterList(value) { return String(value || "").split(",").map((s) => s.trim()).filter(Boolean); }
+function addCsvFilter(value, option) { if (!option) return ""; const parts = csvFilterList(value); if (!parts.some((p) => p.toLowerCase() === option.toLowerCase())) parts.push(option); return parts.join(","); }
+function removeCsvFilter(value, option) { return csvFilterList(value).filter((p) => p.toLowerCase() !== String(option).toLowerCase()).join(","); }
 const nativeIntroStorageKey = "smartscan.mobileIntroSeen";
 
 function isNativeApp() {
@@ -4721,12 +4727,15 @@ function contactsView() {
     if (filters.exhibition && (contact.exhibitionName || "") !== filters.exhibition) return false;
     if (filters.assignee === "__unassigned" && contact.assignedToId) return false;
     if (filters.assignee && filters.assignee !== "__unassigned" && contact.assignedToId !== filters.assignee) return false;
-    if (filters.city && (contact.city || "") !== filters.city) return false;
-    if (filters.state && (contact.state || "") !== filters.state) return false;
+    const cityFilterList = csvFilterList(filters.city);
+    if (cityFilterList.length && !cityFilterList.some((v) => v.toLowerCase() === String(contact.city || "").toLowerCase())) return false;
+    const stateFilterList = csvFilterList(filters.state);
+    if (stateFilterList.length && !stateFilterList.some((v) => v.toLowerCase() === String(contact.state || "").toLowerCase())) return false;
     if (filters.messaged === "sent" && !contact.messageSentAt) return false;
     if (filters.messaged === "not-sent" && contact.messageSentAt) return false;
     if (filters.industry && (contact.industry || "") !== filters.industry) return false;
-    if (filters.businessType && !choiceList(contact.businessType).includes(filters.businessType)) return false;
+    const btFilterList = csvFilterList(filters.businessType);
+    if (btFilterList.length && !choiceList(contact.businessType).some((t) => btFilterList.some((v) => v.toLowerCase() === String(t).toLowerCase()))) return false;
     if (filters.customerStatus && (contact.customerStatus || "") !== filters.customerStatus) return false;
     if (filters.salutation && (contact.salutation || "") !== filters.salutation) return false;
     if (filters.eventType && (contact.eventType || "") !== filters.eventType) return false;
@@ -5046,6 +5055,9 @@ function contactsView() {
             </select>
           </label>
           ${filtersActive ? `<button type="button" class="link-button" id="clearContactFilters">Clear filters</button>` : ""}
+          ${(csvFilterList(filters.city).length || csvFilterList(filters.state).length || csvFilterList(filters.businessType).length)
+            ? `<div style="display:flex;flex-wrap:wrap;gap:6px;flex-basis:100%;margin-top:4px">${[["city", "City", csvFilterList(filters.city)], ["state", "State", csvFilterList(filters.state)], ["businessType", "Business type", csvFilterList(filters.businessType)]].map(([field, label, values]) => values.map((v) => `<span style="display:inline-flex;align-items:center;gap:6px;background:#eef1f6;border-radius:999px;padding:3px 4px 3px 10px;font-size:12px">${escapeHtml(label)}: ${escapeHtml(v)} <button type="button" data-remove-filter data-field="${field}" data-remove="${escapeAttr(v)}" aria-label="Remove ${escapeHtml(v)}" style="border:0;background:#d7dce5;border-radius:999px;width:18px;height:18px;cursor:pointer;line-height:1;font-size:13px">&times;</button></span>`).join("")).join("")}</div>`
+            : ""}
         </div>
         <div class="contacts-selectbar">
           <label class="selectall-label"><input id="selectAllContacts" type="checkbox" ${allVisibleSelected ? "checked" : ""} /> <span>${selectedIds.length ? `${selectedIds.length} selected` : "Select all"}</span></label>
@@ -5220,7 +5232,9 @@ function contactsView() {
     render();
   });
   node.querySelectorAll("[data-contact-filter]").forEach((select) => select.addEventListener("change", (event) => {
-    state.contactFilters = { ...state.contactFilters, [select.dataset.contactFilter]: event.target.value };
+    const field = select.dataset.contactFilter;
+    const nextValue = field === "businessType" ? addCsvFilter(state.contactFilters.businessType, event.target.value) : event.target.value;
+    state.contactFilters = { ...state.contactFilters, [field]: nextValue };
     render();
   }));
   node.querySelector("#filterExhibition")?.addEventListener("change", (event) => {
@@ -5236,13 +5250,18 @@ function contactsView() {
     render();
   });
   node.querySelector("#filterCity")?.addEventListener("change", (event) => {
-    state.contactFilters = { ...state.contactFilters, city: event.target.value };
+    state.contactFilters = { ...state.contactFilters, city: addCsvFilter(state.contactFilters.city, event.target.value) };
     render();
   });
   node.querySelector("#filterState")?.addEventListener("change", (event) => {
-    state.contactFilters = { ...state.contactFilters, state: event.target.value };
+    state.contactFilters = { ...state.contactFilters, state: addCsvFilter(state.contactFilters.state, event.target.value) };
     render();
   });
+  node.querySelectorAll("[data-remove-filter]").forEach((btn) => btn.addEventListener("click", () => {
+    const field = btn.dataset.field;
+    state.contactFilters = { ...state.contactFilters, [field]: removeCsvFilter(state.contactFilters[field], btn.dataset.remove) };
+    render();
+  }));
   node.querySelector("#clearContactFilters")?.addEventListener("click", () => {
     state.contactFilters = { exhibition: "", assignee: "", city: "", state: "", messaged: "", industry: "", businessType: "", customerStatus: "", salutation: "", eventType: "", leadSource: "", country: "", businessSpecialisation: "", dateAdded: "", eventDate: "", rating: "", anp: "", zone: "", gstNumber: "", grade: "", authorized: "", prospect: "" };
     render();

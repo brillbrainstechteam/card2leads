@@ -10268,8 +10268,8 @@ function exportSelection(db, user, url) {
   const exportAll = params.get("all") === "true";
   const assigneeId = params.get("assigneeId") || "";
   const exhibition = params.get("exhibition") || "";
-  const city = params.get("city") || "";
-  const stateName = params.get("state") || "";
+  const cityList = String(params.get("city") || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const stateList = String(params.get("state") || "").split(",").map((s) => s.trim()).filter(Boolean);
   const search = String(params.get("q") || "").toLowerCase();
   const collection = collectionForUser(db, user, collectionId);
 
@@ -10302,13 +10302,15 @@ function exportSelection(db, user, url) {
   } else if (collection && !exportAll && !selectedIds.size) {
     nameParts.push(collection.name);
   }
-  if (city) {
-    contacts = contacts.filter((c) => (c.city || "") === city);
-    nameParts.push(city);
+  if (cityList.length) {
+    const wanted = cityList.map((v) => v.toLowerCase());
+    contacts = contacts.filter((c) => wanted.includes(String(c.city || "").toLowerCase()));
+    nameParts.push(cityList.join(", "));
   }
-  if (stateName) {
-    contacts = contacts.filter((c) => (c.state || "") === stateName);
-    nameParts.push(stateName);
+  if (stateList.length) {
+    const wanted = stateList.map((v) => v.toLowerCase());
+    contacts = contacts.filter((c) => wanted.includes(String(c.state || "").toLowerCase()));
+    nameParts.push(stateList.join(", "));
   }
   const messaged = params.get("messaged") || "";
   if (messaged === "sent") {
@@ -10344,10 +10346,11 @@ function exportSelection(db, user, url) {
     contacts = contacts.filter((c) => String(c[field] || "") === want);
     nameParts.push(want);
   }
-  const businessType = String(params.get("businessType") || "");
-  if (businessType) {
-    contacts = contacts.filter((c) => toChoiceList(c.businessType).includes(businessType));
-    nameParts.push(businessType);
+  const btList = String(params.get("businessType") || "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (btList.length) {
+    const wanted = btList.map((v) => v.toLowerCase());
+    contacts = contacts.filter((c) => toChoiceList(c.businessType).some((t) => wanted.includes(String(t).toLowerCase())));
+    nameParts.push(btList.join(", "));
   }
   const eventDate = String(params.get("eventDate") || "");
   if (eventDate) {
