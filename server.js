@@ -45,6 +45,25 @@ const VOICE_STT_LANGUAGE = String(process.env.VOICE_STT_LANGUAGE || GOOGLE_STT_L
 const VOICE_STT_PROMPT = process.env.VOICE_STT_PROMPT
   || "Sales follow-up note from a jewellery exhibition, spoken in Hindi, English or Hinglish. Mentions interest, budget, quantity and follow-up dates.";
 
+// Languages the user can choose for a voice note. Google STT wants a BCP-47 code
+// (hi-IN); OpenAI wants the 2-letter ISO (hi). Unknown input falls back to the
+// server default so an odd value never breaks transcription.
+const STT_LANGUAGES = Object.freeze({
+  "hi-IN": "hi", "en-IN": "en", "en-US": "en", "ta-IN": "ta", "te-IN": "te",
+  "mr-IN": "mr", "gu-IN": "gu", "bn-IN": "bn", "kn-IN": "kn", "ml-IN": "ml", "pa-IN": "pa"
+});
+function resolveSttLanguage(input) {
+  const code = String(input || "").trim();
+  if (STT_LANGUAGES[code]) return { bcp47: code, iso: STT_LANGUAGES[code] };
+  const byIso = Object.entries(STT_LANGUAGES).find(([, iso]) => iso === code.toLowerCase());
+  if (byIso) return { bcp47: byIso[0], iso: byIso[1] };
+  return { bcp47: GOOGLE_STT_LANGUAGE_CODE, iso: VOICE_STT_LANGUAGE };
+}
+// Below this, a recording is effectively silence/empty — real speech of even a
+// second is larger. Transcribing empty audio is what let Whisper hallucinate a
+// jewellery-sales script from the prompt, so we reject it instead.
+const MIN_VOICE_NOTE_BYTES = 2000;
+
 // A transcript full of CJK characters when we asked for Hindi or English is a
 // misdetection, not speech. Saving it would put gibberish in a customer record,
 // so it is rejected and the user is asked to record again.
@@ -4474,11 +4493,12 @@ function googleAudioEncoding(mimeType) {
   return "WEBM_OPUS";
 }
 
-async function transcribeAudio(buffer, mimeType) {
+async function transcribeAudio(buffer, mimeType, language) {
+  const lang = resolveSttLanguage(language);
   const failures = [];
   if ((VOICE_STT_PROVIDER === "google" || VOICE_STT_PROVIDER === "auto") && googleSttConfigured()) {
     try {
-      return await transcribeWithGoogleStt(buffer, mimeType);
+      return await transcribeWithGoogleStt(buffer, mimeType, lang.bcp47);
     } catch (err) {
       failures.push(`Google STT: ${err.message}`);
       if (VOICE_STT_PROVIDER === "google") throw new Error(failures.join(" "));
@@ -4486,7 +4506,7 @@ async function transcribeAudio(buffer, mimeType) {
   }
   if ((VOICE_STT_PROVIDER === "openai" || VOICE_STT_PROVIDER === "auto") && process.env.OPENAI_API_KEY) {
     try {
-      return await transcribeWithOpenAI(buffer, mimeType);
+      return await transcribeWithOpenAI(buffer, mimeType, lang.iso);
     } catch (err) {
       failures.push(`OpenAI STT: ${err.message}`);
     }
@@ -4494,9 +4514,9 @@ async function transcribeAudio(buffer, mimeType) {
   throw new Error(failures.length ? `Voice transcription failed. ${failures.join(" ")}` : "Voice transcription is not configured. Add Google STT service-account credentials or OPENAI_API_KEY.");
 }
 
-async function transcribeWithGoogleStt(buffer, mimeType) {
+async function transcribeWithGoogleStt(buffer, mimeType, languageCode = GOOGLE_STT_LANGUAGE_CODE) {
   const accessToken = await googleServiceAccountAccessToken();
-  const alternatives = GOOGLE_STT_ALTERNATIVE_LANGUAGE_CODES.split(",").map((v) => v.trim()).filter(Boolean);
+  const alternatives = GOOGLE_STT_ALTERNATIVE_LANGUAGE_CODES.split(",").map((v) => v.trim()).filter(Boolean).filter((v) => v !== languageCode);
   const response = await fetch("https://speech.googleapis.com/v1/speech:recognize", {
     method: "POST",
     headers: {
@@ -4506,7 +4526,7 @@ async function transcribeWithGoogleStt(buffer, mimeType) {
     body: JSON.stringify({
       config: {
         encoding: googleAudioEncoding(mimeType),
-        languageCode: GOOGLE_STT_LANGUAGE_CODE,
+        languageCode,
         alternativeLanguageCodes: alternatives,
         enableAutomaticPunctuation: true,
         model: GOOGLE_STT_MODEL
@@ -4519,19 +4539,19 @@ async function transcribeWithGoogleStt(buffer, mimeType) {
   const transcript = (data.results || []).map((result) => result.alternatives?.[0]?.transcript || "").join(" ").trim();
   return {
     transcript,
-    language: GOOGLE_STT_LANGUAGE_CODE,
+    language: languageCode,
     provider: "google_stt",
     confidence: Math.round(100 * Math.max(0, ...((data.results || []).map((result) => Number(result.alternatives?.[0]?.confidence || 0)))))
   };
 }
 
-async function transcribeWithOpenAI(buffer, mimeType) {
+async function transcribeWithOpenAI(buffer, mimeType, language = VOICE_STT_LANGUAGE) {
   const form = new FormData();
   form.append("model", process.env.OPENAI_TRANSCRIBE_MODEL || "gpt-4o-mini-transcribe");
   form.append("file", new Blob([buffer], { type: mimeType }), `voice-note.${audioExtension(mimeType)}`);
   // Without these the model free-detects and lands on Chinese for accented
   // Hindi (see VOICE_STT_LANGUAGE).
-  form.append("language", VOICE_STT_LANGUAGE);
+  form.append("language", language);
   form.append("prompt", VOICE_STT_PROMPT);
   const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
@@ -4541,7 +4561,7 @@ async function transcribeWithOpenAI(buffer, mimeType) {
   const data = await response.json();
   if (!response.ok) throw new Error(data.error?.message || "OpenAI transcription failed.");
   const transcript = cleanText(data.text || "");
-  if (transcriptLooksMisdetected(transcript, VOICE_STT_LANGUAGE)) {
+  if (transcriptLooksMisdetected(transcript, language)) {
     throw new Error("The recording could not be understood. Please record it again, a little closer to the microphone.");
   }
   return {
@@ -6197,24 +6217,41 @@ async function whatsappConnect(user, { code = "", wabaId = "", phoneNumberId = "
   }
   if (!accessToken) throw new Error("Could not obtain an access token from Meta. Please re-run the connection.");
 
-  // Resolve the WABA id from the token's granular scopes when the popup did not
-  // hand it to the client directly.
-  if (!wabaId) {
-    const debug = await graphApi(
-      `debug_token?input_token=${encodeURIComponent(accessToken)}`,
-      { token: `${META_APP_ID}|${META_APP_SECRET}` }
-    ).catch(() => null);
-    const granular = debug?.data?.granular_scopes || [];
-    const match = granular.find((scope) => scope.scope === "whatsapp_business_management" && Array.isArray(scope.target_ids) && scope.target_ids.length)
-      || granular.find((scope) => Array.isArray(scope.target_ids) && scope.target_ids.length);
-    wabaId = match?.target_ids?.[0] || "";
+  // Build candidate WABA ids — the one the popup shared, then any from the
+  // token's granular scopes — and VERIFY each (a real WABA answers its
+  // /phone_numbers edge). Storing an unverified id is what caused Graph's
+  // "Object with ID … does not exist / missing permissions" on template calls.
+  const candidates = [];
+  if (wabaId) candidates.push(String(wabaId));
+  const debug = await graphApi(
+    `debug_token?input_token=${encodeURIComponent(accessToken)}`,
+    { token: `${META_APP_ID}|${META_APP_SECRET}` }
+  ).catch(() => null);
+  const scopes = debug?.data?.granular_scopes || [];
+  for (const scope of scopes) {
+    if (scope.scope === "whatsapp_business_management" && Array.isArray(scope.target_ids)) {
+      for (const target of scope.target_ids) if (!candidates.includes(String(target))) candidates.push(String(target));
+    }
   }
-  if (!wabaId) throw new Error("No WhatsApp Business Account was shared during signup.");
+  for (const scope of scopes) {
+    if (Array.isArray(scope.target_ids)) for (const target of scope.target_ids) if (!candidates.includes(String(target))) candidates.push(String(target));
+  }
+  if (!candidates.length) throw new Error("No WhatsApp Business Account was shared during signup. Please connect again.");
 
-  if (!phoneNumberId) {
-    const numbers = await graphApi(`${wabaId}/phone_numbers?fields=id,display_phone_number,verified_name,quality_rating`, { token: accessToken });
-    phoneNumberId = numbers?.data?.[0]?.id || "";
+  let resolvedWaba = "";
+  let resolvedPhone = phoneNumberId;
+  let lastErr = "";
+  for (const candidate of candidates) {
+    try {
+      const numbers = await graphApi(`${candidate}/phone_numbers?fields=id,display_phone_number,verified_name,quality_rating`, { token: accessToken });
+      resolvedWaba = candidate;
+      if (!resolvedPhone) resolvedPhone = numbers?.data?.[0]?.id || "";
+      break;
+    } catch (err) { lastErr = err.message; }
   }
+  if (!resolvedWaba) throw new Error(`Could not read your WhatsApp Business Account from Meta. Please disconnect and connect again.${lastErr ? ` (${lastErr})` : ""}`);
+  wabaId = resolvedWaba;
+  phoneNumberId = resolvedPhone;
   if (!phoneNumberId) throw new Error("No phone number was found on the connected WhatsApp Business Account.");
 
   const phoneInfo = await graphApi(`${phoneNumberId}?fields=display_phone_number,verified_name,quality_rating,code_verification_status,platform_type`, { token: accessToken }).catch(() => ({}));
@@ -8332,6 +8369,7 @@ async function handleApi(req, res, pathname) {
       const parsed = parseDataUrl(body.audioDataUrl);
       if (!parsed || !isSupportedAudioMime(parsed.mimeType)) return error(res, 400, "Record a supported audio note before transcribing.");
       if (parsed.buffer.length > 12 * 1024 * 1024) return error(res, 400, "Voice note is too large. Keep notes under about one minute.");
+      if (parsed.buffer.length < MIN_VOICE_NOTE_BYTES) return error(res, 400, "No speech was detected in that recording. Please record again and speak clearly, close to the microphone.");
 
       if (targetType === "card" || targetType === "batch") {
         const count = db.cards.filter((card) => card.organisationId === user.organisationId && targetIds.includes(card.id) && !card.deletedAt).length;
@@ -8345,7 +8383,8 @@ async function handleApi(req, res, pathname) {
       const ext = audioExtension(parsed.mimeType);
       const audioPath = path.join(STORAGE_DIR, "voice_notes", `${noteId}.${ext}`);
       fs.writeFileSync(audioPath, parsed.buffer);
-      const transcription = await transcribeAudio(parsed.buffer, parsed.mimeType);
+      const transcription = await transcribeAudio(parsed.buffer, parsed.mimeType, body.language);
+      if (!String(transcription.transcript || "").trim()) return error(res, 400, "No speech was detected in that recording. Please record again and speak clearly.");
       const structured = await structureVoiceTranscript(transcription.transcript);
       const note = {
         id: noteId,
